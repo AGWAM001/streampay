@@ -19,6 +19,8 @@ out/
 .idea/
 .vscode/
 *.log
+# ...except the append-only promotion log, which is a tracked record.
+!deployments/promotions.log
 
 # Local tooling leftovers
 .freebuff/
@@ -28,6 +30,10 @@ infra/ttl-sentinel/dist/
 infra/ttl-sentinel/ttl-sentinel.config.json
 infra/ttl-sentinel/.ttl-sentinel.state.json
 infra/ttl-sentinel/.ttl-sentinel.state.json.*.json
+
+# Release-pipeline evidence bundles (produced by scripts/release_gates.sh and
+# the dress rehearsal; uploaded as CI artifacts, never committed)
+/evidence/
 
 # Fuzzing (own workspace; corpus/artifacts stay local)
 fuzz/target/
