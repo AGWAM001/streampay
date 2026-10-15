@@ -133,6 +133,7 @@ frontend/                       minimal Next.js UI (Freighter wallet)
 fuzz/                           cargo-fuzz harness for the accrual math (own workspace)
 scripts/deploy_testnet.sh       one-command testnet demo
 docs/ARCHITECTURE.md            design deep-dive
+docs/FEE_AWARE_CLAIMS.md        opt-in fee-aware claim scheduling (constraints + decisions)
 docs/DEMO.md                    verified testnet walkthrough
 docs/GOOD_FIRST_ISSUES.md       ready-to-file contributor tickets
 .github/workflows/ci.yml        test + fmt + clippy + coverage + wasm + lint/build/audit + supply chain
