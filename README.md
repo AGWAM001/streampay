@@ -57,6 +57,8 @@ A stream is a half-open window `[start_time, end_time)`. At any ledger timestamp
 
 Deep dive (storage model, checked math, reentrancy, TTL strategy, design decisions): [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
+Incident response drills and procedures: [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md).
+
 ## Contract API
 
 | Function | Caller | Moves tokens | Emits |
@@ -155,9 +157,12 @@ CHANGELOG.md                    release history (Keep a Changelog)
 - **v0.3** — ✅ fuzzing in CI (`cargo-fuzz` on the rate math, scheduled),
   multi-token batch stream creation
 - **v0.4** — full web UI polish (accrual charts), ✅ testnet demo script
+- **v0.5** — ✅ incident response drills and runbook (testnet simulation)
 - **v1.0** — external audit, mainnet deployment guide
 
 Feature requests live in [`.github/ISSUE_TEMPLATE/`](./.github/ISSUE_TEMPLATE/) — good first issues are tagged [`good first issue`](https://github.com/Neziahtech/streampay/labels/good%20first%20issue) and documented in [`docs/GOOD_FIRST_ISSUES.md`](./docs/GOOD_FIRST_ISSUES.md).
+
+Incident drill tooling and results are documented in [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md) and [`docs/INCIDENT_RESULTS.md`](./docs/INCIDENT_RESULTS.md). Run the drills with [`scripts/run_all_drills.sh`](./scripts/run_all_drills.sh); individual scenarios are available under `scripts/drill_*.sh`.
 
 ## Contributing
 
