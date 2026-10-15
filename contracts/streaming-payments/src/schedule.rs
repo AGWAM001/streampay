@@ -35,6 +35,7 @@ use soroban_sdk::{contracttype, Address, Bytes, BytesN, Env};
 
 use crate::errors::StreamError;
 use crate::stream::{self, DataKey, MAX_DURATION_SECONDS};
+use crate::surface::{reject, Branch};
 
 /// Maximum number of occurrences a single recurring intent may schedule.
 /// Bounds the up-front escrow and the per-call bookkeeping.
@@ -223,17 +224,17 @@ pub fn validate_schedule(
     stream::validate_capacity(deposit, duration)?;
 
     if fee_budget < 0 {
-        return Err(StreamError::InvalidScheduleParameters);
+        return Err(reject(Branch::ScheduleInvalidParameters));
     }
     if occurrences == 0 || occurrences > MAX_OCCURRENCES {
-        return Err(StreamError::InvalidScheduleParameters);
+        return Err(reject(Branch::ScheduleInvalidParameters));
     }
     if occurrences == 1 {
         if interval != 0 {
-            return Err(StreamError::InvalidScheduleParameters);
+            return Err(reject(Branch::ScheduleInvalidParameters));
         }
     } else if interval == 0 {
-        return Err(StreamError::InvalidScheduleParameters);
+        return Err(reject(Branch::ScheduleInvalidParameters));
     }
 
     let now = env.ledger().timestamp();
@@ -241,22 +242,22 @@ pub fn validate_schedule(
         return Err(StreamError::StartTimeInPast);
     }
     if execute_after < now {
-        return Err(StreamError::InvalidScheduleParameters);
+        return Err(reject(Branch::ScheduleInvalidParameters));
     }
     if execute_after > start_time {
-        return Err(StreamError::InvalidScheduleParameters);
+        return Err(reject(Branch::ScheduleInvalidParameters));
     }
     if expires_at <= execute_after {
-        return Err(StreamError::InvalidScheduleParameters);
+        return Err(reject(Branch::ScheduleInvalidParameters));
     }
 
     // The whole recurrence window must fit in u64.
     let last_shift = interval
         .checked_mul((occurrences - 1) as u64)
-        .ok_or(StreamError::InvalidScheduleParameters)?;
+        .ok_or_else(|| reject(Branch::ScheduleInvalidParameters))?;
     end_time
         .checked_add(last_shift)
-        .ok_or(StreamError::InvalidScheduleParameters)?;
+        .ok_or_else(|| reject(Branch::ScheduleInvalidParameters))?;
 
     // The full up-front escrow must fit in i128.
     let per = deposit
@@ -279,7 +280,7 @@ pub fn get_intent(env: &Env, id: u64) -> Result<ScheduledIntent, StreamError> {
     env.storage()
         .persistent()
         .get(&DataKey::Intent(id))
-        .ok_or(StreamError::IntentNotFound)
+        .ok_or_else(|| reject(Branch::IntentNotFound))
 }
 
 /// Persists an intent and extends its storage TTL.

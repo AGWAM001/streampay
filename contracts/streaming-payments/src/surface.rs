@@ -86,6 +86,23 @@ pub enum Branch {
     /// `withdraw_treasury`: amount exceeds fees collected minus fees already
     /// withdrawn.
     WithdrawTreasuryExceedsBalance,
+    // --------------------------------------------------- scheduled intents
+    /// No stored intent exists for the supplied id.
+    IntentNotFound,
+    /// An operation requiring a pending intent found a terminal intent.
+    IntentNotPending,
+    /// `execute_scheduled`: the next occurrence is not due yet.
+    IntentNotYetExecutable,
+    /// `execute_scheduled` / `cancel_scheduled`: the intent expired.
+    IntentExpired,
+    /// `cancel_scheduled`: the execution window has opened.
+    IntentNotCancellable,
+    /// A schedule parameter is inconsistent or outside its supported bounds.
+    ScheduleInvalidParameters,
+    /// A stored intent no longer matches its authorization commitment.
+    IntentParamsMismatch,
+    /// `reclaim_expired`: the intent has not expired yet.
+    IntentNotExpired,
     // --------------------------------------------------- token interactions
     /// `create_stream`: the token refused the pull of `deposit_amount + fee`
     /// (missing balance/allowance, a non-transferable asset, a non-SEP-41
@@ -108,7 +125,7 @@ impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 29] = [
+    pub const ALL: [Branch; 37] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -133,6 +150,14 @@ impl Branch {
         Branch::AcceptGovernorNotNominee,
         Branch::WithdrawTreasuryAmountNonPositive,
         Branch::WithdrawTreasuryExceedsBalance,
+        Branch::IntentNotFound,
+        Branch::IntentNotPending,
+        Branch::IntentNotYetExecutable,
+        Branch::IntentExpired,
+        Branch::IntentNotCancellable,
+        Branch::ScheduleInvalidParameters,
+        Branch::IntentParamsMismatch,
+        Branch::IntentNotExpired,
         Branch::CreateDepositTransferFailed,
         Branch::TopUpTransferFailed,
         Branch::RecipientPayoutFailed,
@@ -187,6 +212,21 @@ impl Branch {
             Branch::WithdrawTreasuryAmountNonPositive | Branch::WithdrawTreasuryExceedsBalance => {
                 &["withdraw_treasury"]
             }
+            Branch::IntentNotFound => &[
+                "get_intent",
+                "execute_scheduled",
+                "cancel_scheduled",
+                "reclaim_expired",
+            ],
+            Branch::IntentNotPending => {
+                &["execute_scheduled", "cancel_scheduled", "reclaim_expired"]
+            }
+            Branch::IntentNotYetExecutable
+            | Branch::IntentExpired
+            | Branch::IntentParamsMismatch => &["execute_scheduled"],
+            Branch::IntentNotCancellable => &["cancel_scheduled"],
+            Branch::ScheduleInvalidParameters => &["schedule_stream"],
+            Branch::IntentNotExpired => &["reclaim_expired"],
             Branch::CreateDepositTransferFailed => &["create_stream", "create_streams"],
             Branch::TopUpTransferFailed => &["top_up"],
             Branch::RecipientPayoutFailed => &["withdraw", "withdraw_max", "cancel_stream"],
@@ -225,6 +265,14 @@ impl Branch {
             Branch::AcceptGovernorNoPending => StreamError::NoPendingGovernor,
             Branch::WithdrawTreasuryAmountNonPositive => StreamError::ZeroAmount,
             Branch::WithdrawTreasuryExceedsBalance => StreamError::InsufficientTreasuryBalance,
+            Branch::IntentNotFound => StreamError::IntentNotFound,
+            Branch::IntentNotPending => StreamError::IntentNotPending,
+            Branch::IntentNotYetExecutable => StreamError::IntentNotYetExecutable,
+            Branch::IntentExpired => StreamError::IntentExpired,
+            Branch::IntentNotCancellable => StreamError::IntentNotCancellable,
+            Branch::ScheduleInvalidParameters => StreamError::InvalidScheduleParameters,
+            Branch::IntentParamsMismatch => StreamError::IntentParamsMismatch,
+            Branch::IntentNotExpired => StreamError::IntentNotExpired,
             Branch::CreateDepositTransferFailed => StreamError::DepositTransferFailed,
             Branch::TopUpTransferFailed => StreamError::TopUpTransferFailed,
             Branch::RecipientPayoutFailed => StreamError::RecipientPayoutFailed,
@@ -276,6 +324,18 @@ impl Branch {
             Branch::WithdrawTreasuryExceedsBalance => {
                 "amount exceeds fees collected minus fees already withdrawn"
             }
+            Branch::IntentNotFound => "no scheduled intent is stored under the id",
+            Branch::IntentNotPending => "the intent is already executed, cancelled, or expired",
+            Branch::IntentNotYetExecutable => "the next occurrence has not reached execute_after",
+            Branch::IntentExpired => "the intent has reached expires_at",
+            Branch::IntentNotCancellable => "the execution window opened before cancellation",
+            Branch::ScheduleInvalidParameters => {
+                "schedule parameters are inconsistent or out of bounds"
+            }
+            Branch::IntentParamsMismatch => {
+                "stored parameters do not match the authorization commitment"
+            }
+            Branch::IntentNotExpired => "the intent has not reached expires_at",
             Branch::CreateDepositTransferFailed => {
                 "the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token)"
             }
