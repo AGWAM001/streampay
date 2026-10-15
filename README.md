@@ -127,6 +127,28 @@ stellar contract deploy \
   --source deployer --network testnet
 ```
 
+## TTL & rent operations
+
+Streams and address indexes extend their TTL on every write (a ~29-day
+`extend_to`), so active state stays hot and abandoned streams archive the
+Soroban-native way. Three entries are **never** extended on-chain, though: the
+id counter, the contract instance, and the Wasm code entry. Their TTL is fixed
+at 4,095 ledgers — **~5.7 hours** — so a deployment needs external TTL
+maintenance before stream creation and *all* reads start failing on archived
+entries. [`infra/ttl-sentinel`](./infra/ttl-sentinel/README.md) covers that: it
+scans every storage class, projects expiry against sampled ledger cadence, and
+alerts (console / JSONL / webhook) — read-only and key-less by default, with an
+off-by-default funded extender as a separate component. It also projects rent
+from measured entry sizes, feeding the pricing/dust work. Full rationale and
+the per-class cost table: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §11
+and the [sentinel README](./infra/ttl-sentinel/README.md).
+
+```bash
+cd infra/ttl-sentinel && npm ci
+STREAMPAY_CONTRACT_ID=C... npm run scan    # one pass; --watch to loop
+npm run rent -- --streams 1000             # rent + cost projection
+```
+
 ## Repo layout
 
 ```text
@@ -135,6 +157,7 @@ frontend/                       minimal Next.js UI (Freighter wallet)
 fuzz/                           cargo-fuzz harness for the accrual math (own workspace)
 scripts/                        deploy_testnet.sh + the release/promotion pipeline scripts
 deployments/                    append-only promotion records + interface baselines
+infra/ttl-sentinel/             storage TTL + rent sentinel (scan, alerts, optional funded extender)
 docs/ARCHITECTURE.md            design deep-dive
 docs/DEPLOY_PIPELINE.md         sandbox → testnet → mainnet-canary promotion design
 docs/CANARY_RUNBOOK.md          mainnet canary + rollback procedure
