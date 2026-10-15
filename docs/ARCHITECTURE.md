@@ -12,11 +12,17 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 │                                                                    │
 │  lib.rs      entrypoints: create_stream / withdraw / withdraw_max / │
 │              cancel_stream / top_up / get_stream / available /      │
-│              recipient_streams / sender_streams                    │
+│              recipient_streams / sender_streams / set_fee_bps /    │
+│              nominate_governor / accept_governor / withdraw_treasury│
+│              treasury_status / stream_fee / verify_treasury /       │
+│              total_streams                                         │
 │  stream.rs   Stream type, storage, checked accrual math            │
+│  treasury.rs protocol-fee math, per-token accounting, governor,    │
+│              verification scan (see §11)                           │
 │  errors.rs   StreamError — stable numeric codes, append-only       │
 │  events.rs   StreamCreated / Withdrawn / StreamCancelled /         │
-│              StreamToppedUp (stream_id as topic)                   │
+│              StreamToppedUp (stream_id as topic), FeeCharged       │
+│              (stream_id as topic), FeeWithdrawn (token as topic)   │
 └──────────────────────────┬─────────────────────────────────────────┘
                            │ token interface (SAC-compatible)
                            ▼
@@ -31,6 +37,11 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 | `DataKey::Stream(id)` | `Stream` | full per-stream state |
 | `DataKey::RecipientStreams(addr)` | `Vec<u64>` | append-only ids where `addr` receives |
 | `DataKey::SenderStreams(addr)` | `Vec<u64>` | append-only ids created by `addr` |
+| `DataKey::Governor` *(instance)* | `Address` | treasury governor (constructor-set, two-step rotated) |
+| `DataKey::PendingGovernor` *(instance)* | `Address` | rotation in progress |
+| `DataKey::FeeBps` *(instance)* | `u32` | fee rate in basis points; absent = 0 (disabled) |
+| `DataKey::Treasury(token)` | `Treasury` | per-token fee accounting (`charged_total`, `withdrawn_total`) |
+| `DataKey::StreamFee(id)` | `StreamFeeRecord` | fee charged at creation: amount + token; absent = 0 |
 
 Streams live in **persistent** storage. Every mutating entrypoint that touches
 a stream extends its TTL (`TTL_THRESHOLD_LEDGERS = 200_000`, extend to
@@ -124,9 +135,13 @@ the *post-write* (smaller or zero) value. The suite contains a
 malicious-token test that attempts exactly this reentry.
 
 **Balance invariant:** the contract's token balance is always
-`≥ Σ (deposit − withdrawn)` across live streams. Funds enter only via
-`create_stream`/`top_up` and leave only via `withdraw`/`cancel_stream`, and
-every exit is bounded by the invariant `0 ≤ withdrawn ≤ streamed ≤ deposit`.
+`≥ Σ (deposit − withdrawn)` across live streams **plus** `Σ (charged_total −
+withdrawn_total)` across token treasuries. Funds enter only via
+`create_stream`/`top_up` and leave only via `withdraw`/`cancel_stream`
+(stream leg) and `withdraw_treasury` (fee leg), and every exit is bounded
+by `0 ≤ withdrawn ≤ streamed ≤ deposit` or by the collectible fee balance
+respectively. The two ledgers never mix: the fee a sender paid at creation
+is never part of any stream's `deposit`, so no payout path can reach it.
 
 ## 6. Lifecycle states
 
@@ -169,6 +184,11 @@ the public interface:
 | 11 | `MathOverflow` | a checked computation would overflow |
 | 12 | `NotAuthorized` | caller is neither sender nor (cancelable) recipient |
 | 13 | `NothingToWithdraw` | `withdraw_max` with an empty accrued balance |
+
+| 14 | `FeeRateTooHigh` | `set_fee_bps` above `MAX_FEE_BPS` |
+| 15 | `NotGovernor` | non-governor calls a governor-gated function (also: non-nominee `accept_governor`) |
+| 16 | `NoPendingGovernor` | `accept_governor` with no nomination pending |
+| 17 | `InsufficientTreasuryBalance` | treasury withdrawal above fees collected minus fees withdrawn |
 
 Codes are **append-only**: never renumber or reuse a variant.
 
@@ -222,6 +242,16 @@ or off-chain UX.
 - **`withdraw_max`** shares the `withdraw` payout tail (`pay_out`) so both
   paths inherit the same CEI ordering and reentrancy proof; index pagination
   and TTL behavior have dedicated tests in `test.rs`.
+- **Treasury property test** (`property_random_activity_sequences_keep_the_verifier_in_agreement`):
+  seeded (reproducible) random activity sequences — creates, partial/full
+  withdrawals, over-withdraw attempts, cancels by both parties, top-ups,
+  fee reconfigurations, treasury drains and guaranteed-fail treasury
+  attempts, across two tokens — assert after **every** step that
+  `treasury_status` equals an independent off-chain model, the paged
+  `verify_treasury` scan sums exactly to `charged_total` (the verifier
+  always agrees), per-stream `stream_fee` reads match the model, and the
+  contract's token balance equals outstanding stream funds plus collectible
+  fees — the fee ledger and the stream ledger never mix.
 
 ## 10. Open problems / roadmap hooks
 
@@ -233,3 +263,116 @@ or off-chain UX.
   read-modify-write; a `Stream` split into hot/cold fields could shave bytes.
 - Event indexer service — TypeScript worker polling `getEvents` per topic
   `stream_id`, materializing stream history for the UI.
+
+## 11. Treasury: protocol fees and their auditable distribution
+
+An **optional** fee layer, on by default *off* (`fee_bps = 0`), that funds
+protocol sustainability without touching a single line of the per-second
+accrual math.
+
+### 11.1 Fee model — charged at the deposit boundary only
+
+When (and only when) a stream is created while `fee_bps > 0`, the sender
+pays `deposit + fee` in a single `transfer_from` pull, where
+
+```text
+fee = deposit × fee_bps / 10_000        (floored; fee_bps ≤ MAX_FEE_BPS = 100)
+```
+
+- The stream's stored `deposit` is exactly the requested amount. `streamed_at`,
+  `available`, `withdraw`, `withdraw_max` and `cancel_amounts` are byte-for-byte
+  the v0.3 code paths — the fee is invisible to accrual and payout.
+- **Non-refundable, outside the stream.** The fee is never split, never
+  refunded, and never enters either leg of a cancellation.
+- **Floored to zero ⇒ no fee.** A fee that rounds below one whole token unit
+  charges nothing, stores nothing (`StreamFee` entry absent), and emits no
+  `FeeCharged` event.
+- **Top-ups are fee-free.** The fee is charged once, at creation; `top_up`
+  pulls face value only. (Charging per top-up would make the fee a tax on
+  *changing* a payroll, not on opening one; rejected for v1.)
+- **Only new streams pay.** `set_fee_bps` applies to streams created
+  afterwards; existing streams' economics are frozen at their creation-time
+  boundary.
+- **`fee_bps == 0` (the default, and the only mode any v0.3 deployment ran)
+  is bit-for-bit backward compatible:** no extra pull, no treasury writes,
+  no extra event, identical balances.
+
+Economic defaults are deliberately conservative: the protocol cap
+`MAX_FEE_BPS = 100` (1 %) is a hard constant, not governor-settable —
+raising it requires a new Wasm release and is an auditable interface change.
+
+### 11.2 Accumulation account
+
+Fees accumulate per token in `DataKey::Treasury(token) → { charged_total,
+withdrawn_total }`, written only in lockstep with the fee events:
+`charged_total` moves exactly when a `FeeCharged` is emitted,
+`withdrawn_total` exactly when a `FeeWithdrawn` is. Each funded stream also
+stores its own fee under `DataKey::StreamFee(id) → { token, amount }`, so
+the per-stream record and the per-token totals are two independent records
+of the same fact.
+
+### 11.3 Withdrawal governance
+
+- The governor is bound **at deploy time** by `__constructor(governor)` —
+  no `initialize()` call to front-run, no admin-less window.
+- Rotation is **two-step** (`nominate_governor` → `accept_governor`): only
+  an address that can prove control by authorizing the acceptance becomes
+  governor, so a typo'd nomination can never strand the treasury.
+- `withdraw_treasury(token, recipient, amount)` is governor-only, bounded
+  by `charged_total − withdrawn_total` (`InsufficientTreasuryBalance`), and
+  follows CEI: accounting + `FeeWithdrawn` event before the transfer.
+- `set_fee_bps` is governor-only and capped at `MAX_FEE_BPS`.
+
+### 11.4 Cancel-refund decision table (fees × cancellation)
+
+| State at cancel | Recipient leg | Sender leg | Treasury |
+|---|---|---|---|
+| before `start_time` | 0 | full `deposit` | keeps the fee (not refunded) |
+| mid-stream | `streamed − withdrawn` | `deposit − streamed` | keeps the fee |
+| at/after `end_time` | `deposit − withdrawn` | 0 | keeps the fee |
+| cancelled/depleted stream | reverts `StreamNotActive` — unchanged | — | — |
+
+The split legs are exactly the fee-less formulas; the fee sits outside
+both. Proof: `cancel_amounts` operates solely on `deposit`, `withdrawn` and
+`streamed_at` — none of which the fee layer ever mutates.
+
+### 11.5 Open verification — `fee_total == Σ fee events`, from public reads
+
+Three independently readable records must always agree:
+
+1. **Stored totals:** `treasury_status(token)` → `charged_total`,
+   `withdrawn_total`, `collectible`.
+2. **Stored per-stream fees:** `verify_treasury(token, start_id, count)`
+   pages over the stream-id space (`count` clamped to `MAX_PAGE_SIZE`),
+   summing `StreamFee` entries for that token (the record carries its
+   token, so interleaved multi-token ids filter correctly). Page from id 1
+   until `done`; the Σ must equal `charged_total`. `stream_fee(stream_id)`
+   gives the per-stream value, and `total_streams()` gives the scan range.
+3. **Event trail:** `FeeCharged` (topic: `stream_id`; data: token, payer,
+   amount, effective `fee_bps`) and `FeeWithdrawn` (topic: `token`; data:
+   governor, recipient, amount, cumulative `withdrawn_total`) via RPC
+   `getEvents`.
+
+`scripts/verify-fees.ts` automates all three cross-checks against a public
+RPC endpoint; anyone can run it with no keys. The scan extends the TTL of
+every fee entry it touches, so an actively-verified ledger stays hot; an
+old, unverified range may have archived entries — same recovery story as
+an abandoned stream (restore via RPC before re-verifying that range).
+
+### 11.6 Rejected alternatives
+
+- **Fee out of the deposit** (recipient receives `deposit − fee`): couples
+  the fee to accrual, retroactively complicates every payout formula and
+  the cancel split, and violates "fees never touch the accrual math".
+  Rejected.
+- **Fee on top-ups as well:** turns the fee into a tax on payroll
+  adjustments; the sender's ongoing cost becomes unpredictable. Rejected
+  for v1 (documented; would need its own event and decision table).
+- **Governor-less or deploy-script-initialized treasury:** any post-deploy
+  `initialize` has a front-running window on a public chain. Rejected in
+  favor of a constructor.
+- **One-step governor transfer:** a typo'd address irreversibly strands
+  all future fees. Rejected in favor of nominate/accept.
+- **Unbounded in-contract `verify_all` scan:** violates the "no unbounded
+  scans" rule (instruction budget); the bounded paged scan composes to a
+  full verification at the client layer instead.

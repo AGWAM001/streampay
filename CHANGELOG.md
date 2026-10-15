@@ -9,6 +9,41 @@ interface: they are only ever appended to, never renumbered or reused.
 
 ## [Unreleased]
 
+### Added
+- **Optional protocol-fee treasury** (`treasury.rs`): a fee charged once at
+  the deposit boundary of `create_stream` (`deposit × fee_bps / 10_000`,
+  floored, sender pays `deposit + fee`). The stream's `deposit` and every
+  accrual/payout/cancel computation are unchanged — at `fee_bps = 0` (the
+  default) behavior is bit-for-bit identical to v0.3. Protocol cap:
+  `MAX_FEE_BPS = 100` (1 %), a hard constant.
+- Per-token treasury accounting (`Treasury { charged_total, withdrawn_total }`)
+  plus a per-stream fee record (`StreamFee { token, amount }`), written only
+  in lockstep with the new append-only events `FeeCharged` (stream_id topic)
+  and `FeeWithdrawn` (token topic).
+- Withdrawal governance: `__constructor(governor)` binds the treasury
+  governor at deploy time (no front-runnable bootstrap); two-step rotation
+  (`nominate_governor` / `accept_governor`); governor-gated `set_fee_bps`
+  and `withdraw_treasury` (CEI-ordered, bounded by fees collected minus
+  fees withdrawn).
+- Open verification reads: `treasury_status(token)`, `stream_fee(stream_id)`,
+  `total_streams()`, and the bounded paged scan `verify_treasury(token,
+  start_id, count)` — proving `fee_total == Σ per-stream fees == Σ FeeCharged
+  events` from public reads. `scripts/verify-fees.ts` is a key-less public
+  audit script reconciling all three records against any Soroban RPC.
+- New `StreamError` variants (appended): `FeeRateTooHigh` (14),
+  `NotGovernor` (15), `NoPendingGovernor` (16),
+  `InsufficientTreasuryBalance` (17).
+- Treasury test suite incl. the decision-table test for fees ×
+  cancel-refunds and a seeded property test asserting the verifier always
+  agrees across random activity sequences.
+
+### Changed
+- **Deployment interface:** the contract now has a constructor. Deploy with
+  the governor address as a constructor argument
+  (`stellar contract deploy … -- --governor G…`); `scripts/deploy_testnet.sh`
+  passes the deployer as governor. Existing v0.3 deployments are unaffected
+  (no upgrade path; new deployments only).
+
 ## [0.3.0] - 2026-10-04
 
 ### Changed
