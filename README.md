@@ -57,6 +57,8 @@ A stream is a half-open window `[start_time, end_time)`. At any ledger timestamp
 
 Deep dive (storage model, checked math, reentrancy, TTL strategy, design decisions): [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
+Incident response drills and procedures: [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md).
+
 ## Contract API
 
 | Function | Caller | Moves tokens | Emits |
@@ -125,19 +127,47 @@ stellar contract deploy \
   --source deployer --network testnet
 ```
 
+## TTL & rent operations
+
+Streams and address indexes extend their TTL on every write (a ~29-day
+`extend_to`), so active state stays hot and abandoned streams archive the
+Soroban-native way. Three entries are **never** extended on-chain, though: the
+id counter, the contract instance, and the Wasm code entry. Their TTL is fixed
+at 4,095 ledgers — **~5.7 hours** — so a deployment needs external TTL
+maintenance before stream creation and *all* reads start failing on archived
+entries. [`infra/ttl-sentinel`](./infra/ttl-sentinel/README.md) covers that: it
+scans every storage class, projects expiry against sampled ledger cadence, and
+alerts (console / JSONL / webhook) — read-only and key-less by default, with an
+off-by-default funded extender as a separate component. It also projects rent
+from measured entry sizes, feeding the pricing/dust work. Full rationale and
+the per-class cost table: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §11
+and the [sentinel README](./infra/ttl-sentinel/README.md).
+
+```bash
+cd infra/ttl-sentinel && npm ci
+STREAMPAY_CONTRACT_ID=C... npm run scan    # one pass; --watch to loop
+npm run rent -- --streams 1000             # rent + cost projection
+```
+
 ## Repo layout
 
 ```text
 contracts/streaming-payments/   the contract (lib.rs, stream.rs, errors.rs, events.rs, test.rs)
 frontend/                       minimal Next.js UI (Freighter wallet)
 fuzz/                           cargo-fuzz harness for the accrual math (own workspace)
-scripts/deploy_testnet.sh       one-command testnet demo
+scripts/                        deploy_testnet.sh + the release/promotion pipeline scripts
+deployments/                    append-only promotion records + interface baselines
+infra/ttl-sentinel/             storage TTL + rent sentinel (scan, alerts, optional funded extender)
 docs/ARCHITECTURE.md            design deep-dive
+docs/DEPLOY_PIPELINE.md         sandbox → testnet → mainnet-canary promotion design
+docs/CANARY_RUNBOOK.md          mainnet canary + rollback procedure
 docs/DEMO.md                    verified testnet walkthrough
 docs/GOOD_FIRST_ISSUES.md       ready-to-file contributor tickets
 .github/workflows/ci.yml        test + fmt + clippy + coverage + wasm + lint/build/audit + supply chain
 .github/workflows/release.yml   tag-driven Wasm release with SHA-256 digests
 .github/workflows/fuzz.yml      scheduled fuzz sessions (non-blocking)
+.github/workflows/promote.yml   gated promotions (sandbox → testnet → mainnet canary)
+.github/workflows/rehearsal.yml secret-free dress rehearsal of the pipeline
 CHANGELOG.md                    release history (Keep a Changelog)
 ```
 
@@ -150,9 +180,12 @@ CHANGELOG.md                    release history (Keep a Changelog)
 - **v0.3** — ✅ fuzzing in CI (`cargo-fuzz` on the rate math, scheduled),
   multi-token batch stream creation
 - **v0.4** — full web UI polish (accrual charts), ✅ testnet demo script
+- **v0.5** — ✅ incident response drills and runbook (testnet simulation)
 - **v1.0** — external audit, mainnet deployment guide
 
 Feature requests live in [`.github/ISSUE_TEMPLATE/`](./.github/ISSUE_TEMPLATE/) — good first issues are tagged [`good first issue`](https://github.com/Neziahtech/streampay/labels/good%20first%20issue) and documented in [`docs/GOOD_FIRST_ISSUES.md`](./docs/GOOD_FIRST_ISSUES.md).
+
+Incident drill tooling and results are documented in [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md) and [`docs/INCIDENT_RESULTS.md`](./docs/INCIDENT_RESULTS.md). Run the drills with [`scripts/run_all_drills.sh`](./scripts/run_all_drills.sh); individual scenarios are available under `scripts/drill_*.sh`.
 
 ## Contributing
 
