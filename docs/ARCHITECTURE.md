@@ -10,7 +10,7 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 ┌────────────────────────────────────────────────────────────────────┐
 │                        StreamingPayments                           │
 │                                                                    │
-│  lib.rs      entrypoints: create_stream / withdraw / withdraw_max / │
+│  lib.rs      entrypoints: create_stream(s) / withdraw / withdraw_max /│
 │              cancel_stream / top_up / get_stream / available /      │
 │              recipient_streams / sender_streams / set_fee_bps /    │
 │              nominate_governor / accept_governor / withdraw_treasury│
@@ -20,9 +20,10 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 │  treasury.rs protocol-fee math, per-token accounting, governor,    │
 │              verification scan (see §11)                           │
 │  errors.rs   StreamError — stable numeric codes, append-only       │
-│  events.rs   StreamCreated / Withdrawn / StreamCancelled /         │
-│              StreamToppedUp (stream_id as topic), FeeCharged       │
-│              (stream_id as topic), FeeWithdrawn (token as topic)   │
+│  events.rs   StreamCreated / Withdrawn / StreamCancelled /        │
+│              StreamToppedUp / FeeCharged (stream_id topic);        │
+│              StreamsCreated (sender topic), FeeWithdrawn          │
+│              (token topic)                                         │
 └──────────────────────────┬─────────────────────────────────────────┘
                            │ token interface (SAC-compatible)
                            ▼
@@ -63,10 +64,13 @@ Instead, discovery is **per-address**: `create_stream` appends the new id to
 the sender's and the recipient's own index lists — each bounded by that one
 user's activity, written only at creation, and paginated on read
 (`recipient_streams` / `sender_streams`, `limit` clamped to
-`MAX_PAGE_SIZE = 50`). The indexes are *advisory*: never authorize against
-them; the `Stream` entry is the source of truth, and `StreamCreated` events
-remain the complete audit trail (an external indexer can still rebuild or
-cross-check the lists).
+`MAX_PAGE_SIZE = 50`). `create_streams` reserves its contiguous id range with
+one counter write and groups token pulls by token; stream records and address
+indexes remain per stream. The indexes are *advisory*: never authorize against
+them; the `Stream` entry is the source of truth. A single-stream call emits
+`StreamCreated`; a batch emits one `StreamsCreated` event listing its ids.
+Fee-enabled batches retain one `FeeCharged` event per charged stream, keeping
+the fee ledger independently auditable.
 
 ## 3. Accrual math
 
@@ -108,6 +112,7 @@ nothing has accrued, at `now ≥ end_time` the full duration has elapsed.
 | Action | who may call | auth consumed |
 |---|---|---|
 | `create_stream` | anyone; `sender` must authorize | sender |
+| `create_streams` | anyone; `sender` must authorize once for the batch | sender |
 | `withdraw` | recipient only | recipient |
 | `cancel_stream` | sender always; recipient iff `cancelable` | caller |
 | `top_up` | sender only | sender |
@@ -130,9 +135,9 @@ happen **before** the token transfers:
   emit `Withdrawn`, *then* `token.transfer`.
 - `cancel_stream`: set `Cancelled`, record the payout as withdrawn, emit
   `StreamCancelled`, *then* the two transfers.
-- `create_stream` / `top_up`: pull tokens first, persist after — if a
-  reentrant callback abused the transfer-in, the persisted state still
-  reconciles with the balance (invariant below).
+- `create_stream` / `create_streams` / `top_up`: pull tokens before persisting
+  stream records — if a reentrant callback abused the transfer-in, the
+  persisted state still reconciles with the balance (invariant below).
 
 Additionally, `withdraw` and `cancel_stream` re-read `status` after auth: a
 malicious token contract that reenters `withdraw` during its own transfer

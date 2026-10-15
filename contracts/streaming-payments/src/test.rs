@@ -26,7 +26,7 @@ use soroban_sdk::{
 
 use crate::stream::streamed_at;
 use crate::test_client::StreamingPaymentsClient as Client;
-use crate::{StreamError, StreamStatus, StreamingPayments, MAX_DURATION_SECONDS};
+use crate::{StreamError, StreamInput, StreamStatus, StreamingPayments, MAX_DURATION_SECONDS};
 
 // ---------------------------------------------------------------- fixtures --
 
@@ -147,6 +147,253 @@ fn create_stream_pulls_deposit_and_stores_state() {
     assert_eq!(
         TokenClient::new(&f.env, &f.token).balance(&f.client.address),
         DEPOSIT
+    );
+}
+
+#[test]
+fn create_streams_creates_multiple_streams_and_pulls_funds_once() {
+    let f = Fixture::setup();
+    let now = f.env.ledger().timestamp();
+    let inputs = soroban_sdk::Vec::from_array(
+        &f.env,
+        [
+            StreamInput {
+                recipient: f.recipient.clone(),
+                token: f.token.clone(),
+                deposit_amount: DEPOSIT / 2,
+                start_time: now,
+                end_time: now + DAY,
+                cancelable: true,
+            },
+            StreamInput {
+                recipient: Address::generate(&f.env),
+                token: f.token.clone(),
+                deposit_amount: DEPOSIT / 2,
+                start_time: now + DAY,
+                end_time: now + 2 * DAY,
+                cancelable: false,
+            },
+        ],
+    );
+
+    let ids = f.client.mock_all_auths().create_streams(&f.sender, &inputs);
+    assert_eq!(ids.len(), 2);
+    let batch_event = crate::StreamsCreated {
+        sender: f.sender.clone(),
+        stream_ids: ids.clone(),
+    };
+    assert_eq!(
+        f.env.events().all().filter_by_contract(&f.client.address),
+        [batch_event.to_xdr(&f.env, &f.client.address)]
+    );
+    assert_eq!(ids.get(0), Some(1));
+    assert_eq!(ids.get(1), Some(2));
+    assert_eq!(
+        f.client.mock_all_auths().get_stream(&1).deposit,
+        DEPOSIT / 2
+    );
+    assert_eq!(
+        f.client.mock_all_auths().get_stream(&2).deposit,
+        DEPOSIT / 2
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        DEPOSIT
+    );
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .sender_streams(&f.sender, &0, &50)
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn create_streams_groups_token_pulls_by_asset() {
+    let f = Fixture::setup();
+    let other_token = f
+        .env
+        .register_stellar_asset_contract_v2(Address::generate(&f.env))
+        .address();
+    StellarAssetClient::new(&f.env, &other_token).mint(&f.sender, &DEPOSIT);
+    StellarAssetClient::new(&f.env, &other_token).approve(
+        &f.sender,
+        &f.client.address,
+        &DEPOSIT,
+        &1_000_000u32,
+    );
+    let now = f.env.ledger().timestamp();
+    let inputs = soroban_sdk::Vec::from_array(
+        &f.env,
+        [
+            StreamInput {
+                recipient: f.recipient.clone(),
+                token: f.token.clone(),
+                deposit_amount: DEPOSIT / 2,
+                start_time: now,
+                end_time: now + DAY,
+                cancelable: true,
+            },
+            StreamInput {
+                recipient: Address::generate(&f.env),
+                token: other_token.clone(),
+                deposit_amount: DEPOSIT / 2,
+                start_time: now,
+                end_time: now + DAY,
+                cancelable: false,
+            },
+        ],
+    );
+
+    let ids = f.client.mock_all_auths().create_streams(&f.sender, &inputs);
+    assert_eq!(ids.len(), 2);
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        DEPOSIT / 2
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &other_token).balance(&f.client.address),
+        DEPOSIT / 2
+    );
+}
+
+#[test]
+fn create_streams_charges_fees_for_each_stream() {
+    let f = Fixture::setup();
+    f.client.mock_all_auths().set_fee_bps(&f.governor, &100);
+    let now = f.env.ledger().timestamp();
+    let inputs = soroban_sdk::Vec::from_array(
+        &f.env,
+        [
+            StreamInput {
+                recipient: f.recipient.clone(),
+                token: f.token.clone(),
+                deposit_amount: DEPOSIT / 2,
+                start_time: now,
+                end_time: now + DAY,
+                cancelable: true,
+            },
+            StreamInput {
+                recipient: Address::generate(&f.env),
+                token: f.token.clone(),
+                deposit_amount: DEPOSIT / 2,
+                start_time: now,
+                end_time: now + DAY,
+                cancelable: false,
+            },
+        ],
+    );
+
+    let ids = f.client.mock_all_auths().create_streams(&f.sender, &inputs);
+    assert_eq!(
+        f.client.mock_all_auths().stream_fee(&ids.get(0).unwrap()),
+        DEPOSIT / 200
+    );
+    assert_eq!(
+        f.client.mock_all_auths().stream_fee(&ids.get(1).unwrap()),
+        DEPOSIT / 200
+    );
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .treasury_status(&f.token)
+            .charged_total,
+        DEPOSIT / 100
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        DEPOSIT + DEPOSIT / 100
+    );
+}
+
+#[test]
+fn create_streams_rejects_mixed_valid_invalid_batch_atomically() {
+    let f = Fixture::setup();
+    let now = f.env.ledger().timestamp();
+    let inputs = soroban_sdk::Vec::from_array(
+        &f.env,
+        [
+            StreamInput {
+                recipient: f.recipient.clone(),
+                token: f.token.clone(),
+                deposit_amount: DEPOSIT / 2,
+                start_time: now,
+                end_time: now + DAY,
+                cancelable: true,
+            },
+            StreamInput {
+                recipient: Address::generate(&f.env),
+                token: f.token.clone(),
+                deposit_amount: 0,
+                start_time: now,
+                end_time: now + DAY,
+                cancelable: false,
+            },
+        ],
+    );
+
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_create_streams(&f.sender, &inputs)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::ZeroAmount);
+    assert_eq!(f.client.mock_all_auths().total_streams(), 0);
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.sender),
+        2 * DEPOSIT
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        0
+    );
+    assert!(f
+        .client
+        .mock_all_auths()
+        .sender_streams(&f.sender, &0, &50)
+        .is_empty());
+}
+
+#[test]
+fn create_streams_accepts_empty_batch_without_creating_streams() {
+    let f = Fixture::setup();
+    let ids = f
+        .client
+        .mock_all_auths()
+        .create_streams(&f.sender, &soroban_sdk::Vec::new(&f.env));
+    assert!(ids.is_empty());
+    assert_eq!(f.client.mock_all_auths().total_streams(), 0);
+}
+
+#[test]
+fn create_streams_rejects_rate_math_overflow_atomically() {
+    let f = Fixture::setup();
+    let now = f.env.ledger().timestamp();
+    let inputs = soroban_sdk::Vec::from_array(
+        &f.env,
+        [StreamInput {
+            recipient: f.recipient.clone(),
+            token: f.token.clone(),
+            deposit_amount: i128::MAX,
+            start_time: now,
+            end_time: now + 3,
+            cancelable: false,
+        }],
+    );
+
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_create_streams(&f.sender, &inputs)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::MathOverflow);
+    assert_eq!(f.client.mock_all_auths().total_streams(), 0);
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        0
     );
 }
 

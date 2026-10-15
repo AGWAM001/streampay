@@ -57,6 +57,7 @@ label {
 
 input[type="text"],
 input[type="number"],
+textarea,
 select {
   width: 100%;
   background: #0d1320;
@@ -65,6 +66,11 @@ select {
   border-radius: 8px;
   padding: 9px 12px;
   font: 14px ui-monospace, Consolas, monospace;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.5;
 }
 
 button {

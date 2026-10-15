@@ -18,6 +18,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { signTransaction } from "@stellar/freighter-api";
+import type { BatchStreamEntry } from "./batch";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
@@ -193,6 +194,57 @@ export async function createStream(
   );
   // create_stream returns the new stream id (u64).
   return send(sender, op, (v) => BigInt(scValToNative(v) as bigint));
+}
+
+/** Creates a payroll batch with a single contract invocation. */
+export async function createStreams(
+  sender: string,
+  token: string,
+  entries: BatchStreamEntry[],
+  cancelable: boolean
+): Promise<bigint[]> {
+  if (entries.length === 0) {
+    throw new Error("Add at least one stream to the batch.");
+  }
+
+  const start = BigInt(Math.floor(Date.now() / 1000) + 1);
+  const inputs = entries.map((entry) => {
+    const duration = BigInt(entry.duration);
+    const end = start + duration;
+    if (end > (1n << 64n) - 1n) {
+      throw new Error("A batch stream end time exceeds the u64 time limit.");
+    }
+
+    const fields = [
+      ["cancelable", nativeToScVal(cancelable)],
+      ["deposit_amount", i128(entry.deposit)],
+      ["end_time", u64(end)],
+      ["recipient", scAddr(entry.recipient)],
+      ["start_time", u64(start)],
+      ["token", scAddr(token)],
+    ] as const;
+    return xdr.ScVal.scvMap(
+      fields.map(
+        ([name, value]) =>
+          new xdr.ScMapEntry({
+            key: xdr.ScVal.scvSymbol(name),
+            val: value,
+          })
+      )
+    );
+  });
+  const op = contract().call(
+    "create_streams",
+    scAddr(sender),
+    xdr.ScVal.scvVec(inputs)
+  );
+  return send(sender, op, (v) => {
+    const decoded = scValToNative(v);
+    if (!Array.isArray(decoded)) {
+      throw new Error("Contract returned an invalid stream id list.");
+    }
+    return decoded.map((id) => BigInt(id));
+  });
 }
 
 export async function withdrawFromStream(
