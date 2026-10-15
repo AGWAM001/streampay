@@ -9,6 +9,20 @@ interface: they are only ever appended to, never renumbered or reused.
 
 ## [Unreleased]
 
+### Added
+- Error-surface instrumentation and a generated test matrix
+  (`error_surface_test.rs`): every `(entrypoint, condition)` rejection branch is
+  registered in `src/surface.rs`, probed for its declared `StreamError`, and
+  checked for coverage — CI fails on any error code with zero reachable
+  branches or any branch without a code.
+- Generated [`docs/ERRORS.md`](./docs/ERRORS.md) (entrypoint × branch → code
+  table) with a CI step that regenerates it and diffs the committed artifact.
+
+### Changed
+- Retired `StreamError::NotStreamSender` (2) and `NotStreamRecipient` (3) as
+  unreachable under the append-only policy: the numeric codes are kept and
+  reserved, never reused or renumbered.
+
 ## [0.3.0] - 2026-10-04
 
 ### Changed

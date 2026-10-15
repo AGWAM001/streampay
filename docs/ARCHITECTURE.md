@@ -170,7 +170,21 @@ the public interface:
 | 12 | `NotAuthorized` | caller is neither sender nor (cancelable) recipient |
 | 13 | `NothingToWithdraw` | `withdraw_max` with an empty accrued balance |
 
-Codes are **append-only**: never renumber or reuse a variant.
+Codes are **append-only**: never renumber or reuse a variant. Codes 2
+(`NotStreamSender`) and 3 (`NotStreamRecipient`) are **retired**: they were
+reserved role checks that no entrypoint ever produced, so they are kept (never
+renumbered or reused) but marked unreachable.
+
+The authoritative, machine-generated view of this surface lives in
+[`docs/ERRORS.md`](./ERRORS.md): a per-branch table mapping every
+`(entrypoint, condition)` decision to its code, emitted from the contract's own
+instrumentation (`src/surface.rs`) by `cargo run -p streampay-contract --example
+error_surface_doc`, with a CI step that regenerates it and fails on drift. Each
+rejection site calls `surface::reject(Branch::…)` instead of returning a raw
+code, so the mapping is generated rather than hand-maintained; the
+`error_surface_test.rs` matrix proves every reachable branch fires its declared
+code, and the coverage test fails CI on any error code with zero reachable
+branches (unless explicitly retired) or any branch that lacks a code.
 
 ## 8. Design decisions (and rejected alternatives)
 
@@ -219,6 +233,11 @@ or off-chain UX.
   monotonicity, and "errors are only ever genuine `MathOverflow`". CI runs a
   scheduled session (`fuzz.yml`, non-blocking); any crash becomes a regression
   unit test.
+- **Error surface** (`error_surface_test.rs`): the branch registry in
+  `surface.rs` is walked by generated tests — one probe per branch asserts the
+  exact branch fires its declared code — plus coverage tests proving no code is
+  dead and no branch uncoded. `docs/ERRORS.md` is generated from the same table
+  and diffed in CI.
 - **`withdraw_max`** shares the `withdraw` payout tail (`pay_out`) so both
   paths inherit the same CEI ordering and reentrancy proof; index pagination
   and TTL behavior have dedicated tests in `test.rs`.
