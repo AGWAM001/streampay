@@ -133,23 +133,13 @@ stellar contract deploy \
 contracts/streaming-payments/   the contract (lib.rs, stream.rs, errors.rs, events.rs, test.rs)
 frontend/                       minimal Next.js UI (Freighter wallet)
 fuzz/                           cargo-fuzz harness for the accrual math (own workspace)
-scripts/                        deploy_testnet.sh + the release/promotion pipeline scripts
 scripts/deploy_testnet.sh       one-command testnet demo
-scripts/run_all_drills.sh       incident response drill execution
-scripts/drill_*.sh              individual drill scripts for each scenario
-deployments/                    append-only promotion records + interface baselines
 docs/ARCHITECTURE.md            design deep-dive
-docs/DEPLOY_PIPELINE.md         sandbox → testnet → mainnet-canary promotion design
-docs/CANARY_RUNBOOK.md          mainnet canary + rollback procedure
 docs/DEMO.md                    verified testnet walkthrough
 docs/GOOD_FIRST_ISSUES.md       ready-to-file contributor tickets
-docs/INCIDENT_RUNBOOK.md        incident response procedures and drills
-docs/INCIDENT_RESULTS.md       drill execution results and tracking
 .github/workflows/ci.yml        test + fmt + clippy + coverage + wasm + lint/build/audit + supply chain
 .github/workflows/release.yml   tag-driven Wasm release with SHA-256 digests
 .github/workflows/fuzz.yml      scheduled fuzz sessions (non-blocking)
-.github/workflows/promote.yml   gated promotions (sandbox → testnet → mainnet canary)
-.github/workflows/rehearsal.yml secret-free dress rehearsal of the pipeline
 CHANGELOG.md                    release history (Keep a Changelog)
 ```
 
@@ -166,6 +156,8 @@ CHANGELOG.md                    release history (Keep a Changelog)
 - **v1.0** — external audit, mainnet deployment guide
 
 Feature requests live in [`.github/ISSUE_TEMPLATE/`](./.github/ISSUE_TEMPLATE/) — good first issues are tagged [`good first issue`](https://github.com/Neziahtech/streampay/labels/good%20first%20issue) and documented in [`docs/GOOD_FIRST_ISSUES.md`](./docs/GOOD_FIRST_ISSUES.md).
+
+Incident drill tooling and results are documented in [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md) and [`docs/INCIDENT_RESULTS.md`](./docs/INCIDENT_RESULTS.md). Run the drills with [`scripts/run_all_drills.sh`](./scripts/run_all_drills.sh); individual scenarios are available under `scripts/drill_*.sh`.
 
 ## Contributing
 
