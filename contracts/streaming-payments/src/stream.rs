@@ -9,7 +9,6 @@
 use soroban_sdk::{contracttype, Address, Env, MuxedAddress, Vec};
 
 use crate::errors::StreamError;
-use crate::surface::{self, Branch};
 
 /// Maximum supported stream duration: 100 years, including leap days
 /// (36,525 days). Bounds worst-case rate multiplications and rejects
@@ -27,8 +26,8 @@ pub const MAX_PAGE_SIZE: u32 = 50;
 /// eventually archived off-chain (and auto-restored at a fee when next read).
 /// Every mutating entrypoint extends the stream entry's TTL, so a stream that
 /// is actually being used never goes cold.
-pub(crate) const TTL_THRESHOLD_LEDGERS: u32 = 200_000; // extend when TTL drops below ~11.5 days
-pub(crate) const TTL_EXTEND_LEDGERS: u32 = 500_000; // extend to ~29 days
+const TTL_THRESHOLD_LEDGERS: u32 = 200_000; // extend when TTL drops below ~11.5 days
+const TTL_EXTEND_LEDGERS: u32 = 500_000; // extend to ~29 days
 
 /// Lifecycle state of a stream.
 #[contracttype]
@@ -84,21 +83,13 @@ pub enum DataKey {
     /// Append-only index of stream ids created (as sender) by the given
     /// address. Same advisory semantics as [`DataKey::RecipientStreams`].
     SenderStreams(Address),
-    /// Treasury governor address (instance storage; set once by the
-    /// contract constructor, later by two-step nomination/acceptance).
-    Governor,
-    /// Pending governor nominee (instance storage; set by
-    /// `nominate_governor`, cleared by `accept_governor`).
-    PendingGovernor,
-    /// Configured protocol fee in basis points (instance storage; absent
-    /// means 0 — fees disabled, the v0.3 behavior).
-    FeeBps,
-    /// Per-token fee accounting: fees charged minus fees withdrawn
-    /// (persistent storage; written only by fee-affecting entrypoints).
-    Treasury(Address),
-    /// Fee charged for one stream at creation time (persistent storage;
-    /// written only when the fee rounds above zero, so absent == 0).
-    StreamFee(u64),
+    /// Next scheduled-intent id to hand out; ids start at 1.
+    NextIntentId,
+    /// The scheduled intent with the given id.
+    Intent(u64),
+    /// Append-only index of scheduled-intent ids created (as sender) by the
+    /// given address. Same advisory semantics as [`DataKey::SenderStreams`].
+    SenderIntents(Address),
 }
 
 /// Seconds elapsed of the stream window at the current ledger time.
@@ -110,13 +101,6 @@ pub fn elapsed_seconds(env: &Env, start_time: u64, end_time: u64) -> u64 {
     if now <= start_time {
         0
     } else if now >= end_time {
-        // MUTANT-SUPPRESS: replace - with + is acceptable because this branch
-        // is only reachable when now >= end_time, which means the full duration
-        // has already elapsed. The test elapsed_after_end_returns_full_duration
-        // verifies that the full deposit is available at this point. The mutation
-        // would cause an overflow in the subsequent streamed_at calculation,
-        // which is caught by MathOverflow. This is an unreachable code path given
-        // the contract's usage pattern.
         end_time - start_time
     } else {
         now - start_time
@@ -130,7 +114,7 @@ pub fn elapsed_seconds(env: &Env, start_time: u64, end_time: u64) -> u64 {
 pub fn validate_capacity(deposit: i128, duration: u64) -> Result<(), StreamError> {
     let cap = u128::MAX / (duration.max(1) as u128);
     if (deposit as u128) > cap {
-        return Err(surface::reject(Branch::CapacityOverflow));
+        return Err(StreamError::MathOverflow);
     }
     Ok(())
 }
@@ -149,7 +133,7 @@ pub fn streamed_at(deposit: i128, duration: u64, elapsed: u64) -> Result<i128, S
     }
     let product = (deposit as u128)
         .checked_mul(elapsed as u128)
-        .ok_or_else(|| surface::reject(Branch::RateProductOverflow))?;
+        .ok_or(StreamError::MathOverflow)?;
     let streamed = (product / (duration.max(1) as u128)).min(deposit as u128);
     // `streamed <= deposit <= i128::MAX`, so the narrowing cast cannot wrap.
     Ok(streamed as i128)
@@ -172,7 +156,7 @@ pub fn available_amount(env: &Env, stream: &Stream) -> Result<i128, StreamError>
     let streamed = streamed_amount(env, stream)?;
     streamed
         .checked_sub(stream.withdrawn)
-        .ok_or_else(|| surface::reject(Branch::AvailableBalanceOverflow))
+        .ok_or(StreamError::MathOverflow)
 }
 
 /// Payout split at cancellation: `(recipient_amount, sender_amount)`.
@@ -183,11 +167,11 @@ pub fn cancel_amounts(env: &Env, stream: &Stream) -> Result<(i128, i128), Stream
     let streamed = streamed_amount(env, stream)?;
     let recipient_amount = streamed
         .checked_sub(stream.withdrawn)
-        .ok_or_else(|| surface::reject(Branch::CancelSplitOverflow))?;
+        .ok_or(StreamError::MathOverflow)?;
     let sender_amount = stream
         .deposit
         .checked_sub(streamed)
-        .ok_or_else(|| surface::reject(Branch::CancelSplitOverflow))?;
+        .ok_or(StreamError::MathOverflow)?;
     Ok((recipient_amount, sender_amount))
 }
 
@@ -204,23 +188,12 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
-/// Reserves a contiguous range of stream ids with one persistent write.
-pub fn reserve_stream_ids(env: &Env, count: u32) -> Result<u64, StreamError> {
-    let key = DataKey::NextStreamId;
-    let first: u64 = env.storage().persistent().get(&key).unwrap_or(1);
-    let next = first
-        .checked_add(count as u64)
-        .ok_or(StreamError::MathOverflow)?;
-    env.storage().persistent().set(&key, &next);
-    Ok(first)
-}
-
 /// Loads a stream, or returns [`StreamError::StreamNotFound`].
 pub fn get_stream(env: &Env, id: u64) -> Result<Stream, StreamError> {
     env.storage()
         .persistent()
         .get(&DataKey::Stream(id))
-        .ok_or_else(|| surface::reject(Branch::StreamNotFound))
+        .ok_or(StreamError::StreamNotFound)
 }
 
 /// Persists a stream and extends its storage TTL.
@@ -234,8 +207,7 @@ pub fn put_stream(env: &Env, stream: &Stream) {
 
 /// Appends a stream's id to both parties' address indexes.
 ///
-/// Called after each stream created by `create_stream` or `create_streams`
-/// is persisted.
+/// Called once, from `create_stream`, right after the stream is persisted.
 /// Cancel/deplete/top-up flows intentionally do not touch the indexes: they
 /// are append-only discovery aids keyed by *creation*, not by lifecycle.
 pub fn index_stream(env: &Env, stream: &Stream) {
@@ -251,7 +223,7 @@ pub fn index_stream(env: &Env, stream: &Stream) {
     );
 }
 
-fn push_to_index(env: &Env, key: &DataKey, id: u64) {
+pub(crate) fn push_to_index(env: &Env, key: &DataKey, id: u64) {
     let mut ids: Vec<u64> = env
         .storage()
         .persistent()
