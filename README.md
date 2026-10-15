@@ -130,10 +130,12 @@ stellar contract deploy \
 ```text
 contracts/streaming-payments/   the contract (lib.rs, stream.rs, errors.rs, events.rs, test.rs)
 frontend/                       minimal Next.js UI (Freighter wallet)
+indexer/                        Soroban event indexer (TypeScript + SQLite + REST API)
 fuzz/                           cargo-fuzz harness for the accrual math (own workspace)
 scripts/deploy_testnet.sh       one-command testnet demo
 docs/ARCHITECTURE.md            design deep-dive
 docs/DEMO.md                    verified testnet walkthrough
+indexer/README.md               event indexer setup, configuration, and API
 docs/GOOD_FIRST_ISSUES.md       ready-to-file contributor tickets
 .github/workflows/ci.yml        test + fmt + clippy + coverage + wasm + lint/build/audit + supply chain
 .github/workflows/release.yml   tag-driven Wasm release with SHA-256 digests
