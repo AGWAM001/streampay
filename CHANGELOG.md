@@ -22,6 +22,18 @@ interface: they are only ever appended to, never renumbered or reused.
 - Retired `StreamError::NotStreamSender` (2) and `NotStreamRecipient` (3) as
   unreachable under the append-only policy: the numeric codes are kept and
   reserved, never reused or renumbered.
+- Governed release pipeline (`sandbox → testnet → mainnet canary`):
+  `.github/workflows/promote.yml` (manual dispatch, GitHub
+  Environment-gated approvals, digest continuity at every step, automatic
+  rollback job) and `.github/workflows/rehearsal.yml` (secret-free dress
+  rehearsal, mocked deploys). New scripts under `scripts/`:
+  `release_gates.sh`, `verify_release_digest.sh`,
+  `contract_interface_hash.sh`, `schema_diff.sh`, `deploy_contract.sh`,
+  `canary_check.sh`, `record_promotion.sh`, `rollback_mainnet.sh`,
+  `promote_rehearsal.sh`, `lib.sh`.
+- Append-only deployment records in `deployments/` (promotion log, per-run
+  records, per-environment contract-interface baselines) and the design +
+  operator docs `docs/DEPLOY_PIPELINE.md` and `docs/CANARY_RUNBOOK.md`.
 
 ## [0.3.0] - 2026-10-04
 
