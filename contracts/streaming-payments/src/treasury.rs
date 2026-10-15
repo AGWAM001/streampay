@@ -50,6 +50,7 @@ use soroban_sdk::{contracttype, Address, Env};
 
 use crate::errors::StreamError;
 use crate::stream::{DataKey, MAX_PAGE_SIZE, TTL_EXTEND_LEDGERS, TTL_THRESHOLD_LEDGERS};
+use crate::surface::{self, Branch};
 
 /// Basis-point denominator: `10_000` bps == 100 %.
 pub const BPS_DENOMINATOR: u32 = 10_000;
@@ -151,9 +152,9 @@ pub fn require_governor(env: &Env, caller: &Address) -> Result<(), StreamError> 
         .storage()
         .instance()
         .get(&DataKey::Governor)
-        .ok_or(StreamError::NotGovernor)?;
+        .ok_or_else(|| surface::reject(Branch::GovernorNotAllowed))?;
     if stored != *caller {
-        return Err(StreamError::NotGovernor);
+        return Err(surface::reject(Branch::GovernorNotAllowed));
     }
     caller.require_auth();
     Ok(())
