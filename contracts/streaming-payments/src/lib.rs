@@ -50,6 +50,8 @@ mod error_surface_test;
 mod errors;
 mod events;
 pub(crate) mod sponsor;
+#[cfg(test)]
+mod sponsor_test;
 mod stream;
 pub mod surface;
 #[cfg(test)]
