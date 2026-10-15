@@ -9,6 +9,41 @@ interface: they are only ever appended to, never renumbered or reused.
 
 ## [Unreleased]
 
+### Added
+- Distinct `StreamError` codes for token-transfer failures, appended after
+  `NothingToWithdraw = 13`: `DepositTransferFailed` (14),
+  `TopUpTransferFailed` (15), `RecipientPayoutFailed` (16),
+  `SenderRefundFailed` (17). Every token call now runs through the SDK's
+  fallible (`try_`) client and any failure — missing allowance/balance, an
+  asset that refuses transfers, a non-SEP-41 callee — is re-raised as its own
+  StreamPay code, because contract error numbers share the
+  `Error(Contract, #N)` namespace and a token's `#5` could otherwise
+  masquerade as StreamPay's `StreamNotActive`. The mapped error is still
+  returned as `Err`, so the whole invocation (effects + events) rolls back —
+  CEI ordering and atomicity are unchanged.
+- Non-native asset tests, end to end: full lifecycle
+  (create → top-up → withdraw → withdraw_max → cancel) against a registered
+  Stellar Asset Contract with supply conservation, allowance/balance pull
+  failures on that SAC, and a token that refuses transfers per leg (its error
+  code deliberately equals 13 to prove no leak), each asserting the distinct
+  code plus state, balance, and event rollback. New error codes documented in
+  `src/errors.rs` and `docs/ARCHITECTURE.md` §7.
+- Frontend asset selector on the create form: **native XLM** or an entered
+  token contract id. Native resolves to the network's Stellar Asset Contract
+  (`stellar contract id asset --asset native`; overridable via
+  `NEXT_PUBLIC_NATIVE_XLM_CONTRACT_ID`), contract ids are validated before a
+  transaction is built, and streams on the native SAC are labelled "XLM" in
+  the list and detail views. `stellar.ts` also maps the new error codes to
+  names.
+- Create/top-up now read the token's `allowance` first and ask Freighter to
+  sign `token.approve` only when it is short — previously the form promised
+  this but no approval was ever sent, so every first stream failed at
+  simulation.
+
+### Fixed
+- Create-form failures decode to `StreamError` names like every other path
+  (they were surfaced as raw error strings).
+
 ## [0.3.0] - 2026-10-04
 
 ### Changed

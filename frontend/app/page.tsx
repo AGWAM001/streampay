@@ -144,7 +144,7 @@ export default function Home() {
             setStatus(`Stream #${id} created.`);
             await refresh(String(id));
           } catch (e) {
-            setError(String(e));
+            setError(describeError(e));
           }
         }}
       />

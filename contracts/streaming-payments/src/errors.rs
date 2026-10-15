@@ -7,6 +7,15 @@
 //!
 //! Codes are part of the public interface — never renumber or reuse a variant;
 //! only append new ones.
+//!
+//! Token-side failures are always translated into one of the `*TransferFailed`
+//! variants below. A token contract's own error numbers live in the same
+//! `Error(Contract, #N)` namespace as this enum's codes, so letting a raw
+//! token failure surface would let — say — a token's `#5` masquerade as
+//! [`StreamError::StreamNotActive`] in clients. The contract therefore invokes
+//! every token transfer through the SDK's fallible (`try_`) client and maps
+//! any failure to a distinct StreamPay code; the original token error is
+//! intentionally not propagated.
 
 use soroban_sdk::contracterror;
 
@@ -41,4 +50,20 @@ pub enum StreamError {
     NotAuthorized = 12,
     /// `withdraw_max` found nothing accrued-but-unwithdrawn to pay out.
     NothingToWithdraw = 13,
+    /// The token transfer in `create_stream` failed: the sender's balance or
+    /// allowance was insufficient, or the asset refused the transfer
+    /// (frozen/unauthorized/deauthorized holder, or any non-compliant token).
+    DepositTransferFailed = 14,
+    /// The token transfer in `top_up` failed (see
+    /// [`StreamError::DepositTransferFailed`]; the stream's deposit is left
+    /// untouched).
+    TopUpTransferFailed = 15,
+    /// The payout of accrued funds to the stream recipient failed — from
+    /// `withdraw`, `withdraw_max`, or the recipient leg of `cancel_stream`.
+    /// State changes made before the transfer are rolled back with the error.
+    RecipientPayoutFailed = 16,
+    /// The refund of unaccrued funds back to the sender failed during
+    /// `cancel_stream` (the recipient leg, if any, was already paid).
+    /// The cancellation is rolled back in full, so the stream stays active.
+    SenderRefundFailed = 17,
 }
