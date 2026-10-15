@@ -52,6 +52,15 @@ pub enum StreamError {
     NotAuthorized = 12,
     /// `withdraw_max` found nothing accrued-but-unwithdrawn to pay out.
     NothingToWithdraw = 13,
+    /// The requested fee rate exceeds the protocol cap (`MAX_FEE_BPS`).
+    FeeRateTooHigh = 14,
+    /// The caller is not the treasury governor.
+    NotGovernor = 15,
+    /// `accept_governor` was called but no governor nomination is pending.
+    NoPendingGovernor = 16,
+    /// A treasury withdrawal exceeds the fees collected minus fees already
+    /// withdrawn for that token.
+    InsufficientTreasuryBalance = 17,
 }
 
 impl StreamError {
@@ -72,6 +81,10 @@ impl StreamError {
         StreamError::MathOverflow,
         StreamError::NotAuthorized,
         StreamError::NothingToWithdraw,
+        StreamError::FeeRateTooHigh,
+        StreamError::NotGovernor,
+        StreamError::NoPendingGovernor,
+        StreamError::InsufficientTreasuryBalance,
     ];
 
     /// The stable numeric value carried across the contract boundary
