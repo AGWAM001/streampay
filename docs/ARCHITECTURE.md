@@ -255,10 +255,12 @@ or off-chain UX.
   deposit` exactly.
 - **Rate math is pure** (`streamed_at` takes no `Env`), so the `cargo-fuzz`
   target in [`fuzz/`](../fuzz/fuzz_targets/streamed_at.rs) hammers it without
-  a Soroban host: bounds, exact floor-ratio reference comparison,
-  monotonicity, and "errors are only ever genuine `MathOverflow`". CI runs a
-  scheduled session (`fuzz.yml`, non-blocking); any crash becomes a regression
-  unit test.
+  a Soroban host: bounds (`0 <= result <= deposit`), exact floor-ratio
+  reference comparison, monotonicity in elapsed time, full-duration exactness
+  (`streamed_at(d, dur, dur) == d` for admissible pairs), and no panics for
+  arbitrary inputs (including negative deposits and zero duration where
+  the function returns `Ok(0)` or `Err(MathOverflow)`). CI runs a scheduled
+  session (`fuzz.yml`, non-blocking); any crash becomes a regression unit test.
 - **Error surface** (`error_surface_test.rs`): the branch registry in
   `surface.rs` is walked by generated tests — one probe per branch asserts the
   exact branch fires its declared code — plus coverage tests proving no code is
