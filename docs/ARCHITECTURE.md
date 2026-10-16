@@ -460,3 +460,58 @@ entry. The sentinel's own suite fast-forwards a fake chain ledger-by-ledger
 and asserts the observed alert timing, plus a constants-sync test that fails
 if `TTL_THRESHOLD_LEDGERS` / `TTL_EXTEND_LEDGERS`, the extension call sites or
 the never-extended counter drift from what this section documents.
+
+## 13. Companion Stream NFT (`contracts/stream-nft`)
+
+StreamPay streams can be tokenized via a companion contract implementing the
+Soroban token interface (SEP-41) for a single non-fungible unit (balance of 1,
+0 decimals).
+
+### 13.1 Trust-boundary diagram
+
+```text
+┌────────────────────────┐                   ┌────────────────────────┐
+│     Stream Holder      │                   │   Authorized Operator  │
+│  (Recipient / Trader)  │                   │  (Marketplace/Escrow)  │
+└───────────┬────────────┘                   └───────────┬────────────┘
+            │                                            │
+            │ approve / transfer                         │ transfer_from / withdraw
+            ▼                                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    StreamNft Companion Contract                     │
+│                                                                     │
+│  - Implements SEP-41 token interface (balance: 1, decimals: 0)       │
+│  - Mint-on-create: minted to stream recipient                       │
+│  - Burn-on-finalize: burned when stream Depleted or Cancelled        │
+│  - Tracks token owner and per-spender operator allowance records    │
+│  - Emits NftMinted, NftTransferred, NftBurned events                │
+└──────────────────────────────────┬──────────────────────────────────┘
+                                   │
+                                   │ cross-contract call (CEI ordered)
+                                   │ withdraw / withdraw_max / get_stream
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      StreamingPayments (Core)                       │
+│                                                                     │
+│  - Stores Stream state: deposit, withdrawn, recipient, status       │
+│  - Accrual math: linear pro-rata balance calculation                │
+│  - Token escrow: transfers funds to recipient                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 13.2 Delegation & Trust Model
+
+1. **Separation of Concerns:** The core contract manages escrowed deposits,
+   real-time accrual, and linear payouts. The companion NFT manages transferability,
+   operator permissions (`approve` / `allowance`), and secondary market listings.
+2. **Delegation Pattern:** Withdrawals are routed through the companion contract.
+   The companion contract verifies that the caller is either:
+   - The current NFT owner (`caller == owner`), or
+   - An authorized operator with a non-expired allowance (`allowance(owner, operator) >= 1`).
+3. **Double-Spend & Stale Operator Protection:** Once an operator transfers the NFT
+   via `transfer_from`, the allowance is immediately consumed/cleared and ownership
+   transfers to the new holder. Any subsequent withdrawal or transfer attempts using
+   stale operator keys revert with `InsufficientAllowance` or `NotAuthorized`.
+4. **Lifecycle Finalization:** When all funds are withdrawn (`StreamStatus::Depleted`)
+   or the stream is cancelled (`StreamStatus::Cancelled`), the NFT is permanently
+   burned (`NftBurned`), ensuring zero ghost tokens for inactive streams.
