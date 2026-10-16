@@ -67,11 +67,15 @@ pub enum RevertingKey {
 #[contractimpl]
 impl RevertingToken {
     pub fn set_revert_transfer(env: Env, enable: bool) {
-        env.storage().temporary().set(&RevertingKey::RevertTransfer, &enable);
+        env.storage()
+            .temporary()
+            .set(&RevertingKey::RevertTransfer, &enable);
     }
 
     pub fn set_revert_transfer_from(env: Env, enable: bool) {
-        env.storage().temporary().set(&RevertingKey::RevertTransferFrom, &enable);
+        env.storage()
+            .temporary()
+            .set(&RevertingKey::RevertTransferFrom, &enable);
     }
 
     pub fn mint(env: Env, to: Address, amount: i128) {
@@ -81,11 +85,23 @@ impl RevertingToken {
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {
-        env.storage().persistent().get(&RevertingKey::Balance(id)).unwrap_or(0)
+        env.storage()
+            .persistent()
+            .get(&RevertingKey::Balance(id))
+            .unwrap_or(0)
     }
 
-    pub fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) -> Result<(), HostileError> {
-        let should_revert: bool = env.storage().temporary().get(&RevertingKey::RevertTransfer).unwrap_or(false);
+    pub fn transfer(
+        env: Env,
+        from: Address,
+        to: MuxedAddress,
+        amount: i128,
+    ) -> Result<(), HostileError> {
+        let should_revert: bool = env
+            .storage()
+            .temporary()
+            .get(&RevertingKey::RevertTransfer)
+            .unwrap_or(false);
         if should_revert {
             return Err(HostileError::TransferRejected);
         }
@@ -94,7 +110,9 @@ impl RevertingToken {
         if from_bal < amount {
             return Err(HostileError::TransferRejected);
         }
-        env.storage().persistent().set(&from_key, &(from_bal - amount));
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - amount));
 
         let to_addr: Address = to.into();
         let to_key = RevertingKey::Balance(to_addr);
@@ -103,8 +121,18 @@ impl RevertingToken {
         Ok(())
     }
 
-    pub fn transfer_from(env: Env, _spender: Address, from: Address, to: Address, amount: i128) -> Result<(), HostileError> {
-        let should_revert: bool = env.storage().temporary().get(&RevertingKey::RevertTransferFrom).unwrap_or(false);
+    pub fn transfer_from(
+        env: Env,
+        _spender: Address,
+        from: Address,
+        to: Address,
+        amount: i128,
+    ) -> Result<(), HostileError> {
+        let should_revert: bool = env
+            .storage()
+            .temporary()
+            .get(&RevertingKey::RevertTransferFrom)
+            .unwrap_or(false);
         if should_revert {
             return Err(HostileError::TransferFromRejected);
         }
@@ -113,7 +141,9 @@ impl RevertingToken {
         if from_bal < amount {
             return Err(HostileError::TransferFromRejected);
         }
-        env.storage().persistent().set(&from_key, &(from_bal - amount));
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - amount));
 
         let to_key = RevertingKey::Balance(to);
         let to_bal: i128 = env.storage().persistent().get(&to_key).unwrap_or(0);
@@ -125,7 +155,14 @@ impl RevertingToken {
         i128::MAX
     }
 
-    pub fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _live_until_ledger: u32) {}
+    pub fn approve(
+        _env: Env,
+        _from: Address,
+        _spender: Address,
+        _amount: i128,
+        _live_until_ledger: u32,
+    ) {
+    }
 
     pub fn burn(_env: Env, _from: Address, _amount: i128) {}
 
@@ -160,11 +197,15 @@ pub enum PanickingKey {
 #[contractimpl]
 impl PanickingToken {
     pub fn set_panic_transfer(env: Env, enable: bool) {
-        env.storage().temporary().set(&PanickingKey::PanicTransfer, &enable);
+        env.storage()
+            .temporary()
+            .set(&PanickingKey::PanicTransfer, &enable);
     }
 
     pub fn set_panic_transfer_from(env: Env, enable: bool) {
-        env.storage().temporary().set(&PanickingKey::PanicTransferFrom, &enable);
+        env.storage()
+            .temporary()
+            .set(&PanickingKey::PanicTransferFrom, &enable);
     }
 
     pub fn mint(env: Env, to: Address, amount: i128) {
@@ -174,18 +215,27 @@ impl PanickingToken {
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {
-        env.storage().persistent().get(&PanickingKey::Balance(id)).unwrap_or(0)
+        env.storage()
+            .persistent()
+            .get(&PanickingKey::Balance(id))
+            .unwrap_or(0)
     }
 
     pub fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) {
-        let should_panic: bool = env.storage().temporary().get(&PanickingKey::PanicTransfer).unwrap_or(false);
+        let should_panic: bool = env
+            .storage()
+            .temporary()
+            .get(&PanickingKey::PanicTransfer)
+            .unwrap_or(false);
         if should_panic {
             panic!("Hostile PanickingToken: explicit transfer panic");
         }
         let from_key = PanickingKey::Balance(from);
         let from_bal: i128 = env.storage().persistent().get(&from_key).unwrap_or(0);
         assert!(from_bal >= amount, "insufficient balance");
-        env.storage().persistent().set(&from_key, &(from_bal - amount));
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - amount));
 
         let to_addr: Address = to.into();
         let to_key = PanickingKey::Balance(to_addr);
@@ -194,14 +244,20 @@ impl PanickingToken {
     }
 
     pub fn transfer_from(env: Env, _spender: Address, from: Address, to: Address, amount: i128) {
-        let should_panic: bool = env.storage().temporary().get(&PanickingKey::PanicTransferFrom).unwrap_or(false);
+        let should_panic: bool = env
+            .storage()
+            .temporary()
+            .get(&PanickingKey::PanicTransferFrom)
+            .unwrap_or(false);
         if should_panic {
             panic!("Hostile PanickingToken: explicit transfer_from panic");
         }
         let from_key = PanickingKey::Balance(from);
         let from_bal: i128 = env.storage().persistent().get(&from_key).unwrap_or(0);
         assert!(from_bal >= amount, "insufficient balance");
-        env.storage().persistent().set(&from_key, &(from_bal - amount));
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - amount));
 
         let to_key = PanickingKey::Balance(to);
         let to_bal: i128 = env.storage().persistent().get(&to_key).unwrap_or(0);
@@ -212,7 +268,14 @@ impl PanickingToken {
         i128::MAX
     }
 
-    pub fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _live_until_ledger: u32) {}
+    pub fn approve(
+        _env: Env,
+        _from: Address,
+        _spender: Address,
+        _amount: i128,
+        _live_until_ledger: u32,
+    ) {
+    }
 
     pub fn burn(_env: Env, _from: Address, _amount: i128) {}
 
@@ -255,13 +318,19 @@ pub struct ReenterConfig {
 #[contractimpl]
 impl DoubleChargingToken {
     pub fn set_drain_extra(env: Env, enable: bool) {
-        env.storage().temporary().set(&DoubleChargeKey::DrainExtraFee, &enable);
+        env.storage()
+            .temporary()
+            .set(&DoubleChargeKey::DrainExtraFee, &enable);
     }
 
     pub fn arm_reentrancy(env: Env, target: Address, stream_id: u64, amount: i128) {
         env.storage().temporary().set(
             &DoubleChargeKey::ReenterTarget,
-            &Some(ReenterConfig { target, stream_id, amount }),
+            &Some(ReenterConfig {
+                target,
+                stream_id,
+                amount,
+            }),
         );
     }
 
@@ -272,27 +341,45 @@ impl DoubleChargingToken {
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {
-        env.storage().persistent().get(&DoubleChargeKey::Balance(id)).unwrap_or(0)
+        env.storage()
+            .persistent()
+            .get(&DoubleChargeKey::Balance(id))
+            .unwrap_or(0)
     }
 
     pub fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) {
-        let reenter: Option<ReenterConfig> = env.storage().temporary().get(&DoubleChargeKey::ReenterTarget).unwrap_or(None);
+        let reenter: Option<ReenterConfig> = env
+            .storage()
+            .temporary()
+            .get(&DoubleChargeKey::ReenterTarget)
+            .unwrap_or(None);
         if let Some(cfg) = reenter {
             if cfg.target == from {
-                env.storage().temporary().remove(&DoubleChargeKey::ReenterTarget);
+                env.storage()
+                    .temporary()
+                    .remove(&DoubleChargeKey::ReenterTarget);
                 let client = Client::new(&env, &cfg.target);
                 // Attempt reentrant double-withdrawal while in transfer
                 let _ = client.try_withdraw(&cfg.stream_id, &cfg.amount);
             }
         }
 
-        let drain_extra: bool = env.storage().temporary().get(&DoubleChargeKey::DrainExtraFee).unwrap_or(false);
+        let drain_extra: bool = env
+            .storage()
+            .temporary()
+            .get(&DoubleChargeKey::DrainExtraFee)
+            .unwrap_or(false);
         let extra = if drain_extra { amount } else { 0 };
         let from_key = DoubleChargeKey::Balance(from);
         let from_bal: i128 = env.storage().persistent().get(&from_key).unwrap_or(0);
         let total_deduct = amount + extra;
-        assert!(from_bal >= total_deduct, "insufficient balance for double charge");
-        env.storage().persistent().set(&from_key, &(from_bal - total_deduct));
+        assert!(
+            from_bal >= total_deduct,
+            "insufficient balance for double charge"
+        );
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - total_deduct));
 
         let to_addr: Address = to.into();
         let to_key = DoubleChargeKey::Balance(to_addr);
@@ -301,13 +388,22 @@ impl DoubleChargingToken {
     }
 
     pub fn transfer_from(env: Env, _spender: Address, from: Address, to: Address, amount: i128) {
-        let drain_extra: bool = env.storage().temporary().get(&DoubleChargeKey::DrainExtraFee).unwrap_or(false);
+        let drain_extra: bool = env
+            .storage()
+            .temporary()
+            .get(&DoubleChargeKey::DrainExtraFee)
+            .unwrap_or(false);
         let extra = if drain_extra { amount } else { 0 };
         let from_key = DoubleChargeKey::Balance(from);
         let from_bal: i128 = env.storage().persistent().get(&from_key).unwrap_or(0);
         let total_deduct = amount + extra;
-        assert!(from_bal >= total_deduct, "insufficient balance for double pull");
-        env.storage().persistent().set(&from_key, &(from_bal - total_deduct));
+        assert!(
+            from_bal >= total_deduct,
+            "insufficient balance for double pull"
+        );
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - total_deduct));
 
         let to_key = DoubleChargeKey::Balance(to);
         let to_bal: i128 = env.storage().persistent().get(&to_key).unwrap_or(0);
@@ -318,7 +414,14 @@ impl DoubleChargingToken {
         i128::MAX
     }
 
-    pub fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _live_until_ledger: u32) {}
+    pub fn approve(
+        _env: Env,
+        _from: Address,
+        _spender: Address,
+        _amount: i128,
+        _live_until_ledger: u32,
+    ) {
+    }
 
     pub fn burn(_env: Env, _from: Address, _amount: i128) {}
 
@@ -364,24 +467,37 @@ impl LyingBalanceToken {
     }
 
     pub fn balance(env: Env, id: Address) -> i128 {
-        let mode: u32 = env.storage().temporary().get(&LyingKey::LieMode).unwrap_or(0);
+        let mode: u32 = env
+            .storage()
+            .temporary()
+            .get(&LyingKey::LieMode)
+            .unwrap_or(0);
         match mode {
             1 => 0,
             2 => i128::MAX,
             3 => -1_000_000,
-            _ => env.storage().persistent().get(&LyingKey::ActualBalance(id)).unwrap_or(0),
+            _ => env
+                .storage()
+                .persistent()
+                .get(&LyingKey::ActualBalance(id))
+                .unwrap_or(0),
         }
     }
 
     pub fn actual_balance(env: Env, id: Address) -> i128 {
-        env.storage().persistent().get(&LyingKey::ActualBalance(id)).unwrap_or(0)
+        env.storage()
+            .persistent()
+            .get(&LyingKey::ActualBalance(id))
+            .unwrap_or(0)
     }
 
     pub fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) {
         let from_key = LyingKey::ActualBalance(from);
         let from_bal: i128 = env.storage().persistent().get(&from_key).unwrap_or(0);
         assert!(from_bal >= amount, "insufficient actual balance");
-        env.storage().persistent().set(&from_key, &(from_bal - amount));
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - amount));
 
         let to_addr: Address = to.into();
         let to_key = LyingKey::ActualBalance(to_addr);
@@ -393,7 +509,9 @@ impl LyingBalanceToken {
         let from_key = LyingKey::ActualBalance(from);
         let from_bal: i128 = env.storage().persistent().get(&from_key).unwrap_or(0);
         assert!(from_bal >= amount, "insufficient actual balance");
-        env.storage().persistent().set(&from_key, &(from_bal - amount));
+        env.storage()
+            .persistent()
+            .set(&from_key, &(from_bal - amount));
 
         let to_key = LyingKey::ActualBalance(to);
         let to_bal: i128 = env.storage().persistent().get(&to_key).unwrap_or(0);
@@ -404,7 +522,14 @@ impl LyingBalanceToken {
         i128::MAX
     }
 
-    pub fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _live_until_ledger: u32) {}
+    pub fn approve(
+        _env: Env,
+        _from: Address,
+        _spender: Address,
+        _amount: i128,
+        _live_until_ledger: u32,
+    ) {
+    }
 
     pub fn burn(_env: Env, _from: Address, _amount: i128) {}
 
@@ -441,7 +566,11 @@ impl Rng {
     }
 
     fn below(&mut self, n: u64) -> u64 {
-        if n == 0 { 0 } else { self.next() % n }
+        if n == 0 {
+            0
+        } else {
+            self.next() % n
+        }
     }
 }
 
@@ -489,7 +618,12 @@ fn run_hostile_token_fuzz_session(seed: u64, steps: usize) {
     let dbl_id = env.register(DoubleChargingToken, ());
     let lie_id = env.register(LyingBalanceToken, ());
 
-    let token_addrs = [rev_id.clone(), panic_id.clone(), dbl_id.clone(), lie_id.clone()];
+    let token_addrs = [
+        rev_id.clone(),
+        panic_id.clone(),
+        dbl_id.clone(),
+        lie_id.clone(),
+    ];
     let rev_client = RevertingTokenClient::new(&env, &rev_id);
     let panic_client = PanickingTokenClient::new(&env, &panic_id);
     let dbl_client = DoubleChargingTokenClient::new(&env, &dbl_id);
@@ -594,7 +728,8 @@ fn run_hostile_token_fuzz_session(seed: u64, steps: usize) {
             }
             1 => {
                 // advance time
-                env.ledger().with_mut(|li| li.timestamp += 1 + rng.below(30));
+                env.ledger()
+                    .with_mut(|li| li.timestamp += 1 + rng.below(30));
             }
             2 => {
                 // withdraw
@@ -608,7 +743,9 @@ fn run_hostile_token_fuzz_session(seed: u64, steps: usize) {
                             let w_res = client.mock_all_auths().try_withdraw(&id, &avail);
                             if w_res.is_ok() && w_res.unwrap().is_ok() {
                                 tracked_streams[s_idx].withdrawn += avail;
-                                if tracked_streams[s_idx].withdrawn == tracked_streams[s_idx].deposit {
+                                if tracked_streams[s_idx].withdrawn
+                                    == tracked_streams[s_idx].deposit
+                                {
                                     tracked_streams[s_idx].live = false;
                                 }
                             }
@@ -712,7 +849,9 @@ fn run_hostile_token_fuzz_session(seed: u64, steps: usize) {
                     assert!(
                         onchain_s.withdrawn <= onchain_s.deposit,
                         "{ctx}: stream {} withdrawn exceeds deposit ({} > {})",
-                        s.id, onchain_s.withdrawn, onchain_s.deposit
+                        s.id,
+                        onchain_s.withdrawn,
+                        onchain_s.deposit
                     );
                 }
             }

@@ -41,10 +41,10 @@ extern crate std;
 
 #[cfg(test)]
 mod error_surface_test;
-#[cfg(test)]
-mod hostile_token_fuzz_test;
 mod errors;
 mod events;
+#[cfg(test)]
+mod hostile_token_fuzz_test;
 mod stream;
 pub mod surface;
 #[cfg(test)]
