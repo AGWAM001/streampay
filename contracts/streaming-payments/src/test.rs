@@ -7,7 +7,8 @@
 //! malicious token contract, event payloads, an exhaustive accrual property
 //! test over the pure rate function, the per-address discovery indexes
 //! (append order, pagination, clamping, terminal streams), and `withdraw_max`
-//! semantics.
+//! semantics. Fixed-seed Proptest state-machine sequences exercise the funds
+//! invariants across creates, top-ups, withdrawals, and cancellations.
 #![cfg(test)]
 
 // The crate is `no_std`, but the test build links std: the property-test
@@ -17,6 +18,11 @@ extern crate std;
 use std::format;
 use std::vec::Vec;
 
+use proptest::{
+    prelude::any,
+    prop_assert, prop_assert_eq,
+    test_runner::{Config as ProptestConfig, RngSeed, TestCaseError, TestRunner},
+};
 use soroban_sdk::{
     contract, contractimpl, contracttype,
     testutils::{Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke},
@@ -2428,6 +2434,289 @@ impl Rng {
             self.next() % n
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct StateMachineStream {
+    deposit: i128,
+    withdrawn: i128,
+    start: u64,
+    end: u64,
+    cancelable: bool,
+    status: StreamStatus,
+}
+
+impl StateMachineStream {
+    fn accrued(&self, now: u64) -> i128 {
+        let duration = self.end - self.start;
+        let elapsed = now.clamp(self.start, self.end) - self.start;
+        (self.deposit as u128 * elapsed as u128 / duration as u128) as i128
+    }
+}
+
+/// Stateful tests use proptest rather than the pure-function fuzz target:
+/// shrinking reduces a failing operation sequence, while fixed seeds make
+/// failures repeatable without relying on libFuzzer's separate harness.
+#[test]
+fn property_random_state_machine_sequences_preserve_fund_invariants() {
+    const SEEDS: [u64; 3] = [0x51A7_E001, 0x51A7_E002, 0x51A7_E003];
+    const CASES_PER_SEED: u32 = 16;
+
+    let sequence = proptest::collection::vec(any::<(u8, u16, u16)>(), 1..65);
+    for seed in SEEDS {
+        let mut runner = TestRunner::new(ProptestConfig {
+            cases: CASES_PER_SEED,
+            rng_seed: RngSeed::Fixed(seed),
+            ..ProptestConfig::default()
+        });
+        if let Err(error) = runner.run(&sequence, |steps| run_state_machine_sequence(seed, &steps))
+        {
+            panic!("state-machine property failed with seed {seed:#x}: {error}");
+        }
+    }
+}
+
+fn run_state_machine_sequence(seed: u64, steps: &[(u8, u16, u16)]) -> Result<(), TestCaseError> {
+    let mut env = Env::default();
+    env.set_config(soroban_sdk::testutils::EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env.mock_all_auths();
+
+    let token = env
+        .register_stellar_asset_contract_v2(Address::generate(&env))
+        .address();
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let governor = Address::generate(&env);
+    let contract_id = env.register(StreamingPayments, (governor,));
+    let client = Client::new(&env, &contract_id);
+
+    StellarAssetClient::new(&env, &token).mint(&sender, &1_000_000_000i128);
+    StellarAssetClient::new(&env, &token).approve(
+        &sender,
+        &contract_id,
+        &1_000_000_000i128,
+        &1_000_000u32,
+    );
+
+    let mut streams = Vec::<StateMachineStream>::new();
+    for (step_index, &(operation, first, second)) in steps.iter().enumerate() {
+        let context =
+            format!("seed {seed:#x}, step {step_index}, input {operation}/{first}/{second}");
+        match operation % 5 {
+            0 => {
+                let now = env.ledger().timestamp();
+                let start = now + (first as u64 % 4);
+                let duration = 1 + (second as u64 % 100);
+                let deposit = 1 + (first as i128 % 20_000) * 257 + second as i128 % 257;
+                let cancelable = operation & 0x80 != 0;
+                let id = client.mock_all_auths().create_stream(
+                    &sender,
+                    &recipient,
+                    &token,
+                    &deposit,
+                    &start,
+                    &(start + duration),
+                    &cancelable,
+                );
+                prop_assert_eq!(id as usize, streams.len() + 1, "{}: stream id", context);
+                streams.push(StateMachineStream {
+                    deposit,
+                    withdrawn: 0,
+                    start,
+                    end: start + duration,
+                    cancelable,
+                    status: StreamStatus::Active,
+                });
+            }
+            1 => {
+                env.ledger()
+                    .with_mut(|ledger| ledger.timestamp += 1 + first as u64 % 80);
+            }
+            2 if !streams.is_empty() => {
+                let index = first as usize % streams.len();
+                let id = index as u64 + 1;
+                if streams[index].status == StreamStatus::Cancelled {
+                    let error = client
+                        .mock_all_auths()
+                        .try_withdraw(&id, &1)
+                        .unwrap_err()
+                        .unwrap();
+                    prop_assert_eq!(error, StreamError::StreamNotActive, "{}", context);
+                    let error = client
+                        .mock_all_auths()
+                        .try_withdraw_max(&id)
+                        .unwrap_err()
+                        .unwrap();
+                    prop_assert_eq!(error, StreamError::StreamNotActive, "{}", context);
+                } else if streams[index].status == StreamStatus::Depleted {
+                    let error = client
+                        .mock_all_auths()
+                        .try_withdraw(&id, &1)
+                        .unwrap_err()
+                        .unwrap();
+                    prop_assert_eq!(error, StreamError::StreamNotActive, "{}", context);
+                } else {
+                    let available =
+                        streams[index].accrued(env.ledger().timestamp()) - streams[index].withdrawn;
+                    if available > 0 && second & 1 == 0 {
+                        let amount = 1 + second as i128 % available;
+                        client.mock_all_auths().withdraw(&id, &amount);
+                        streams[index].withdrawn += amount;
+                    } else if available > 0 {
+                        let paid = client.mock_all_auths().withdraw_max(&id);
+                        prop_assert_eq!(paid, available, "{}: withdraw_max amount", context);
+                        streams[index].withdrawn += paid;
+                    } else {
+                        let error = client
+                            .mock_all_auths()
+                            .try_withdraw_max(&id)
+                            .unwrap_err()
+                            .unwrap();
+                        prop_assert_eq!(error, StreamError::NothingToWithdraw, "{}", context);
+                    }
+                    if streams[index].withdrawn == streams[index].deposit {
+                        streams[index].status = StreamStatus::Depleted;
+                    }
+                }
+            }
+            3 if !streams.is_empty() => {
+                let index = first as usize % streams.len();
+                let id = index as u64 + 1;
+                if streams[index].status == StreamStatus::Active {
+                    let amount = 1 + second as i128;
+                    client.mock_all_auths().top_up(&id, &amount);
+                    streams[index].deposit += amount;
+                } else {
+                    let error = client
+                        .mock_all_auths()
+                        .try_top_up(&id, &(1 + second as i128))
+                        .unwrap_err()
+                        .unwrap();
+                    prop_assert_eq!(error, StreamError::StreamNotActive, "{}", context);
+                }
+            }
+            4 if !streams.is_empty() => {
+                let index = first as usize % streams.len();
+                let id = index as u64 + 1;
+                if streams[index].status == StreamStatus::Active {
+                    let caller = if streams[index].cancelable && second & 1 != 0 {
+                        &recipient
+                    } else {
+                        &sender
+                    };
+                    client.mock_all_auths().cancel_stream(caller, &id);
+                    streams[index].withdrawn +=
+                        streams[index].accrued(env.ledger().timestamp()) - streams[index].withdrawn;
+                    streams[index].status = StreamStatus::Cancelled;
+
+                    let error = client
+                        .mock_all_auths()
+                        .try_withdraw(&id, &1)
+                        .unwrap_err()
+                        .unwrap();
+                    prop_assert_eq!(
+                        error,
+                        StreamError::StreamNotActive,
+                        "{}: cancelled withdrawal",
+                        context
+                    );
+                    let error = client
+                        .mock_all_auths()
+                        .try_withdraw_max(&id)
+                        .unwrap_err()
+                        .unwrap();
+                    prop_assert_eq!(
+                        error,
+                        StreamError::StreamNotActive,
+                        "{}: cancelled withdraw_max",
+                        context
+                    );
+                    let error = client
+                        .mock_all_auths()
+                        .try_top_up(&id, &1)
+                        .unwrap_err()
+                        .unwrap();
+                    prop_assert_eq!(
+                        error,
+                        StreamError::StreamNotActive,
+                        "{}: cancelled top-up",
+                        context
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        let now = env.ledger().timestamp();
+        let mut remaining = 0i128;
+        let mut total_withdrawn = 0i128;
+        let mut total_accrued = 0i128;
+        for (index, expected) in streams.iter().enumerate() {
+            let id = index as u64 + 1;
+            let actual = client.mock_all_auths().get_stream(&id);
+            prop_assert_eq!(
+                actual.deposit,
+                expected.deposit,
+                "{}: stream {} deposit",
+                context,
+                id
+            );
+            prop_assert_eq!(
+                actual.withdrawn,
+                expected.withdrawn,
+                "{}: stream {} withdrawn",
+                context,
+                id
+            );
+            prop_assert_eq!(
+                actual.status,
+                expected.status,
+                "{}: stream {} status",
+                context,
+                id
+            );
+
+            let accrued = expected.accrued(now);
+            prop_assert!(
+                actual.withdrawn <= accrued,
+                "{}: stream {} withdrew {} but accrued only {}",
+                context,
+                id,
+                actual.withdrawn,
+                accrued
+            );
+            total_withdrawn += actual.withdrawn;
+            total_accrued += accrued;
+            if expected.status == StreamStatus::Active {
+                remaining += expected.deposit - expected.withdrawn;
+                prop_assert_eq!(
+                    client.mock_all_auths().available(&id),
+                    accrued - expected.withdrawn,
+                    "{}: stream {} available",
+                    context,
+                    id
+                );
+            } else if expected.status == StreamStatus::Cancelled {
+                prop_assert_eq!(client.mock_all_auths().available(&id), 0, "{}", context);
+            }
+        }
+        prop_assert!(
+            total_withdrawn <= total_accrued,
+            "{}: recipient withdrew {} but accrued only {}",
+            context,
+            total_withdrawn,
+            total_accrued
+        );
+        prop_assert_eq!(
+            TokenClient::new(&env, &token).balance(&contract_id),
+            remaining,
+            "{}: contract balance must equal remaining escrow",
+            context
+        );
+    }
+    Ok(())
 }
 
 /// Off-chain mirror of one stream for the property model. Accrual is
