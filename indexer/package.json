@@ -1,0 +1,25 @@
+{
+  "name": "streampay-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "StreamPay TypeScript event indexer worker: polls Soroban RPC getEvents, decodes XDR events, persists state in SQLite, and serves HTTP API.",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "test": "node --test dist/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^17.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
+
