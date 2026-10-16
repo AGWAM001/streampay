@@ -57,6 +57,8 @@ A stream is a half-open window `[start_time, end_time)`. At any ledger timestamp
 
 Deep dive (storage model, checked math, reentrancy, TTL strategy, design decisions): [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
+Incident response drills and procedures: [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md).
+
 ## Contract API
 
 | Function | Caller | Moves tokens | Emits |
@@ -70,6 +72,17 @@ Deep dive (storage model, checked math, reentrancy, TTL strategy, design decisio
 | `available(stream_id) → i128` | — (read-only) | — | — |
 | `recipient_streams(address, offset, limit) → Vec<u64>` | — (read-only) | — | — |
 | `sender_streams(address, offset, limit) → Vec<u64>` | — (read-only) | — | — |
+| `set_fee_bps(caller, new_fee_bps)` | treasury governor | — | — |
+| `nominate_governor(caller, new_governor)` | treasury governor | — | — |
+| `accept_governor(caller)` | nominated governor | — | — |
+| `withdraw_treasury(caller, token, recipient, amount)` | treasury governor | pays out collected fees | `FeeWithdrawn` |
+| `treasury_status(token) → TreasuryStatus` | — (read-only) | — | — |
+| `stream_fee(stream_id) → i128` | — (read-only) | — | — |
+| `verify_treasury(token, start_id, count) → FeeScan` | — (read-only) | — | — |
+| `total_streams() → u64` | — (read-only) | — | — |
+
+`create_stream` also emits `FeeCharged` when a protocol fee applies — see
+[Protocol fees](#protocol-fees-optional) below.
 
 `recipient_streams` / `sender_streams` are on-chain discovery indexes:
 append-only, creation-ordered stream-id lists per address, paginated
@@ -80,7 +93,30 @@ Any SEP-41-compatible asset can fund a stream: an issued asset via its
 Stellar Asset Contract id (e.g. USDC on testnet) or **native XLM** via its
 own SAC — the frontend's asset selector resolves the choice for you.
 
-Creating a stream requires a prior token approval: `token.approve(sender, <contract id>, deposit, exp)` — the UI checks the allowance and signs the approval only when it is short. All failures return typed `StreamError` codes (no panics) — see `contracts/streaming-payments/src/errors.rs`. Token-transfer failures carry their own codes (`DepositTransferFailed` 14, `TopUpTransferFailed` 15, `RecipientPayoutFailed` 16, `SenderRefundFailed` 17): a token's own error numbers live in the same `Error(Contract, #N)` namespace and are never allowed to masquerade as StreamPay's.
+Creating a stream requires a prior token approval: `token.approve(sender, <contract id>, deposit, exp)` — the UI checks the allowance and signs the approval only when it is short. All failures return typed `StreamError` codes (no panics) — see `contracts/streaming-payments/src/errors.rs`. Token-transfer failures carry their own codes (`DepositTransferFailed` 18, `TopUpTransferFailed` 19, `RecipientPayoutFailed` 20, `SenderRefundFailed` 21, `TreasuryPayoutFailed` 22): a token's own error numbers live in the same `Error(Contract, #N)` namespace and are never allowed to masquerade as StreamPay's.
+
+## Protocol fees (optional)
+
+An off-by-default treasury layer (`fee_bps = 0` at deploy) charges a
+protocol fee **once, at the deposit boundary**: the sender approves and pays
+`deposit + fee`, where `fee = deposit × fee_bps / 10_000` (hard-capped at
+100 bps = 1 % by protocol constant). The stream's `deposit` — and therefore
+every per-second accrual, withdrawal and cancel-refund computation — is
+untouched. At `fee_bps = 0` behavior is bit-for-bit identical to v0.3.
+
+Fees accumulate in a per-token treasury, withdrawable only by the
+treasury governor (bound at deploy time by the constructor; two-step
+rotation). Anyone can prove the fee ledger is consistent —
+`fee_total == Σ FeeCharged events == Σ per-stream stored fees` — from
+public reads alone:
+
+```bash
+cd scripts && npm install
+npm run verify-fees -- --contract <C…> --token <C…> --start-ledger <deploy ledger>
+```
+
+Design details, the cancel-refund decision table, and rejected
+alternatives: [`docs/ARCHITECTURE.md` §11](./docs/ARCHITECTURE.md).
 
 ## Getting started (clean machine)
 
@@ -126,17 +162,42 @@ Deploy to testnet:
 stellar keys generate deployer --network testnet --fund
 stellar contract deploy \
   --wasm target/wasm32v1-none/release/streampay_contract.wasm \
-  --source deployer --network testnet
+  --source deployer --network testnet \
+  -- --governor "$(stellar keys address deployer)"
+```
+
+## TTL & rent operations
+
+Streams and address indexes extend their TTL on every write (a ~29-day
+`extend_to`), so active state stays hot and abandoned streams archive the
+Soroban-native way. Three entries are **never** extended on-chain, though: the
+id counter, the contract instance, and the Wasm code entry. Their TTL is fixed
+at 4,095 ledgers — **~5.7 hours** — so a deployment needs external TTL
+maintenance before stream creation and *all* reads start failing on archived
+entries. [`infra/ttl-sentinel`](./infra/ttl-sentinel/README.md) covers that: it
+scans every storage class, projects expiry against sampled ledger cadence, and
+alerts (console / JSONL / webhook) — read-only and key-less by default, with an
+off-by-default funded extender as a separate component. It also projects rent
+from measured entry sizes, feeding the pricing/dust work. Full rationale and
+the per-class cost table: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §12
+and the [sentinel README](./infra/ttl-sentinel/README.md).
+
+```bash
+cd infra/ttl-sentinel && npm ci
+STREAMPAY_CONTRACT_ID=C... npm run scan    # one pass; --watch to loop
+npm run rent -- --streams 1000             # rent + cost projection
 ```
 
 ## Repo layout
 
 ```text
-contracts/streaming-payments/   the contract (lib.rs, stream.rs, errors.rs, events.rs, test.rs)
+contracts/streaming-payments/   the contract (lib.rs, stream.rs, treasury.rs, errors.rs, events.rs, test.rs)
 frontend/                       minimal Next.js UI (Freighter wallet)
 fuzz/                           cargo-fuzz harness for the accrual math (own workspace)
 scripts/                        deploy_testnet.sh + the release/promotion pipeline scripts
+scripts/verify-fees.ts          public fee-ledger audit (anyone can run, no keys)
 deployments/                    append-only promotion records + interface baselines
+infra/ttl-sentinel/             storage TTL + rent sentinel (scan, alerts, optional funded extender)
 docs/ARCHITECTURE.md            design deep-dive
 docs/DEPLOY_PIPELINE.md         sandbox → testnet → mainnet-canary promotion design
 docs/CANARY_RUNBOOK.md          mainnet canary + rollback procedure
@@ -159,9 +220,15 @@ CHANGELOG.md                    release history (Keep a Changelog)
 - **v0.3** — ✅ fuzzing in CI (`cargo-fuzz` on the rate math, scheduled),
   multi-token batch stream creation
 - **v0.4** — full web UI polish (accrual charts), ✅ testnet demo script
+- **v0.5** — ✅ optional protocol-fee treasury: boundary-charged fees,
+  governor-gated withdrawals, open verification
+  (`verify_treasury` + `scripts/verify-fees.ts`), ✅ incident response drills
+  and runbook (testnet simulation)
 - **v1.0** — external audit, mainnet deployment guide
 
 Feature requests live in [`.github/ISSUE_TEMPLATE/`](./.github/ISSUE_TEMPLATE/) — good first issues are tagged [`good first issue`](https://github.com/Neziahtech/streampay/labels/good%20first%20issue) and documented in [`docs/GOOD_FIRST_ISSUES.md`](./docs/GOOD_FIRST_ISSUES.md).
+
+Incident drill tooling and results are documented in [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md) and [`docs/INCIDENT_RESULTS.md`](./docs/INCIDENT_RESULTS.md). Run the drills with [`scripts/run_all_drills.sh`](./scripts/run_all_drills.sh); individual scenarios are available under `scripts/drill_*.sh`.
 
 ## Contributing
 

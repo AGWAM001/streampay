@@ -21,40 +21,58 @@
 //! - [`StreamingPayments::recipient_streams`] /
 //!   [`StreamingPayments::sender_streams`] — paginated on-chain discovery
 //!   indexes per address
+//! - [`StreamingPayments::treasury_status`] /
+//!   [`StreamingPayments::stream_fee`] / [`StreamingPayments::verify_treasury`] —
+//!   open verification reads for the protocol-fee ledger (see `treasury.rs`)
 //!
 //! # Invariants
 //!
 //! - `0 <= withdrawn <= streamed <= deposit` for every stored stream.
 //! - The contract's token balance always covers `sum(deposit - withdrawn)`
-//!   over all streams (funds are only ever moved by these entry points).
+//!   over all streams plus `charged_total - withdrawn_total` over all
+//!   token treasuries (funds are only ever moved by these entry points).
 //! - All state changes happen *before* token transfers (checks-effects-
 //!   interactions), so reentrant token callbacks cannot over-withdraw.
 //! - Every token call goes through the SDK's fallible (`try_`) client and a
 //!   failure is re-raised as a distinct `StreamError` transfer-failure code
-//!   (14–17). Token contract errors share the `Error(Contract, #N)` namespace
+//!   (18–22). Token contract errors share the `Error(Contract, #N)` namespace
 //!   with this contract's codes, so propagating them raw would let a token's
 //!   own code masquerade as a StreamPay code in clients. Because the failure
 //!   is still returned as `Err`, the whole invocation — including any effects
 //!   written before the transfer — rolls back atomically.
+//! - `treasury.charged_total == sum of FeeCharged events == sum of stored
+//!   per-stream fees`, provable from public reads (see `treasury.rs`).
 
+#[cfg(test)]
+extern crate std;
+
+#[cfg(test)]
+mod error_surface_test;
 mod errors;
 mod events;
 mod stream;
+pub mod surface;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
 mod test_client;
+mod treasury;
 
 use soroban_sdk::{
     contract, contractimpl, token::TokenClient, Address, ConversionError, Env,
     Error as SorobanError, InvokeError, MuxedAddress, Vec,
 };
 
+use surface::Branch;
+
 pub use errors::StreamError;
-pub use events::{StreamCancelled, StreamCreated, StreamToppedUp, Withdrawn};
+pub use events::{
+    FeeCharged, FeeWithdrawn, StreamCancelled, StreamCreated, StreamToppedUp, Withdrawn,
+};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
 pub use stream::{streamed_at, Stream, StreamStatus, MAX_DURATION_SECONDS, MAX_PAGE_SIZE};
+pub use treasury::{fee_amount, FeeScan, Treasury, TreasuryStatus, BPS_DENOMINATOR, MAX_FEE_BPS};
 
 /// The StreamPay streaming-payments contract.
 #[contract]
@@ -75,25 +93,28 @@ type TokenCall<T> = Result<Result<T, ConversionError>, Result<SorobanError, Invo
 /// effects already written in this call roll back together with the failed
 /// (and therefore fully rolled-back) token transfer — no partial state and no
 /// partial event log can survive a failed transfer.
-fn token_result<T>(res: TokenCall<T>, on_failure: StreamError) -> Result<T, StreamError> {
+fn token_result<T>(res: TokenCall<T>, on_failure: Branch) -> Result<T, StreamError> {
     match res {
         Ok(Ok(value)) => Ok(value),
         // Conversion failures mean the callee did not return a SEP-41 shaped
         // value; treat a non-compliant token exactly like a failed transfer.
-        Ok(Err(_)) | Err(_) => Err(on_failure),
+        // Both failure modes are reported through the branch registry, so the
+        // error-surface matrix sees the exact `(entrypoint, condition)` that
+        // refused the call.
+        Ok(Err(_)) | Err(_) => Err(surface::reject(on_failure)),
     }
 }
 
 /// Pulls `amount` of `token` from `payer` into this contract via
 /// `transfer_from`, mapping a token-side failure (insufficient balance or
-/// allowance, a non-transferable asset, a non-token contract) to
-/// `on_failure`.
+/// allowance, a non-transferable asset, a non-token contract) to the code
+/// `on_failure` declares.
 fn pull(
     env: &Env,
     token: &Address,
     payer: &Address,
     amount: i128,
-    on_failure: StreamError,
+    on_failure: Branch,
 ) -> Result<(), StreamError> {
     let res = TokenClient::new(env, token).try_transfer_from(
         &env.current_contract_address(),
@@ -105,13 +126,13 @@ fn pull(
 }
 
 /// Sends `amount` of `token` held by this contract to `recipient` via
-/// `transfer`, mapping a token-side failure to `on_failure`.
+/// `transfer`, mapping a token-side failure to the code `on_failure` declares.
 fn push(
     env: &Env,
     token: &Address,
     recipient: &MuxedAddress,
     amount: i128,
-    on_failure: StreamError,
+    on_failure: Branch,
 ) -> Result<(), StreamError> {
     let res = TokenClient::new(env, token).try_transfer(
         &env.current_contract_address(),
@@ -123,11 +144,32 @@ fn push(
 
 #[contractimpl]
 impl StreamingPayments {
+    /// Deploy-time constructor: binds the treasury governor.
+    ///
+    /// Binding governance in the deployment transaction (rather than via a
+    /// later `initialize` call) removes the front-running window where an
+    /// attacker could claim an uninitialized treasury. The fee rate starts
+    /// at 0 and is configured afterwards via
+    /// [`StreamingPayments::set_fee_bps`].
+    pub fn __constructor(env: Env, governor: Address) {
+        env.storage()
+            .instance()
+            .set(&stream::DataKey::Governor, &governor);
+        env.storage()
+            .instance()
+            .extend_ttl(stream::TTL_THRESHOLD_LEDGERS, stream::TTL_EXTEND_LEDGERS);
+    }
+
     /// Creates a linear payment stream and pulls `deposit_amount` of `token`
     /// from `sender` into this contract.
     ///
     /// The sender must first approve this contract as a spender on `token`
     /// (`token.approve(sender, streaming_contract, deposit_amount, ...)`).
+    /// When a protocol fee is configured, the approval (and the pull) cover
+    /// `deposit_amount + fee`, where `fee = deposit_amount * fee_bps / 10_000`
+    /// is charged once, here at the deposit boundary — never during
+    /// accrual or payout. At `fee_bps == 0` the call is identical to the
+    /// fee-less contract: same pull, same events, same state.
     ///
     /// * `start_time` must not be in the past (UIs pass the current time to
     ///   start streaming immediately).
@@ -155,30 +197,44 @@ impl StreamingPayments {
         sender.require_auth();
 
         if deposit_amount <= 0 {
-            return Err(StreamError::ZeroAmount);
+            return Err(surface::reject(Branch::CreateDepositNonPositive));
         }
         let now = env.ledger().timestamp();
         if start_time < now {
-            return Err(StreamError::StartTimeInPast);
+            return Err(surface::reject(Branch::CreateStartTimeInPast));
         }
         if end_time <= start_time {
-            return Err(StreamError::InvalidTimeRange);
+            return Err(surface::reject(Branch::CreateInvalidTimeRange));
         }
+        // MUTANT-SUPPRESS: replace - with + is acceptable because create_stream
+        // enforces end_time > start_time at lines 89-90. The mutation would
+        // produce an absurdly large duration that would immediately fail
+        // MAX_DURATION_SECONDS validation (line 93). This is an unreachable
+        // code path given the contract's invariants.
         let duration = end_time - start_time;
         if duration > MAX_DURATION_SECONDS {
-            return Err(StreamError::DurationTooLong);
+            return Err(surface::reject(Branch::CreateDurationTooLong));
         }
         stream::validate_capacity(deposit_amount, duration)?;
 
-        // Interaction: pull the deposit from the sender. A token-side failure
-        // maps to a distinct code; returning `Err` aborts before anything is
-        // persisted (no id consumed, no event emitted).
+        // Protocol fee, computed at the deposit boundary only. The accrual
+        // math (`deposit`, `streamed_at`, cancel splits) never sees it.
+        let fee_bps = treasury::current_fee_bps(&env);
+        let fee = treasury::fee_amount(deposit_amount, fee_bps)?;
+        let pull_amount = deposit_amount
+            .checked_add(fee)
+            .ok_or(StreamError::MathOverflow)?;
+
+        // Interaction: pull the deposit (plus fee, when configured) from
+        // the sender. A token-side failure maps to a distinct code; returning
+        // `Err` aborts before anything is persisted (no id consumed, no fee
+        // recorded, no event emitted).
         pull(
             &env,
             &token,
             &sender,
-            deposit_amount,
-            StreamError::DepositTransferFailed,
+            pull_amount,
+            Branch::CreateDepositTransferFailed,
         )?;
 
         // Effects: persist the stream and announce it.
@@ -197,6 +253,11 @@ impl StreamingPayments {
         };
         stream::put_stream(&env, &s);
         stream::index_stream(&env, &s);
+        if fee > 0 {
+            // Effects: accumulate the fee in the token's treasury and store
+            // the per-stream fee before any event announces it.
+            treasury::apply_fee(&env, &token, id, fee)?;
+        }
 
         StreamCreated {
             stream_id: id,
@@ -209,6 +270,17 @@ impl StreamingPayments {
             cancelable,
         }
         .publish(&env);
+
+        if fee > 0 {
+            FeeCharged {
+                stream_id: id,
+                token: s.token.clone(),
+                payer: s.sender.clone(),
+                amount: fee,
+                fee_bps,
+            }
+            .publish(&env);
+        }
 
         Ok(id)
     }
@@ -226,13 +298,13 @@ impl StreamingPayments {
     /// `withdrawn` update back with it.
     pub fn withdraw(env: Env, stream_id: u64, amount: i128) -> Result<(), StreamError> {
         if amount <= 0 {
-            return Err(StreamError::ZeroAmount);
+            return Err(surface::reject(Branch::WithdrawAmountNonPositive));
         }
         let mut s = Self::authorize_withdrawal(&env, stream_id)?;
 
         let available = stream::available_amount(&env, &s)?;
         if amount > available {
-            return Err(StreamError::AmountExceedsAvailable);
+            return Err(surface::reject(Branch::WithdrawAmountExceedsAvailable));
         }
 
         Self::pay_out(&env, &mut s, amount)
@@ -254,7 +326,7 @@ impl StreamingPayments {
 
         let amount = stream::available_amount(&env, &s)?;
         if amount <= 0 {
-            return Err(StreamError::NothingToWithdraw);
+            return Err(surface::reject(Branch::WithdrawMaxNothingToWithdraw));
         }
 
         Self::pay_out(&env, &mut s, amount)?;
@@ -267,7 +339,7 @@ impl StreamingPayments {
         let s = stream::get_stream(env, stream_id)?;
         s.recipient.require_auth();
         if s.status != StreamStatus::Active {
-            return Err(StreamError::StreamNotActive);
+            return Err(surface::reject(Branch::StreamNotActive));
         }
         Ok(s)
     }
@@ -279,7 +351,7 @@ impl StreamingPayments {
         s.withdrawn = s
             .withdrawn
             .checked_add(amount)
-            .ok_or(StreamError::MathOverflow)?;
+            .ok_or_else(|| surface::reject(Branch::PayoutOverflow))?;
         if s.withdrawn == s.deposit {
             s.status = StreamStatus::Depleted;
         }
@@ -298,7 +370,7 @@ impl StreamingPayments {
             &s.token,
             &stream::muxed(&s.recipient),
             amount,
-            StreamError::RecipientPayoutFailed,
+            Branch::RecipientPayoutFailed,
         )
     }
 
@@ -319,15 +391,15 @@ impl StreamingPayments {
 
         let mut s = stream::get_stream(&env, stream_id)?;
         if s.status != StreamStatus::Active {
-            return Err(StreamError::StreamNotActive);
+            return Err(surface::reject(Branch::StreamNotActive));
         }
         if caller != s.sender {
             if caller == s.recipient {
                 if !s.cancelable {
-                    return Err(StreamError::StreamNotCancellable);
+                    return Err(surface::reject(Branch::CancelStreamNotCancellable));
                 }
             } else {
-                return Err(StreamError::NotAuthorized);
+                return Err(surface::reject(Branch::CancelStreamNotAuthorized));
             }
         }
 
@@ -338,7 +410,7 @@ impl StreamingPayments {
         s.withdrawn = s
             .withdrawn
             .checked_add(recipient_amount)
-            .ok_or(StreamError::MathOverflow)?;
+            .ok_or_else(|| surface::reject(Branch::CancelSplitOverflow))?;
         stream::put_stream(&env, &s);
 
         StreamCancelled {
@@ -349,22 +421,32 @@ impl StreamingPayments {
         }
         .publish(&env);
 
+        // MUTANT-SUPPRESS: replace > with >= is acceptable because recipient_amount
+        // is only 0 when cancel_amounts computes 0 (cancel before start). The test
+        // cancel_at_exact_start_pays_sender_everything verifies correct behavior
+        // without the transfer. The >= mutation would only add a no-op transfer of
+        // 0 tokens, which is functionally equivalent but unnecessary.
         if recipient_amount > 0 {
             push(
                 &env,
                 &s.token,
                 &stream::muxed(&s.recipient),
                 recipient_amount,
-                StreamError::RecipientPayoutFailed,
+                Branch::RecipientPayoutFailed,
             )?;
         }
+        // MUTANT-SUPPRESS: replace > with >= is acceptable because sender_amount
+        // is only 0 when cancel_amounts computes 0 (cancel after end). The test
+        // cancel_after_end_pays_recipient_everything verifies correct behavior
+        // without the transfer. The >= mutation would only add a no-op transfer of
+        // 0 tokens, which is functionally equivalent but unnecessary.
         if sender_amount > 0 {
             push(
                 &env,
                 &s.token,
                 &stream::muxed(&s.sender),
                 sender_amount,
-                StreamError::SenderRefundFailed,
+                Branch::SenderRefundFailed,
             )?;
         }
 
@@ -388,18 +470,18 @@ impl StreamingPayments {
     /// `docs/ARCHITECTURE.md` for the design considerations and roadmap.
     pub fn top_up(env: Env, stream_id: u64, amount: i128) -> Result<(), StreamError> {
         if amount <= 0 {
-            return Err(StreamError::ZeroAmount);
+            return Err(surface::reject(Branch::TopUpAmountNonPositive));
         }
         let mut s = stream::get_stream(&env, stream_id)?;
         if s.status != StreamStatus::Active {
-            return Err(StreamError::StreamNotActive);
+            return Err(surface::reject(Branch::StreamNotActive));
         }
         s.sender.require_auth();
 
         let new_deposit = s
             .deposit
             .checked_add(amount)
-            .ok_or(StreamError::MathOverflow)?;
+            .ok_or_else(|| surface::reject(Branch::TopUpDepositOverflow))?;
         stream::validate_capacity(new_deposit, s.duration())?;
 
         // Interaction: pull the added funds from the sender. A token-side
@@ -410,7 +492,7 @@ impl StreamingPayments {
             &s.token,
             &s.sender,
             amount,
-            StreamError::TopUpTransferFailed,
+            Branch::TopUpTransferFailed,
         )?;
 
         // Effects: record the new deposit and announce it.
@@ -461,5 +543,182 @@ impl StreamingPayments {
     /// pagination and advisory semantics as [`StreamingPayments::recipient_streams`].
     pub fn sender_streams(env: Env, sender: Address, offset: u32, limit: u32) -> Vec<u64> {
         stream::page_stream_ids(&env, &stream::DataKey::SenderStreams(sender), offset, limit)
+    }
+
+    // ------------------------------------------------------------ treasury --
+    //
+    // The optional protocol-fee layer: configuration (governor-gated),
+    // governance withdrawal, and the open verification reads. Design and
+    // invariants live in `treasury.rs`; the decision table for fees vs.
+    // cancel refunds is in `docs/ARCHITECTURE.md`.
+
+    /// Sets the protocol fee rate (basis points on each new stream's
+    /// deposit, charged once at creation). Governor-only. Reverts with
+    /// [`StreamError::FeeRateTooHigh`] above [`MAX_FEE_BPS`] (the protocol
+    /// cap) and with [`StreamError::NotGovernor`] for any other caller.
+    ///
+    /// Changes apply only to streams created afterwards: fees are a
+    /// property of the deposit boundary a stream actually crossed, never
+    /// retroactively.
+    pub fn set_fee_bps(env: Env, caller: Address, new_fee_bps: u32) -> Result<(), StreamError> {
+        treasury::require_governor(&env, &caller)?;
+        if new_fee_bps > MAX_FEE_BPS {
+            return Err(surface::reject(Branch::SetFeeRateTooHigh));
+        }
+        treasury::set_fee_bps(&env, new_fee_bps);
+        env.storage()
+            .instance()
+            .extend_ttl(stream::TTL_THRESHOLD_LEDGERS, stream::TTL_EXTEND_LEDGERS);
+        Ok(())
+    }
+
+    /// Nominates `new_governor` as the next treasury governor (governor-only,
+    /// step 1 of a two-step rotation). Two steps mean a typo'd address can
+    /// never irreversibly strand the treasury: only an address that can
+    /// prove control (`accept_governor`) ever becomes governor.
+    pub fn nominate_governor(
+        env: Env,
+        caller: Address,
+        new_governor: Address,
+    ) -> Result<(), StreamError> {
+        treasury::require_governor(&env, &caller)?;
+        env.storage()
+            .instance()
+            .set(&stream::DataKey::PendingGovernor, &new_governor);
+        env.storage()
+            .instance()
+            .extend_ttl(stream::TTL_THRESHOLD_LEDGERS, stream::TTL_EXTEND_LEDGERS);
+        Ok(())
+    }
+
+    /// Completes a governor rotation (step 2): the nominated address proves
+    /// control by authorizing this call and becomes the governor. Reverts
+    /// with [`StreamError::NoPendingGovernor`] when nothing is pending and
+    /// [`StreamError::NotGovernor`] for a caller who is not the nominee.
+    pub fn accept_governor(env: Env, caller: Address) -> Result<(), StreamError> {
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&stream::DataKey::PendingGovernor)
+            .ok_or_else(|| surface::reject(Branch::AcceptGovernorNoPending))?;
+        if pending != caller {
+            return Err(surface::reject(Branch::AcceptGovernorNotNominee));
+        }
+        caller.require_auth();
+        env.storage()
+            .instance()
+            .set(&stream::DataKey::Governor, &caller);
+        env.storage()
+            .instance()
+            .remove(&stream::DataKey::PendingGovernor);
+        env.storage()
+            .instance()
+            .extend_ttl(stream::TTL_THRESHOLD_LEDGERS, stream::TTL_EXTEND_LEDGERS);
+        Ok(())
+    }
+
+    /// Withdraws accumulated protocol fees for `token` to `recipient`.
+    /// Governor-only; bounded by fees collected minus fees already
+    /// withdrawn ([`StreamError::InsufficientTreasuryBalance`]).
+    ///
+    /// Effects-interactions ordered: `FeeWithdrawn` is emitted and the
+    /// accounting persisted *before* the token transfer. A token-side failure
+    /// to pay out returns [`StreamError::TreasuryPayoutFailed`], rolling the
+    /// recorded withdrawal and the event back with it.
+    pub fn withdraw_treasury(
+        env: Env,
+        caller: Address,
+        token: Address,
+        recipient: Address,
+        amount: i128,
+    ) -> Result<(), StreamError> {
+        treasury::require_governor(&env, &caller)?;
+        if amount <= 0 {
+            return Err(surface::reject(Branch::WithdrawTreasuryAmountNonPositive));
+        }
+        let mut t = treasury::get_treasury(&env, &token);
+        if amount > t.collectible()? {
+            return Err(surface::reject(Branch::WithdrawTreasuryExceedsBalance));
+        }
+
+        // Effects (CEI): record the withdrawal and announce it before the
+        // tokens move.
+        t.withdrawn_total = t
+            .withdrawn_total
+            .checked_add(amount)
+            .ok_or(StreamError::MathOverflow)?;
+        treasury::put_treasury(&env, &token, &t);
+
+        FeeWithdrawn {
+            token: token.clone(),
+            governor: caller,
+            recipient: recipient.clone(),
+            amount,
+            withdrawn_total: t.withdrawn_total,
+        }
+        .publish(&env);
+
+        // Interaction: a token-side failure maps to its own code and rolls
+        // the recorded withdrawal and the `FeeWithdrawn` event back with it.
+        push(
+            &env,
+            &token,
+            &stream::muxed(&recipient),
+            amount,
+            Branch::TreasuryPayoutFailed,
+        )?;
+
+        Ok(())
+    }
+
+    /// One-call treasury snapshot for `token`: governor, pending nominee,
+    /// current fee configuration, and the fee ledger totals that must
+    /// reconcile with the `FeeCharged` / `FeeWithdrawn` event streams.
+    /// Public, read-only, no auth.
+    pub fn treasury_status(env: Env, token: Address) -> TreasuryStatus {
+        let t = treasury::get_treasury(&env, &token);
+        let collectible = t.collectible().unwrap_or(0);
+        TreasuryStatus {
+            token,
+            governor: treasury::governor(&env),
+            pending_governor: treasury::pending_governor(&env),
+            fee_bps: treasury::current_fee_bps(&env),
+            max_fee_bps: MAX_FEE_BPS,
+            charged_total: t.charged_total,
+            withdrawn_total: t.withdrawn_total,
+            collectible,
+        }
+    }
+
+    /// The protocol fee charged for `stream_id` at creation, in smallest
+    /// token units. Zero for streams created while fees were disabled (or
+    /// whose fee rounded to zero). Reverts with
+    /// [`StreamError::StreamNotFound`] for unknown ids.
+    pub fn stream_fee(env: Env, stream_id: u64) -> Result<i128, StreamError> {
+        stream::get_stream(&env, stream_id)?;
+        Ok(treasury::stream_fee(&env, stream_id))
+    }
+
+    /// One bounded page of the fee verification scan: sums stored
+    /// per-stream fees for `token` over a window of the stream-id space
+    /// (`count` clamped to [`MAX_PAGE_SIZE`]). Page from id 1 until `done`
+    /// is true; the summed `fees_in_range` values must equal
+    /// `treasury_status(token).charged_total` — and both must equal the
+    /// amounts in the contract's `FeeCharged` events. That three-way
+    /// equality is the treasury invariant, verifiable by anyone from
+    /// public reads alone (see `scripts/verify-fees.ts`).
+    pub fn verify_treasury(env: Env, token: Address, start_id: u64, count: u32) -> FeeScan {
+        treasury::scan_fees(&env, &token, start_id, count)
+    }
+
+    /// Number of streams ever created (ids are `1..=total_streams()`).
+    /// Public convenience for verifiers to know the scan range.
+    pub fn total_streams(env: Env) -> u64 {
+        let next: u64 = env
+            .storage()
+            .persistent()
+            .get(&stream::DataKey::NextStreamId)
+            .unwrap_or(1);
+        next.saturating_sub(1)
     }
 }

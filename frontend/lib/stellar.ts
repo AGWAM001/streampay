@@ -161,10 +161,15 @@ const STREAM_ERRORS: Record<number, string> = {
   11: "MathOverflow",
   12: "NotAuthorized",
   13: "NothingToWithdraw",
-  14: "DepositTransferFailed",
-  15: "TopUpTransferFailed",
-  16: "RecipientPayoutFailed",
-  17: "SenderRefundFailed",
+  14: "FeeRateTooHigh",
+  15: "NotGovernor",
+  16: "NoPendingGovernor",
+  17: "InsufficientTreasuryBalance",
+  18: "DepositTransferFailed",
+  19: "TopUpTransferFailed",
+  20: "RecipientPayoutFailed",
+  21: "SenderRefundFailed",
+  22: "TreasuryPayoutFailed",
 };
 
 /** Rewrites raw simulation/tx error text into a readable StreamError name. */

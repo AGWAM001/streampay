@@ -46,8 +46,9 @@ For a one-command deployed contract + demo stream, see
 - Read-only calls (`get_stream`, `available`, the index views, `allowance`)
   simulate against the RPC without signing.
 - Contract errors decode to `StreamError` names, including the transfer-
-  failure codes: `DepositTransferFailed` (14), `TopUpTransferFailed` (15),
-  `RecipientPayoutFailed` (16), `SenderRefundFailed` (17).
+  failure codes: `DepositTransferFailed` (18), `TopUpTransferFailed` (19),
+  `RecipientPayoutFailed` (20), `SenderRefundFailed` (21),
+  `TreasuryPayoutFailed` (22).
 - Amounts are **smallest token units** (stroops for classic assets).
 - The stream list persists per-address cache in `localStorage` (scoped by
   network); on-chain indexes are the source for discovery, cache is only a

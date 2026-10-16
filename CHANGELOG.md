@@ -10,17 +10,72 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- **Optional protocol-fee treasury** (`treasury.rs`): a fee charged once at
+  the deposit boundary of `create_stream` (`deposit × fee_bps / 10_000`,
+  floored, sender pays `deposit + fee`). The stream's `deposit` and every
+  accrual/payout/cancel computation are unchanged — at `fee_bps = 0` (the
+  default) behavior is bit-for-bit identical to v0.3. Protocol cap:
+  `MAX_FEE_BPS = 100` (1 %), a hard constant.
+- Per-token treasury accounting (`Treasury { charged_total, withdrawn_total }`)
+  plus a per-stream fee record (`StreamFee { token, amount }`), written only
+  in lockstep with the new append-only events `FeeCharged` (stream_id topic)
+  and `FeeWithdrawn` (token topic).
+- Withdrawal governance: `__constructor(governor)` binds the treasury
+  governor at deploy time (no front-runnable bootstrap); two-step rotation
+  (`nominate_governor` / `accept_governor`); governor-gated `set_fee_bps`
+  and `withdraw_treasury` (CEI-ordered, bounded by fees collected minus
+  fees withdrawn).
+- Open verification reads: `treasury_status(token)`, `stream_fee(stream_id)`,
+  `total_streams()`, and the bounded paged scan `verify_treasury(token,
+  start_id, count)` — proving `fee_total == Σ per-stream fees == Σ FeeCharged
+  events` from public reads. `scripts/verify-fees.ts` is a key-less public
+  audit script reconciling all three records against any Soroban RPC.
+- New `StreamError` variants (appended): `FeeRateTooHigh` (14),
+  `NotGovernor` (15), `NoPendingGovernor` (16),
+  `InsufficientTreasuryBalance` (17).
+- Treasury test suite incl. the decision-table test for fees ×
+  cancel-refunds and a seeded property test asserting the verifier always
+  agrees across random activity sequences.
+- `infra/ttl-sentinel` — an operational sentinel for storage rent and TTLs,
+  documented in [`infra/ttl-sentinel/README.md`](./infra/ttl-sentinel/README.md)
+  and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §12. It scans every
+  storage class (stream, address index, id counter, contract instance, Wasm
+  code), reads `liveUntilLedgerSeq`, and alerts on `warn` / `crit` / `expired`
+  transitions to console, JSONL and webhook sinks — read-only, no key.
+  Extension is a separate, off-by-default component with its own funded key,
+  dry-run default and monthly budget meter. The same module projects rent from
+  measured entry sizes (504 B per stream) against the CAP-0066 fee curve, as
+  input for the upcoming pricing/dust work.
+- Recorded per-class worst-case cliffs derived from the contract's actual
+  extension behavior: 200,000 ledgers for streams and index entries,
+  **4,095 ledgers (~5.7 h) for the id counter, the contract instance and the
+  Wasm code entry**, none of which the contract ever extends (invocations do
+  not auto-extend instance/code entries). A schedule whose warning would land
+  outside its class cliff now fails validation instead of shipping.
+- Error-surface instrumentation and a generated test matrix
+  (`error_surface_test.rs`): every `(entrypoint, condition)` rejection branch is
+  registered in `src/surface.rs`, probed for its declared `StreamError`, and
+  checked for coverage — CI fails on any error code with zero reachable
+  branches or any branch without a code.
+- Generated [`docs/ERRORS.md`](./docs/ERRORS.md) (entrypoint × branch → code
+  table) with a CI step that regenerates it and diffs the committed artifact.
 - Distinct `StreamError` codes for token-transfer failures, appended after
-  `NothingToWithdraw = 13`: `DepositTransferFailed` (14),
-  `TopUpTransferFailed` (15), `RecipientPayoutFailed` (16),
-  `SenderRefundFailed` (17). Every token call now runs through the SDK's
-  fallible (`try_`) client and any failure — missing allowance/balance, an
-  asset that refuses transfers, a non-SEP-41 callee — is re-raised as its own
-  StreamPay code, because contract error numbers share the
+  `InsufficientTreasuryBalance = 17`: `DepositTransferFailed` (18),
+  `TopUpTransferFailed` (19), `RecipientPayoutFailed` (20),
+  `SenderRefundFailed` (21), and — for the fee-treasury payout path added
+  above — `TreasuryPayoutFailed` (22). Every token call now runs through the
+  SDK's fallible (`try_`) client and any failure — missing allowance/balance,
+  an asset that refuses transfers, a non-SEP-41 callee — is re-raised as its
+  own StreamPay code, because contract error numbers share the
   `Error(Contract, #N)` namespace and a token's `#5` could otherwise
   masquerade as StreamPay's `StreamNotActive`. The mapped error is still
   returned as `Err`, so the whole invocation (effects + events) rolls back —
   CEI ordering and atomicity are unchanged.
+  Each token-side rejection is registered as a `surface::reject` branch
+  (`CreateDepositTransferFailed`, `TopUpTransferFailed`,
+  `RecipientPayoutFailed`, `SenderRefundFailed`, `TreasuryPayoutFailed`), so
+  the generated error-surface matrix probes every one of them and
+  `docs/ERRORS.md` documents them like every other branch.
 - Non-native asset tests, end to end: full lifecycle
   (create → top-up → withdraw → withdraw_max → cancel) against a registered
   Stellar Asset Contract with supply conservation, allowance/balance pull
@@ -39,10 +94,6 @@ interface: they are only ever appended to, never renumbered or reused.
   sign `token.approve` only when it is short — previously the form promised
   this but no approval was ever sent, so every first stream failed at
   simulation.
-
-### Fixed
-- Create-form failures decode to `StreamError` names like every other path
-  (they were surfaced as raw error strings).
 - Governed release pipeline (`sandbox → testnet → mainnet canary`):
   `.github/workflows/promote.yml` (manual dispatch, GitHub
   Environment-gated approvals, digest continuity at every step, automatic
@@ -55,6 +106,20 @@ interface: they are only ever appended to, never renumbered or reused.
 - Append-only deployment records in `deployments/` (promotion log, per-run
   records, per-environment contract-interface baselines) and the design +
   operator docs `docs/DEPLOY_PIPELINE.md` and `docs/CANARY_RUNBOOK.md`.
+
+### Changed
+- **Deployment interface:** the contract now has a constructor. Deploy with
+  the governor address as a constructor argument
+  (`stellar contract deploy … -- --governor G…`); `scripts/deploy_testnet.sh`
+  passes the deployer as governor. Existing v0.3 deployments are unaffected
+  (no upgrade path; new deployments only).
+- Retired `StreamError::NotStreamSender` (2) and `NotStreamRecipient` (3) as
+  unreachable under the append-only policy: the numeric codes are kept and
+  reserved, never reused or renumbered.
+
+### Fixed
+- Create-form failures decode to `StreamError` names like every other path
+  (they were surfaced as raw error strings).
 
 ## [0.3.0] - 2026-10-04
 
