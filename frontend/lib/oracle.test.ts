@@ -1,7 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert";
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { streamedAt, MathOverflowError, computeVestingAccrual } from "./oracle";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { streamedAt, MathOverflowError, computeVestingAccrual } from "./oracle.ts";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface VectorEntry {
   deposit: string;
@@ -12,10 +16,10 @@ interface VectorEntry {
 }
 
 describe("oracle differential fuzz-vector suite against contract streamed_at", () => {
-  const vectorPath = resolve(__dirname, "../../../tests/vectors/accrual_vectors.json");
+  const vectorPath = resolve(__dirname, "../../tests/vectors/accrual_vectors.json");
 
   it("loads vector corpus", () => {
-    expect(existsSync(vectorPath)).toBe(true);
+    assert.strictEqual(existsSync(vectorPath), true);
   });
 
   const content = readFileSync(vectorPath, "utf-8");
@@ -29,14 +33,17 @@ describe("oracle differential fuzz-vector suite against contract streamed_at", (
       const elapsed = BigInt(vector.elapsed);
 
       if (vector.expected_error) {
-        expect(() => streamedAt(deposit, duration, elapsed)).toThrowError(MathOverflowError);
+        assert.throws(
+          () => streamedAt(deposit, duration, elapsed),
+          MathOverflowError
+        );
       } else {
         const actual = streamedAt(deposit, duration, elapsed);
-        expect(actual.toString()).toBe(vector.expected_result);
+        assert.strictEqual(actual.toString(), vector.expected_result);
       }
       checked++;
     }
-    expect(checked).toBe(vectors.length);
+    assert.strictEqual(checked, vectors.length);
   });
 });
 
@@ -48,8 +55,8 @@ describe("computeVestingAccrual", () => {
       cliffDuration: 25n,
       cliffAmount: 250n,
     };
-    expect(computeVestingAccrual(params, 10n)).toBe(0n);
-    expect(computeVestingAccrual(params, 24n)).toBe(0n);
+    assert.strictEqual(computeVestingAccrual(params, 10n), 0n);
+    assert.strictEqual(computeVestingAccrual(params, 24n), 0n);
   });
 
   it("unlocks cliff amount at cliff elapsed", () => {
@@ -59,7 +66,7 @@ describe("computeVestingAccrual", () => {
       cliffDuration: 25n,
       cliffAmount: 250n,
     };
-    expect(computeVestingAccrual(params, 25n)).toBe(250n);
+    assert.strictEqual(computeVestingAccrual(params, 25n), 250n);
   });
 
   it("accrues linearly after cliff up to total duration", () => {
@@ -71,9 +78,9 @@ describe("computeVestingAccrual", () => {
     };
     // At t=62.5 (37.5 after cliff out of 75 duration = 50% of 750 = 375 => total 625)
     // t=62 -> 37 elapsed after cliff. (750 * 37) / 75 = 370. Total = 250 + 370 = 620.
-    expect(computeVestingAccrual(params, 62n)).toBe(620n);
-    expect(computeVestingAccrual(params, 100n)).toBe(1000n);
-    expect(computeVestingAccrual(params, 150n)).toBe(1000n);
+    assert.strictEqual(computeVestingAccrual(params, 62n), 620n);
+    assert.strictEqual(computeVestingAccrual(params, 100n), 1000n);
+    assert.strictEqual(computeVestingAccrual(params, 150n), 1000n);
   });
 
   it("handles segmented piecewise schedules", () => {
@@ -88,9 +95,9 @@ describe("computeVestingAccrual", () => {
       ],
     };
 
-    expect(computeVestingAccrual(params, 25n)).toBe(100n);
-    expect(computeVestingAccrual(params, 50n)).toBe(200n);
-    expect(computeVestingAccrual(params, 75n)).toBe(600n);
-    expect(computeVestingAccrual(params, 100n)).toBe(1000n);
+    assert.strictEqual(computeVestingAccrual(params, 25n), 100n);
+    assert.strictEqual(computeVestingAccrual(params, 50n), 200n);
+    assert.strictEqual(computeVestingAccrual(params, 75n), 600n);
+    assert.strictEqual(computeVestingAccrual(params, 100n), 1000n);
   });
 });

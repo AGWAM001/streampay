@@ -40,6 +40,7 @@ pub fn convert_stream_error(err: StreamError) -> ModelError {
         StreamError::RecipientPayoutFailed => ModelError::RecipientPayoutFailed,
         StreamError::SenderRefundFailed => ModelError::SenderRefundFailed,
         StreamError::TreasuryPayoutFailed => ModelError::TreasuryPayoutFailed,
+        other => panic!("unhandled StreamError in differential model: {other:?}"),
     }
 }
 
