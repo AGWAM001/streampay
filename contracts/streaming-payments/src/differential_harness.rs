@@ -88,12 +88,7 @@ impl DifferentialHarness {
         let token_client = StellarAssetClient::new(&env, &token);
         for user in &users {
             token_client.mint(user, &INITIAL_USER_BALANCE);
-            token_client.approve(
-                user,
-                &contract_id,
-                &INITIAL_USER_BALANCE,
-                &1_000_000u32,
-            );
+            token_client.approve(user, &contract_id, &INITIAL_USER_BALANCE, &1_000_000u32);
         }
 
         let initial_now = env.ledger().timestamp();
@@ -306,10 +301,10 @@ impl DifferentialHarness {
                 let nominee = &self.users[n_idx];
                 let nominee_name = self.user_names[n_idx];
 
-                let c_res =
-                    self.client
-                        .mock_all_auths()
-                        .try_nominate_governor(caller, nominee);
+                let c_res = self
+                    .client
+                    .mock_all_auths()
+                    .try_nominate_governor(caller, nominee);
                 let m_res = self.model.nominate_governor(caller_name, nominee_name);
 
                 let c_mapped = match c_res {
@@ -406,8 +401,7 @@ impl DifferentialHarness {
     /// Cross-checks all balances, events, and state queries between the contract and the model.
     fn assert_state_and_queries_match(&mut self, step: usize) {
         // 1. Contract token balance matches model contract balance
-        let c_contract_bal =
-            TokenClient::new(&self.env, &self.token).balance(&self.contract_id);
+        let c_contract_bal = TokenClient::new(&self.env, &self.token).balance(&self.contract_id);
         let m_contract_bal = self
             .model
             .contract_balances

@@ -100,6 +100,7 @@ impl StreamPayModel {
     }
 
     /// Creates a payment stream and pulls `deposit + fee` from sender.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_stream(
         &mut self,
         sender: &str,

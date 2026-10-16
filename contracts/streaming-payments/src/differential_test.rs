@@ -92,7 +92,9 @@ fn demonstrate_intentional_fee_divergence_caught() {
         result.is_err(),
         "Harness MUST catch intentional fee calculation divergence"
     );
-    println!("SUCCESS: Intentional fee calculation divergence was caught by the differential harness!");
+    println!(
+        "SUCCESS: Intentional fee calculation divergence was caught by the differential harness!"
+    );
 }
 
 #[test]
@@ -110,5 +112,7 @@ fn demonstrate_intentional_cancel_split_divergence_caught() {
         result.is_err(),
         "Harness MUST catch intentional cancel refund divergence"
     );
-    println!("SUCCESS: Intentional cancel split divergence was caught by the differential harness!");
+    println!(
+        "SUCCESS: Intentional cancel split divergence was caught by the differential harness!"
+    );
 }

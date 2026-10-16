@@ -353,19 +353,40 @@ pub fn seed_complex_interleaved_lifecycle() -> ActionSequence {
 /// Returns all 14 baseline seeded scenarios.
 pub fn all_seeded_scenarios() -> Vec<(&'static str, ActionSequence)> {
     vec![
-        ("01_create_and_linear_withdraw", seed_create_and_linear_withdraw()),
-        ("02_multiple_partial_withdrawals", seed_multiple_partial_withdrawals()),
+        (
+            "01_create_and_linear_withdraw",
+            seed_create_and_linear_withdraw(),
+        ),
+        (
+            "02_multiple_partial_withdrawals",
+            seed_multiple_partial_withdrawals(),
+        ),
         ("03_withdraw_max", seed_withdraw_max()),
         ("04_cancel_by_sender", seed_cancel_by_sender()),
-        ("05_cancel_by_recipient_cancelable", seed_cancel_by_recipient_cancelable()),
-        ("06_cancel_by_recipient_non_cancelable_rejected", seed_cancel_by_recipient_non_cancelable_rejected()),
+        (
+            "05_cancel_by_recipient_cancelable",
+            seed_cancel_by_recipient_cancelable(),
+        ),
+        (
+            "06_cancel_by_recipient_non_cancelable_rejected",
+            seed_cancel_by_recipient_non_cancelable_rejected(),
+        ),
         ("07_cancel_before_start", seed_cancel_before_start()),
         ("08_cancel_after_end", seed_cancel_after_end()),
         ("09_top_up_pro_rata", seed_top_up_pro_rata()),
         ("10_top_up_after_end", seed_top_up_after_end()),
-        ("11_governor_two_step_rotation", seed_governor_two_step_rotation()),
-        ("12_protocol_fees_and_treasury_withdraw", seed_protocol_fees_and_treasury_withdraw()),
+        (
+            "11_governor_two_step_rotation",
+            seed_governor_two_step_rotation(),
+        ),
+        (
+            "12_protocol_fees_and_treasury_withdraw",
+            seed_protocol_fees_and_treasury_withdraw(),
+        ),
         ("13_invalid_inputs_rejected", seed_invalid_inputs_rejected()),
-        ("14_complex_interleaved_lifecycle", seed_complex_interleaved_lifecycle()),
+        (
+            "14_complex_interleaved_lifecycle",
+            seed_complex_interleaved_lifecycle(),
+        ),
     ]
 }
