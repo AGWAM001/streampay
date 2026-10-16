@@ -143,11 +143,14 @@ export class ClaimScheduler {
 
   /** Attempts an immediate submit regardless of fee (UI "Submit now"). */
   async submitNow(id: string): Promise<void> {
-    const claim = this.claims.find((c) => c.id === id);
+    let claim = this.claims.find((c) => c.id === id);
     if (!claim || claim.status !== "pending") return;
     if (claim.signedXdr === null) {
       await this.sign(claim, nowSeconds(), true);
-      if (claim.signedXdr === null) return;
+      // `sign` replaces the claim record in-place, so the reference we held is
+      // stale; re-read it before deciding whether there is anything to submit.
+      claim = this.claims.find((c) => c.id === id);
+      if (!claim || claim.signedXdr === null) return;
     }
     await this.submit(claim);
     this.persist();
