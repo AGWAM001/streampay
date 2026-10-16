@@ -286,8 +286,10 @@ or off-chain UX.
   budget, likely `try_create_batch` with per-item results.
 - Gas optimization pass on storage reads — `cancel_stream` does one
   read-modify-write; a `Stream` split into hot/cold fields could shave bytes.
-- Event indexer service — TypeScript worker polling `getEvents` per topic
-  `stream_id`, materializing stream history for the UI.
+- Event indexer & reconciler services — TypeScript workers polling `getEvents` per topic
+  `stream_id`, materializing stream history for the UI, and continuously auditing on-chain truth.
+  Instrumented with Prometheus metrics, Grafana dashboards, and alert rules (see [`infra/observability`](../infra/observability/README.md)
+  and [`docs/RUNBOOK.md`](./RUNBOOK.md)).
 - Contract-side TTL maintenance — extend `NextStreamId`, the instance entry and
   the code entry from inside the contract (or from the deploy path) instead of
   relying on the external sentinel. Costs rent on the write path but removes

@@ -59,6 +59,8 @@ Deep dive (storage model, checked math, reentrancy, TTL strategy, design decisio
 
 Incident response drills and procedures: [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md).
 
+Metrics, alerting stack, and operational diagnosis: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) and [`infra/observability`](./infra/observability/README.md).
+
 ## Contract API
 
 | Function | Caller | Moves tokens | Emits |
@@ -194,6 +196,10 @@ scripts/                        deploy_testnet.sh + the release/promotion pipeli
 scripts/verify-fees.ts          public fee-ledger audit (anyone can run, no keys)
 deployments/                    append-only promotion records + interface baselines
 infra/ttl-sentinel/             storage TTL + rent sentinel (scan, alerts, optional funded extender)
+infra/observability/            Prometheus + Grafana dashboards + Alertmanager compose/kustomize bundle
+infra/indexer/                  event indexer service with Prometheus metrics & fault injection
+infra/reconciler/               continuous state reconciler and truth verification daemon
+docs/RUNBOOK.md                 operational diagnosis runbook for all alert rules
 docs/ARCHITECTURE.md            design deep-dive
 docs/DEPLOY_PIPELINE.md         sandbox → testnet → mainnet-canary promotion design
 docs/CANARY_RUNBOOK.md          mainnet canary + rollback procedure
