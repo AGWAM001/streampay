@@ -162,7 +162,7 @@ CONTRACT=$(stellar contract deploy \
 echo "Contract ID: $CONTRACT"
 ```
 `create_stream` pulls the deposit through this allowance — without it the
-pull fails with `DepositTransferFailed` (#18): token-side failures are mapped
+pull fails with `DepositTransferFailed` (#26): token-side failures are mapped
 to distinct StreamPay codes, so a token's own error number can never
 masquerade as one.
 
@@ -292,6 +292,44 @@ stellar contract invoke --id "$CONTRACT" --source sender --network testnet -- av
 ### Step 6: Recipient Claim (`withdraw` & `withdraw_max`)
 
 The recipient can withdraw accrued tokens at any time.
+### 9. Scheduled intent + keeper
+
+Pre-authorize a one-shot stream that a keeper materializes for you. The sender
+approves the escrow exactly as in §3 (here `deposit + fee`), then schedules it:
+
+```bash
+NOW=$(date +%s)
+stellar contract invoke --id $CONTRACT --source sender --network testnet -- \
+  schedule_stream \
+    --sender $SENDER --recipient $RECIPIENT --token $TOKEN \
+    --deposit_amount 1000000 --start_time $((NOW + 60)) --end_time $((NOW + 3660)) \
+    --cancelable true --interval 0 --occurrences 1 --fee_budget 100000 \
+    --execute_after $NOW --expires_at $((NOW + 300))
+```
+
+Expected output: the intent id (`1`). Inspect it with `get_intent --intent_id 1`
+— `status: Pending`, `occurrences_remaining: 1`.
+
+Run the reference keeper against it (it simulates before sending):
+
+```bash
+CONTRACT_ID=$CONTRACT ONCE=1 INTENTS="1" ./scripts/keeper.sh
+```
+
+Expected: the keeper reports the intent as executable, sends the call, and the
+fee is paid to the keeper. `get_intent --intent_id 1` now shows
+`status: Executed`; the created stream id is in the `ScheduledStreamExecuted`
+event and appears in `recipient_streams` / `sender_streams`.
+
+For a **recurring** intent, set `--occurrences 3 --interval 86400` (three daily
+streams) and the keeper will execute each occurrence as it comes due. See
+[`SCHEDULED_INTENTS.md`](./SCHEDULED_INTENTS.md) for the timing model, the
+keeper economics, and the threat model.
+
+### 10. (Optional) Protocol fees + public verification
+
+Fees are off by default. The governor (the deployer in this demo) can
+configure ten basis points on new streams:
 
 #### Option 1: Partial Withdrawal
 Withdraw a specific amount:
@@ -351,6 +389,8 @@ stellar contract invoke --id "$CONTRACT" --source sender --network testnet -- \
 ### Step 8: Discovery via Address Indexes
 
 StreamPay maintains on-chain append-only indexes for user streams without requiring an external indexer:
+
+## Frontend
 
 ```bash
 # Streams where an account is the recipient

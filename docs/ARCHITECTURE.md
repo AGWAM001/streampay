@@ -12,18 +12,21 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 │                                                                    │
 │  lib.rs      entrypoints: create_stream(s) / withdraw / withdraw_max /│
 │              cancel_stream / top_up / get_stream / available /      │
-│              recipient_streams / sender_streams / set_fee_bps /    │
-│              nominate_governor / accept_governor / withdraw_treasury│
-│              treasury_status / stream_fee / verify_treasury /       │
-│              total_streams                                         │
+│              recipient_streams / sender_streams / schedule_stream / │
+│              execute_scheduled / cancel_scheduled / reclaim_expired │
+│              set_fee_bps / nominate_governor / accept_governor /    │
+│              withdraw_treasury / treasury_status / stream_fee /     │
+│              verify_treasury / total_streams                        │
 │  stream.rs   Stream type, storage, checked accrual math            │
+│  schedule.rs ScheduledIntent type, validation, timing, escrow      │
 │  treasury.rs protocol-fee math, per-token accounting, governor,    │
 │              verification scan (see §11)                           │
 │  errors.rs   StreamError — stable numeric codes, append-only       │
-│  events.rs   StreamCreated / Withdrawn / StreamCancelled /        │
-│              StreamToppedUp / FeeCharged (stream_id topic);        │
-│              StreamsCreated (sender topic), FeeWithdrawn          │
-│              (token topic)                                         │
+│  events.rs   StreamCreated / Withdrawn / StreamCancelled /         │
+│              StreamToppedUp / StreamScheduled /                    │
+│              ScheduledStreamExecuted / ScheduledIntentCancelled /  │
+│              ScheduledIntentExpired / FeeCharged / StreamsCreated /│
+│              FeeWithdrawn                                          │
 └──────────────────────────┬─────────────────────────────────────────┘
                            │ token interface (SAC-compatible)
                            ▼
@@ -38,6 +41,9 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 | `DataKey::Stream(id)` | `Stream` | full per-stream state |
 | `DataKey::RecipientStreams(addr)` | `Vec<u64>` | append-only ids where `addr` receives |
 | `DataKey::SenderStreams(addr)` | `Vec<u64>` | append-only ids created by `addr` |
+| `DataKey::NextIntentId` | `u64` | monotonic scheduled-intent id counter |
+| `DataKey::Intent(id)` | `ScheduledIntent` | full per-intent state (escrow, timing, `params_hash`) |
+| `DataKey::SenderIntents(addr)` | `Vec<u64>` | append-only intent ids scheduled by `addr` |
 | `DataKey::Governor` *(instance)* | `Address` | treasury governor (constructor-set, two-step rotated) |
 | `DataKey::PendingGovernor` *(instance)* | `Address` | rotation in progress |
 | `DataKey::FeeBps` *(instance)* | `u32` | fee rate in basis points; absent = 0 (disabled) |
@@ -50,7 +56,8 @@ a stream extends its TTL (`TTL_THRESHOLD_LEDGERS = 200_000`, extend to
 abandoned streams naturally archive to off-chain recovery — the Soroban-native
 way to bound state bloat without penalizing active users. Index entries get
 the same TTL treatment on write *and* on read, so an actively-queried address
-stays hot.
+stays hot. Scheduled intents reuse the same persistent-storage + TTL regime
+(`schedule.rs`), so an unfunded intents registry is bounded the same way.
 
 Nothing extends `DataKey::NextStreamId`, the contract instance entry or the
 Wasm code entry, and invoking a contract does not auto-extend instance/code
@@ -149,6 +156,10 @@ nothing has accrued, at `now ≥ end_time` the full duration has elapsed.
 | `withdraw` | recipient only | recipient |
 | `cancel_stream` | sender always; recipient iff `cancelable` | caller |
 | `top_up` | sender only | sender |
+| `schedule_stream` | anyone; `sender` must authorize | sender |
+| `execute_scheduled` | anyone (keeper) | keeper (the caller) |
+| `cancel_scheduled` | intent sender, before the window opens | sender |
+| `reclaim_expired` | anyone, after `expires_at` | none |
 
 The `cancelable` flag is chosen per stream at creation: payroll senders often
 want sender-only cancellation, while vesting recipients may want the right to
@@ -168,9 +179,15 @@ happen **before** the token transfers:
   emit `Withdrawn`, *then* `token.transfer`.
 - `cancel_stream`: set `Cancelled`, record the payout as withdrawn, emit
   `StreamCancelled`, *then* the two transfers.
-- `create_stream` / `create_streams` / `top_up`: pull tokens before persisting
-  stream records — if a reentrant callback abused the transfer-in, the
-  persisted state still reconciles with the balance (invariant below).
+- `create_stream` / `create_streams` / `top_up`: pull tokens first, persist after — if a
+  reentrant callback abused the transfer-in, the persisted state still
+  reconciles with the balance (invariant below).
+- `schedule_stream`: validates, commits `params_hash`, persists the intent,
+  emits, *then* pulls the escrow. A failed transfer rolls the invocation back.
+- `execute_scheduled`: decrements `occurrences_remaining` (terminal when it hits
+  zero), persists, creates the stream, emits, *then* pays the keeper. A
+  reentrant token callback finds the occurrence already consumed.
+- `cancel_scheduled` / `reclaim_expired`: mark terminal, refund, then emit.
 
 Additionally, `withdraw` and `cancel_stream` re-read `status` after auth: a
 malicious token contract that reenters `withdraw` during its own transfer
@@ -181,7 +198,7 @@ malicious-token test that attempts exactly this reentry.
 **Token failures are caught and re-typed, never swallowed.** Every token call
 goes through the SDK's fallible (`try_`) client; any failure — missing
 allowance or balance, an asset that refuses to move, a non-SEP-41 callee — is
-re-raised as the matching `*TransferFailed` code (18–22, §7). The mapping is
+re-raised as the matching `*TransferFailed` code (26–30, §7). The mapping is
 necessary because contract error numbers share the `Error(Contract, #N)`
 namespace: without it, a token's own `#5` would surface to clients as
 StreamPay's `StreamNotActive`. The mapped error is still returned as `Err`,
@@ -244,13 +261,21 @@ the public interface:
 | 15 | `NotGovernor` | non-governor calls a governor-gated function (also: non-nominee `accept_governor`) |
 | 16 | `NoPendingGovernor` | `accept_governor` with no nomination pending |
 | 17 | `InsufficientTreasuryBalance` | treasury withdrawal above fees collected minus fees withdrawn |
-| 18 | `DepositTransferFailed` | `create_stream` / `create_streams` token pull failed (allowance/balance, or the asset refused the transfer) |
-| 19 | `TopUpTransferFailed` | `top_up`'s token pull failed; `deposit` left unchanged |
-| 20 | `RecipientPayoutFailed` | token refused a payout to the recipient (`withdraw`, `withdraw_max`, or the recipient leg of `cancel_stream`) |
-| 21 | `SenderRefundFailed` | token refused the sender's refund at cancellation; the cancellation rolls back |
-| 22 | `TreasuryPayoutFailed` | token refused the payout of collected protocol fees in `withdraw_treasury`; the withdrawal record and event roll back |
+| 18 | `IntentNotFound` | no scheduled intent with this id |
+| 19 | `IntentNotPending` | intent already executed / cancelled / expired |
+| 20 | `IntentNotYetExecutable` | before the occurrence's `due` time |
+| 21 | `IntentExpired` | `now ≥ expires_at` on execute/cancel |
+| 22 | `IntentNotCancellable` | cancel after the execution window opened |
+| 23 | `InvalidScheduleParameters` | bad interval/occurrences/`execute_after`/`expires_at` |
+| 24 | `IntentParamsMismatch` | stored params no longer match `params_hash` |
+| 25 | `IntentNotExpired` | `reclaim_expired` before `expires_at` |
+| 26 | `DepositTransferFailed` | `create_stream` / `create_streams` token pull failed (allowance/balance, or the asset refused the transfer) |
+| 27 | `TopUpTransferFailed` | `top_up`'s token pull failed; `deposit` left unchanged |
+| 28 | `RecipientPayoutFailed` | token refused a payout to the recipient (`withdraw`, `withdraw_max`, or the recipient leg of `cancel_stream`) |
+| 29 | `SenderRefundFailed` | token refused the sender's refund at cancellation; the cancellation rolls back |
+| 30 | `TreasuryPayoutFailed` | token refused the payout of collected protocol fees in `withdraw_treasury`; the withdrawal record and event roll back |
 
-Codes 18–22 are *transfer-failure* codes: a token's own error number is
+Codes 26–30 are *transfer-failure* codes: a token's own error number is
 deliberately never propagated (see §5), so clients can always branch on these
 instead of parsing an opaque `Error(Contract, #N)`.
 
@@ -300,6 +325,20 @@ entry itself.
 Simplicity is a security feature; richer flows belong in composing contracts
 or off-chain UX.
 
+**Scheduled intents: native auth at schedule time, funds escrowed up front.**
+The sender authorizes the *scheduling* call (a normal Soroban
+`require_auth()`), and the contract commits the exact parameters into a SHA-256
+`params_hash` and pulls `(deposit + fee) × occurrences` immediately. Execution
+is then permissionless and needs no sender key: the keeper authorizes only its
+own call (which is what entitles it to the fee and prevents front-running).
+Escrowing up front is the load-bearing choice — it removes the "keeper executes
+an unfunded intent and wastes gas" failure mode entirely, at the cost of
+locking the sender's capital from scheduling until the last occurrence (or
+expiry). Recurring intents are modeled as N independent one-shot executions of
+a fixed-window recurrence, so catch-up and partial progress need no migration
+state. The full threat model (replay, front-running, under-funded-keeper
+griefing) is in [`SCHEDULED_INTENTS.md`](./SCHEDULED_INTENTS.md).
+
 ## 9. Testing strategy
 
 - **Unit tests** (`test.rs`) cover every spec edge case: withdraw before
@@ -327,6 +366,10 @@ or off-chain UX.
 - **`withdraw_max`** shares the `withdraw` payout tail (`pay_out`) so both
   paths inherit the same CEI ordering and reentrancy proof; index pagination
   and TTL behavior have dedicated tests in `test.rs`.
+- **Scheduled intents** (`schedule_test.rs`) cover the full lifecycle:
+  one-shot and recurring execution, double-execution rejection, the
+  cancel/execute race, expired-auth replay, permissionless reclaim, refund
+  accounting, and every validation/error path.
 - **Treasury property test** (`property_random_activity_sequences_keep_the_verifier_in_agreement`):
   seeded (reproducible) random activity sequences — creates, partial/full
   withdrawals, over-withdraw attempts, cancels by both parties, top-ups,
