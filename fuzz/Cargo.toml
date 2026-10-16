@@ -12,6 +12,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 streampay-contract = { path = "../contracts/streaming-payments" }
+streampay-model = { path = "../model", features = ["arbitrary"] }
 
 [[bin]]
 name = "streamed_at"
@@ -23,6 +24,8 @@ bench = false
 [[bin]]
 name = "dispute_bond"
 path = "fuzz_targets/dispute_bond.rs"
+name = "differential"
+path = "fuzz_targets/differential.rs"
 test = false
 doc = false
 bench = false
