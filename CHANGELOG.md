@@ -10,6 +10,24 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- **Optional asset allowlist policy module** (`policy.rs`, issue #75): an
+  opt-in, strictly-governed policy module restricting which assets may be used
+  in new streams while guaranteeing existing streams of a removed asset remain
+  fully withdrawable and refundable (the anti-brick invariant).
+- Two-step admin handoff (`policy_propose_handoff` / `policy_accept_handoff` /
+  `policy_cancel_handoff`), requiring proposed admin authorization before
+  transferring control.
+- Timelock on policy changes: allowlist mutations are queued with a timestamp
+  (`policy_propose_asset`) and executable only after a configurable delay
+  (`policy_timelock_delay`, default 48h), with permissionless execution
+  (`policy_execute_asset`) preventing governance hostage situations.
+- Append-only policy events: `PolicyInitialized`, `PolicyAssetQueued`,
+  `PolicyAssetExecuted`, `PolicyHandoffProposed`, `PolicyHandoffAccepted`,
+  `PolicyHandoffCancelled`.
+- New `StreamError` variants (appended): `PolicyAssetNotAllowed` (18),
+  `PolicyTimelockNotElapsed` (19), `PolicyNoQueuedChange` (20),
+  `PolicyNotInitialized` (21), `PolicyNoPendingHandoff` (22).
+- Governance failure table and model documentation in `docs/POLICY_GOVERNANCE.md`.
 - **Optional protocol-fee treasury** (`treasury.rs`): a fee charged once at
   the deposit boundary of `create_stream` (`deposit × fee_bps / 10_000`,
   floored, sender pays `deposit + fee`). The stream's `deposit` and every

@@ -86,13 +86,24 @@ pub enum Branch {
     /// `withdraw_treasury`: amount exceeds fees collected minus fees already
     /// withdrawn.
     WithdrawTreasuryExceedsBalance,
+    // ------------------------------------------------------------ policy
+    /// `create_stream`: asset is not on the policy allowlist.
+    PolicyAssetNotAllowed,
+    /// `policy_execute_asset`: timelock delay has not elapsed.
+    PolicyTimelockNotElapsed,
+    /// `policy_execute_asset`: no change queued for the asset.
+    PolicyNoQueuedChange,
+    /// policy admin entrypoints called before initialization.
+    PolicyNotInitialized,
+    /// `policy_accept_handoff` / `policy_cancel_handoff`: no handoff pending.
+    PolicyNoPendingHandoff,
 }
 
 impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 24] = [
+    pub const ALL: [Branch; 29] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -117,6 +128,11 @@ impl Branch {
         Branch::AcceptGovernorNotNominee,
         Branch::WithdrawTreasuryAmountNonPositive,
         Branch::WithdrawTreasuryExceedsBalance,
+        Branch::PolicyAssetNotAllowed,
+        Branch::PolicyTimelockNotElapsed,
+        Branch::PolicyNoQueuedChange,
+        Branch::PolicyNotInitialized,
+        Branch::PolicyNoPendingHandoff,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -166,6 +182,19 @@ impl Branch {
             Branch::WithdrawTreasuryAmountNonPositive | Branch::WithdrawTreasuryExceedsBalance => {
                 &["withdraw_treasury"]
             }
+            Branch::PolicyAssetNotAllowed => &["create_stream"],
+            Branch::PolicyTimelockNotElapsed | Branch::PolicyNoQueuedChange => {
+                &["policy_execute_asset"]
+            }
+            Branch::PolicyNotInitialized => &[
+                "policy_execute_asset",
+                "policy_propose_asset",
+                "policy_propose_handoff",
+                "policy_accept_handoff",
+                "policy_cancel_handoff",
+                "policy_set_timelock_delay",
+            ],
+            Branch::PolicyNoPendingHandoff => &["policy_accept_handoff", "policy_cancel_handoff"],
         }
     }
 
@@ -199,6 +228,11 @@ impl Branch {
             Branch::AcceptGovernorNoPending => StreamError::NoPendingGovernor,
             Branch::WithdrawTreasuryAmountNonPositive => StreamError::ZeroAmount,
             Branch::WithdrawTreasuryExceedsBalance => StreamError::InsufficientTreasuryBalance,
+            Branch::PolicyAssetNotAllowed => StreamError::PolicyAssetNotAllowed,
+            Branch::PolicyTimelockNotElapsed => StreamError::PolicyTimelockNotElapsed,
+            Branch::PolicyNoQueuedChange => StreamError::PolicyNoQueuedChange,
+            Branch::PolicyNotInitialized => StreamError::PolicyNotInitialized,
+            Branch::PolicyNoPendingHandoff => StreamError::PolicyNoPendingHandoff,
         }
     }
 
@@ -245,6 +279,15 @@ impl Branch {
             Branch::WithdrawTreasuryExceedsBalance => {
                 "amount exceeds fees collected minus fees already withdrawn"
             }
+            Branch::PolicyAssetNotAllowed => {
+                "the asset is not permitted by the policy module allowlist"
+            }
+            Branch::PolicyTimelockNotElapsed => {
+                "the timelock delay has not elapsed for this queued policy change"
+            }
+            Branch::PolicyNoQueuedChange => "no policy change is queued for the specified asset",
+            Branch::PolicyNotInitialized => "the policy module has not been initialized",
+            Branch::PolicyNoPendingHandoff => "no admin handoff proposal is pending",
         }
     }
 

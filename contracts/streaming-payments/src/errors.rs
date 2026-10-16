@@ -61,6 +61,16 @@ pub enum StreamError {
     /// A treasury withdrawal exceeds the fees collected minus fees already
     /// withdrawn for that token.
     InsufficientTreasuryBalance = 17,
+    /// The asset is not permitted by the policy module allowlist.
+    PolicyAssetNotAllowed = 18,
+    /// The timelock delay has not elapsed for this queued policy change.
+    PolicyTimelockNotElapsed = 19,
+    /// No policy change is queued for the specified asset.
+    PolicyNoQueuedChange = 20,
+    /// The policy module has not been initialized.
+    PolicyNotInitialized = 21,
+    /// No admin handoff proposal is pending.
+    PolicyNoPendingHandoff = 22,
 }
 
 impl StreamError {
@@ -85,6 +95,11 @@ impl StreamError {
         StreamError::NotGovernor,
         StreamError::NoPendingGovernor,
         StreamError::InsufficientTreasuryBalance,
+        StreamError::PolicyAssetNotAllowed,
+        StreamError::PolicyTimelockNotElapsed,
+        StreamError::PolicyNoQueuedChange,
+        StreamError::PolicyNotInitialized,
+        StreamError::PolicyNoPendingHandoff,
     ];
 
     /// The stable numeric value carried across the contract boundary
