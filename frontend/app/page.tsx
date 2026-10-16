@@ -4,6 +4,7 @@ import { useState } from "react";
 import { isConnected, requestAccess } from "@stellar/freighter-api";
 import {
   createStream,
+  createStreams,
   withdrawFromStream,
   withdrawMaxFromStream,
   topUpStream,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/stellar";
 import { loadStreamIds, saveStreamId } from "@/lib/storage";
 import StreamForm from "@/components/StreamForm";
+import BatchStreamForm from "@/components/BatchStreamForm";
 import StreamList from "@/components/StreamList";
 
 export default function Home() {
@@ -145,6 +147,25 @@ export default function Home() {
             await refresh(String(id));
           } catch (e) {
             setError(String(e));
+          }
+        }}
+      />
+
+      <BatchStreamForm
+        onCreate={async (token, entries, cancelable) => {
+          setError("");
+          try {
+            const ids = await createStreams(address, token, entries, cancelable);
+            setStatus(
+              `${ids.length} stream${ids.length === 1 ? "" : "s"} created: ${ids
+                .map((id) => `#${id}`)
+                .join(", ")}.`
+            );
+            await Promise.all(ids.map((id) => refresh(String(id))));
+            return true;
+          } catch (e) {
+            setError(describeError(e));
+            return false;
           }
         }}
       />
