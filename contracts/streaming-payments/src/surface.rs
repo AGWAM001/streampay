@@ -137,6 +137,21 @@ pub enum Branch {
     PolicyNotInitialized,
     /// `policy_accept_handoff` / `policy_cancel_handoff`: no handoff pending.
     PolicyNoPendingHandoff,
+    // ------------------------------------------------ upgrade & freeze
+    /// The contract is currently frozen for maintenance or upgrade.
+    ContractFrozen,
+    /// Storage migration was invoked while the contract is not frozen.
+    MigrationNotFrozen,
+    /// `execute_upgrade`: no upgrade proposal is pending.
+    ExecuteUpgradeNoPending,
+    /// `cancel_upgrade`: no upgrade proposal is pending.
+    CancelUpgradeNoPending,
+    /// `execute_upgrade`: the timelock delay has not yet expired.
+    TimelockNotExpired,
+    /// `propose_upgrade`: the proposed delay is shorter than MIN_UPGRADE_DELAY_SECONDS.
+    UpgradeDelayTooShort,
+    /// `migrate_storage`: the schema has already been migrated to the target version.
+    AlreadyMigrated,
 }
 
 impl Branch {
@@ -146,6 +161,7 @@ impl Branch {
     pub const ALL: [Branch; 30] = [
     pub const ALL: [Branch; 37] = [
     pub const ALL: [Branch; 42] = [
+    pub const ALL: [Branch; 49] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -194,6 +210,13 @@ impl Branch {
         Branch::PolicyNoQueuedChange,
         Branch::PolicyNotInitialized,
         Branch::PolicyNoPendingHandoff,
+        Branch::ContractFrozen,
+        Branch::MigrationNotFrozen,
+        Branch::ExecuteUpgradeNoPending,
+        Branch::CancelUpgradeNoPending,
+        Branch::TimelockNotExpired,
+        Branch::UpgradeDelayTooShort,
+        Branch::AlreadyMigrated,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -252,9 +275,16 @@ impl Branch {
             Branch::CancelSplitOverflow => &["cancel_stream"],
             Branch::PayoutOverflow => &["withdraw", "withdraw_max"],
             Branch::SetFeeRateTooHigh => &["set_fee_bps"],
-            Branch::GovernorNotAllowed => {
-                &["set_fee_bps", "nominate_governor", "withdraw_treasury"]
-            }
+            Branch::GovernorNotAllowed => &[
+                "set_fee_bps",
+                "nominate_governor",
+                "withdraw_treasury",
+                "set_frozen",
+                "propose_upgrade",
+                "cancel_upgrade",
+                "execute_upgrade",
+                "migrate_storage",
+            ],
             Branch::AcceptGovernorNoPending | Branch::AcceptGovernorNotNominee => {
                 &["accept_governor"]
             }
@@ -294,6 +324,18 @@ impl Branch {
                 "policy_set_timelock_delay",
             ],
             Branch::PolicyNoPendingHandoff => &["policy_accept_handoff", "policy_cancel_handoff"],
+            Branch::ContractFrozen => &[
+                "create_stream",
+                "create_streams",
+                "withdraw",
+                "withdraw_max",
+                "cancel_stream",
+                "top_up",
+            ],
+            Branch::MigrationNotFrozen | Branch::AlreadyMigrated => &["migrate_storage"],
+            Branch::ExecuteUpgradeNoPending | Branch::TimelockNotExpired => &["execute_upgrade"],
+            Branch::CancelUpgradeNoPending => &["cancel_upgrade"],
+            Branch::UpgradeDelayTooShort => &["propose_upgrade"],
         }
     }
 
@@ -351,6 +393,14 @@ impl Branch {
             Branch::PolicyNoQueuedChange => StreamError::PolicyNoQueuedChange,
             Branch::PolicyNotInitialized => StreamError::PolicyNotInitialized,
             Branch::PolicyNoPendingHandoff => StreamError::PolicyNoPendingHandoff,
+            Branch::ContractFrozen => StreamError::ContractFrozen,
+            Branch::MigrationNotFrozen => StreamError::ContractNotFrozen,
+            Branch::ExecuteUpgradeNoPending | Branch::CancelUpgradeNoPending => {
+                StreamError::NoPendingUpgrade
+            }
+            Branch::TimelockNotExpired => StreamError::TimelockNotExpired,
+            Branch::UpgradeDelayTooShort => StreamError::UpgradeDelayTooShort,
+            Branch::AlreadyMigrated => StreamError::AlreadyMigrated,
         }
     }
 
@@ -439,6 +489,17 @@ impl Branch {
             Branch::PolicyNoQueuedChange => "no policy change is queued for the specified asset",
             Branch::PolicyNotInitialized => "the policy module has not been initialized",
             Branch::PolicyNoPendingHandoff => "no admin handoff proposal is pending",
+            Branch::ContractFrozen => "the contract is frozen for maintenance or upgrade",
+            Branch::MigrationNotFrozen => "storage migration requires the contract to be frozen",
+            Branch::ExecuteUpgradeNoPending => "execute_upgrade called with no upgrade pending",
+            Branch::CancelUpgradeNoPending => "cancel_upgrade called with no upgrade pending",
+            Branch::TimelockNotExpired => "upgrade timelock delay has not yet expired",
+            Branch::UpgradeDelayTooShort => {
+                "proposed upgrade delay is shorter than MIN_UPGRADE_DELAY_SECONDS"
+            }
+            Branch::AlreadyMigrated => {
+                "storage has already been migrated to the target schema version"
+            }
         }
     }
 
