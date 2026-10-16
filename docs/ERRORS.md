@@ -19,6 +19,13 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 9 | `ZeroAmount` | reachable (6 branch(es)) | `create_stream`, `register_sponsor`, `sponsored_withdraw`, `top_up`, `withdraw`, `withdraw_treasury` | deposit_amount is zero or negative; withdraw amount is zero or negative; top-up amount is zero or negative; treasury withdrawal amount is zero or negative; a sponsor budget cap (per-period or per-beneficiary) is zero or negative; a sponsored claim requests a zero or negative payout |
 | 10 | `AmountExceedsAvailable` | reachable (2 branch(es)) | `sponsored_withdraw`, `withdraw` | amount exceeds the accrued-but-unwithdrawn balance; a sponsored claim exceeds the stream's accrued-but-unwithdrawn balance |
 | 11 | `MathOverflow` | reachable (6 branch(es)) | `available`, `cancel_stream`, `create_stream`, `sponsored_withdraw`, `streamed_at`, `top_up`, `withdraw`, `withdraw_max` | deposit + amount would overflow i128; deposit * duration would overflow u128; deposit * elapsed would overflow u128; withdrawn exceeds streamed (an invariant-violating stored stream); the cancel pro-rata split would underflow; withdrawn + amount would overflow i128 |
+| 5 | `StreamNotActive` | reachable (1 branch(es)) | `cancel_stream`, `top_up`, `withdraw`, `withdraw_max` | the stream status is Cancelled or Depleted |
+| 6 | `StartTimeInPast` | reachable (1 branch(es)) | `create_stream`, `create_streams` | start_time is before the current ledger timestamp |
+| 7 | `InvalidTimeRange` | reachable (1 branch(es)) | `create_stream`, `create_streams` | end_time is not strictly after start_time (zero or negative duration) |
+| 8 | `DurationTooLong` | reachable (1 branch(es)) | `create_stream`, `create_streams` | duration exceeds MAX_DURATION_SECONDS (100 years) |
+| 9 | `ZeroAmount` | reachable (4 branch(es)) | `create_stream`, `create_streams`, `top_up`, `withdraw`, `withdraw_treasury` | deposit_amount is zero or negative; withdraw amount is zero or negative; top-up amount is zero or negative; treasury withdrawal amount is zero or negative |
+| 10 | `AmountExceedsAvailable` | reachable (1 branch(es)) | `withdraw` | amount exceeds the accrued-but-unwithdrawn balance |
+| 11 | `MathOverflow` | reachable (6 branch(es)) | `available`, `cancel_stream`, `create_stream`, `create_streams`, `streamed_at`, `top_up`, `withdraw`, `withdraw_max` | deposit + amount would overflow i128; deposit * duration would overflow u128; deposit * elapsed would overflow u128; withdrawn exceeds streamed (an invariant-violating stored stream); the cancel pro-rata split would underflow; withdrawn + amount would overflow i128 |
 | 12 | `NotAuthorized` | reachable (1 branch(es)) | `cancel_stream` | the caller is neither the sender nor the recipient |
 | 13 | `NothingToWithdraw` | reachable (1 branch(es)) | `withdraw_max` | nothing has accrued yet, or everything accrued was already withdrawn |
 | 14 | `FeeRateTooHigh` | reachable (1 branch(es)) | `set_fee_bps` | new_fee_bps exceeds MAX_FEE_BPS (the protocol cap) |
@@ -32,15 +39,28 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 25 | `ClaimNonceReplay` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim's nonce was already spent for this pair |
 | 26 | `SponsorBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the sponsor's per-period budget cap |
 | 27 | `BeneficiaryBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the per-beneficiary budget cap |
+| 18 | `IntentNotFound` | reachable (1 branch(es)) | `cancel_scheduled`, `execute_scheduled`, `get_intent`, `reclaim_expired` | no scheduled intent is stored under the id |
+| 19 | `IntentNotPending` | reachable (1 branch(es)) | `cancel_scheduled`, `execute_scheduled`, `reclaim_expired` | the intent is already executed, cancelled, or expired |
+| 20 | `IntentNotYetExecutable` | reachable (1 branch(es)) | `execute_scheduled` | the next occurrence has not reached execute_after |
+| 21 | `IntentExpired` | reachable (1 branch(es)) | `execute_scheduled` | the intent has reached expires_at |
+| 22 | `IntentNotCancellable` | reachable (1 branch(es)) | `cancel_scheduled` | the execution window opened before cancellation |
+| 23 | `InvalidScheduleParameters` | reachable (1 branch(es)) | `schedule_stream` | schedule parameters are inconsistent or out of bounds |
+| 24 | `IntentParamsMismatch` | reachable (1 branch(es)) | `execute_scheduled` | stored parameters do not match the authorization commitment |
+| 25 | `IntentNotExpired` | reachable (1 branch(es)) | `reclaim_expired` | the intent has not reached expires_at |
+| 26 | `DepositTransferFailed` | reachable (1 branch(es)) | `create_stream`, `create_streams` | the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token) |
+| 27 | `TopUpTransferFailed` | reachable (1 branch(es)) | `top_up` | the token refuses the pull of the added funds |
+| 28 | `RecipientPayoutFailed` | reachable (1 branch(es)) | `cancel_stream`, `withdraw`, `withdraw_max` | the token refuses a payout to the recipient |
+| 29 | `SenderRefundFailed` | reachable (1 branch(es)) | `cancel_stream` | the token refuses the refund to the sender |
+| 30 | `TreasuryPayoutFailed` | reachable (1 branch(es)) | `withdraw_treasury` | the token refuses the payout of collected protocol fees |
 
 ## Branch matrix (entrypoint × condition → error)
 
 | Branch | Entrypoint(s) | Error | Code | Condition | Reachability |
 | --- | --- | --- | ---: | --- | --- |
-| `CreateDepositNonPositive` | `create_stream` | `ZeroAmount` | 9 | deposit_amount is zero or negative | reachable |
-| `CreateStartTimeInPast` | `create_stream` | `StartTimeInPast` | 6 | start_time is before the current ledger timestamp | reachable |
-| `CreateInvalidTimeRange` | `create_stream` | `InvalidTimeRange` | 7 | end_time is not strictly after start_time (zero or negative duration) | reachable |
-| `CreateDurationTooLong` | `create_stream` | `DurationTooLong` | 8 | duration exceeds MAX_DURATION_SECONDS (100 years) | reachable |
+| `CreateDepositNonPositive` | `create_stream`, `create_streams` | `ZeroAmount` | 9 | deposit_amount is zero or negative | reachable |
+| `CreateStartTimeInPast` | `create_stream`, `create_streams` | `StartTimeInPast` | 6 | start_time is before the current ledger timestamp | reachable |
+| `CreateInvalidTimeRange` | `create_stream`, `create_streams` | `InvalidTimeRange` | 7 | end_time is not strictly after start_time (zero or negative duration) | reachable |
+| `CreateDurationTooLong` | `create_stream`, `create_streams` | `DurationTooLong` | 8 | duration exceeds MAX_DURATION_SECONDS (100 years) | reachable |
 | `WithdrawAmountNonPositive` | `withdraw` | `ZeroAmount` | 9 | withdraw amount is zero or negative | reachable |
 | `WithdrawAmountExceedsAvailable` | `withdraw` | `AmountExceedsAvailable` | 10 | amount exceeds the accrued-but-unwithdrawn balance | reachable |
 | `WithdrawMaxNothingToWithdraw` | `withdraw_max` | `NothingToWithdraw` | 13 | nothing has accrued yet, or everything accrued was already withdrawn | reachable |
@@ -52,6 +72,10 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `StreamNotActive` | `withdraw`, `withdraw_max`, `cancel_stream`, `top_up`, `sponsored_withdraw` | `StreamNotActive` | 5 | the stream status is Cancelled or Depleted | reachable |
 | `CapacityOverflow` | `create_stream`, `top_up` | `MathOverflow` | 11 | deposit * duration would overflow u128 | reachable |
 | `RateProductOverflow` | `streamed_at`, `available`, `withdraw`, `withdraw_max`, `cancel_stream`, `sponsored_withdraw` | `MathOverflow` | 11 | deposit * elapsed would overflow u128 | reachable |
+| `StreamNotFound` | `get_stream`, `available`, `withdraw`, `withdraw_max`, `cancel_stream`, `top_up` | `StreamNotFound` | 1 | no stream is stored under the id | reachable |
+| `StreamNotActive` | `withdraw`, `withdraw_max`, `cancel_stream`, `top_up` | `StreamNotActive` | 5 | the stream status is Cancelled or Depleted | reachable |
+| `CapacityOverflow` | `create_stream`, `create_streams`, `top_up` | `MathOverflow` | 11 | deposit * duration would overflow u128 | reachable |
+| `RateProductOverflow` | `streamed_at`, `available`, `withdraw`, `withdraw_max`, `cancel_stream` | `MathOverflow` | 11 | deposit * elapsed would overflow u128 | reachable |
 | `AvailableBalanceOverflow` | `available`, `withdraw`, `withdraw_max` | `MathOverflow` | 11 | withdrawn exceeds streamed (an invariant-violating stored stream) | defensive (unreachable) |
 | `CancelSplitOverflow` | `cancel_stream` | `MathOverflow` | 11 | the cancel pro-rata split would underflow | defensive (unreachable) |
 | `PayoutOverflow` | `withdraw`, `withdraw_max`, `sponsored_withdraw` | `MathOverflow` | 11 | withdrawn + amount would overflow i128 | defensive (unreachable) |
@@ -71,6 +95,19 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `ClaimNonceReplay` | `sponsored_withdraw` | `ClaimNonceReplay` | 25 | the claim's nonce was already spent for this pair | reachable |
 | `SponsorBudgetPeriodExceeded` | `sponsored_withdraw` | `SponsorBudgetExceeded` | 26 | the claim would exceed the sponsor's per-period budget cap | reachable |
 | `SponsorBudgetBeneficiaryExceeded` | `sponsored_withdraw` | `BeneficiaryBudgetExceeded` | 27 | the claim would exceed the per-beneficiary budget cap | reachable |
+| `IntentNotFound` | `get_intent`, `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotFound` | 18 | no scheduled intent is stored under the id | reachable |
+| `IntentNotPending` | `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotPending` | 19 | the intent is already executed, cancelled, or expired | reachable |
+| `IntentNotYetExecutable` | `execute_scheduled` | `IntentNotYetExecutable` | 20 | the next occurrence has not reached execute_after | reachable |
+| `IntentExpired` | `execute_scheduled` | `IntentExpired` | 21 | the intent has reached expires_at | reachable |
+| `IntentNotCancellable` | `cancel_scheduled` | `IntentNotCancellable` | 22 | the execution window opened before cancellation | reachable |
+| `ScheduleInvalidParameters` | `schedule_stream` | `InvalidScheduleParameters` | 23 | schedule parameters are inconsistent or out of bounds | reachable |
+| `IntentParamsMismatch` | `execute_scheduled` | `IntentParamsMismatch` | 24 | stored parameters do not match the authorization commitment | reachable |
+| `IntentNotExpired` | `reclaim_expired` | `IntentNotExpired` | 25 | the intent has not reached expires_at | reachable |
+| `CreateDepositTransferFailed` | `create_stream`, `create_streams` | `DepositTransferFailed` | 26 | the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token) | reachable |
+| `TopUpTransferFailed` | `top_up` | `TopUpTransferFailed` | 27 | the token refuses the pull of the added funds | reachable |
+| `RecipientPayoutFailed` | `withdraw`, `withdraw_max`, `cancel_stream` | `RecipientPayoutFailed` | 28 | the token refuses a payout to the recipient | reachable |
+| `SenderRefundFailed` | `cancel_stream` | `SenderRefundFailed` | 29 | the token refuses the refund to the sender | reachable |
+| `TreasuryPayoutFailed` | `withdraw_treasury` | `TreasuryPayoutFailed` | 30 | the token refuses the payout of collected protocol fees | reachable |
 
 ## Retired codes
 

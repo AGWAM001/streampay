@@ -106,6 +106,39 @@ pub enum Branch {
     SponsorBudgetPeriodExceeded,
     /// The claim would push this beneficiary's window spend over its cap.
     SponsorBudgetBeneficiaryExceeded,
+    // --------------------------------------------------- scheduled intents
+    /// No stored intent exists for the supplied id.
+    IntentNotFound,
+    /// An operation requiring a pending intent found a terminal intent.
+    IntentNotPending,
+    /// `execute_scheduled`: the next occurrence is not due yet.
+    IntentNotYetExecutable,
+    /// `execute_scheduled` / `cancel_scheduled`: the intent expired.
+    IntentExpired,
+    /// `cancel_scheduled`: the execution window has opened.
+    IntentNotCancellable,
+    /// A schedule parameter is inconsistent or outside its supported bounds.
+    ScheduleInvalidParameters,
+    /// A stored intent no longer matches its authorization commitment.
+    IntentParamsMismatch,
+    /// `reclaim_expired`: the intent has not expired yet.
+    IntentNotExpired,
+    // --------------------------------------------------- token interactions
+    /// `create_stream`: the token refused the pull of `deposit_amount + fee`
+    /// (missing balance/allowance, a non-transferable asset, a non-SEP-41
+    /// callee). Nothing is persisted, so no stream id is consumed.
+    CreateDepositTransferFailed,
+    /// `top_up`: the token refused the pull of the added funds; `deposit` is
+    /// left unchanged.
+    TopUpTransferFailed,
+    /// `withdraw` / `withdraw_max` / the recipient leg of `cancel_stream`: the
+    /// token refused the payout to the stream recipient.
+    RecipientPayoutFailed,
+    /// `cancel_stream`: the token refused the refund of unaccrued funds to the
+    /// sender; the whole cancellation rolls back.
+    SenderRefundFailed,
+    /// `withdraw_treasury`: the token refused the payout of collected fees.
+    TreasuryPayoutFailed,
 }
 
 impl Branch {
@@ -113,6 +146,7 @@ impl Branch {
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
     pub const ALL: [Branch; 34] = [
+    pub const ALL: [Branch; 37] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -147,6 +181,19 @@ impl Branch {
         Branch::ClaimNonceReplay,
         Branch::SponsorBudgetPeriodExceeded,
         Branch::SponsorBudgetBeneficiaryExceeded,
+        Branch::IntentNotFound,
+        Branch::IntentNotPending,
+        Branch::IntentNotYetExecutable,
+        Branch::IntentExpired,
+        Branch::IntentNotCancellable,
+        Branch::ScheduleInvalidParameters,
+        Branch::IntentParamsMismatch,
+        Branch::IntentNotExpired,
+        Branch::CreateDepositTransferFailed,
+        Branch::TopUpTransferFailed,
+        Branch::RecipientPayoutFailed,
+        Branch::SenderRefundFailed,
+        Branch::TreasuryPayoutFailed,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -157,7 +204,7 @@ impl Branch {
             Branch::CreateDepositNonPositive
             | Branch::CreateStartTimeInPast
             | Branch::CreateInvalidTimeRange
-            | Branch::CreateDurationTooLong => &["create_stream"],
+            | Branch::CreateDurationTooLong => &["create_stream", "create_streams"],
             Branch::WithdrawAmountNonPositive | Branch::WithdrawAmountExceedsAvailable => {
                 &["withdraw"]
             }
@@ -183,6 +230,8 @@ impl Branch {
                 "sponsored_withdraw",
             ],
             Branch::CapacityOverflow => &["create_stream", "top_up"],
+            Branch::StreamNotActive => &["withdraw", "withdraw_max", "cancel_stream", "top_up"],
+            Branch::CapacityOverflow => &["create_stream", "create_streams", "top_up"],
             Branch::RateProductOverflow => &[
                 "streamed_at",
                 "available",
@@ -215,6 +264,26 @@ impl Branch {
             | Branch::ClaimNonceReplay
             | Branch::SponsorBudgetPeriodExceeded
             | Branch::SponsorBudgetBeneficiaryExceeded => &["sponsored_withdraw"],
+            Branch::IntentNotFound => &[
+                "get_intent",
+                "execute_scheduled",
+                "cancel_scheduled",
+                "reclaim_expired",
+            ],
+            Branch::IntentNotPending => {
+                &["execute_scheduled", "cancel_scheduled", "reclaim_expired"]
+            }
+            Branch::IntentNotYetExecutable
+            | Branch::IntentExpired
+            | Branch::IntentParamsMismatch => &["execute_scheduled"],
+            Branch::IntentNotCancellable => &["cancel_scheduled"],
+            Branch::ScheduleInvalidParameters => &["schedule_stream"],
+            Branch::IntentNotExpired => &["reclaim_expired"],
+            Branch::CreateDepositTransferFailed => &["create_stream", "create_streams"],
+            Branch::TopUpTransferFailed => &["top_up"],
+            Branch::RecipientPayoutFailed => &["withdraw", "withdraw_max", "cancel_stream"],
+            Branch::SenderRefundFailed => &["cancel_stream"],
+            Branch::TreasuryPayoutFailed => &["withdraw_treasury"],
         }
     }
 
@@ -258,6 +327,19 @@ impl Branch {
             Branch::ClaimNonceReplay => StreamError::ClaimNonceReplay,
             Branch::SponsorBudgetPeriodExceeded => StreamError::SponsorBudgetExceeded,
             Branch::SponsorBudgetBeneficiaryExceeded => StreamError::BeneficiaryBudgetExceeded,
+            Branch::IntentNotFound => StreamError::IntentNotFound,
+            Branch::IntentNotPending => StreamError::IntentNotPending,
+            Branch::IntentNotYetExecutable => StreamError::IntentNotYetExecutable,
+            Branch::IntentExpired => StreamError::IntentExpired,
+            Branch::IntentNotCancellable => StreamError::IntentNotCancellable,
+            Branch::ScheduleInvalidParameters => StreamError::InvalidScheduleParameters,
+            Branch::IntentParamsMismatch => StreamError::IntentParamsMismatch,
+            Branch::IntentNotExpired => StreamError::IntentNotExpired,
+            Branch::CreateDepositTransferFailed => StreamError::DepositTransferFailed,
+            Branch::TopUpTransferFailed => StreamError::TopUpTransferFailed,
+            Branch::RecipientPayoutFailed => StreamError::RecipientPayoutFailed,
+            Branch::SenderRefundFailed => StreamError::SenderRefundFailed,
+            Branch::TreasuryPayoutFailed => StreamError::TreasuryPayoutFailed,
         }
     }
 
@@ -325,6 +407,30 @@ impl Branch {
             }
             Branch::SponsorBudgetBeneficiaryExceeded => {
                 "the claim would exceed the per-beneficiary budget cap"
+            Branch::IntentNotFound => "no scheduled intent is stored under the id",
+            Branch::IntentNotPending => "the intent is already executed, cancelled, or expired",
+            Branch::IntentNotYetExecutable => "the next occurrence has not reached execute_after",
+            Branch::IntentExpired => "the intent has reached expires_at",
+            Branch::IntentNotCancellable => "the execution window opened before cancellation",
+            Branch::ScheduleInvalidParameters => {
+                "schedule parameters are inconsistent or out of bounds"
+            }
+            Branch::IntentParamsMismatch => {
+                "stored parameters do not match the authorization commitment"
+            }
+            Branch::IntentNotExpired => "the intent has not reached expires_at",
+            Branch::CreateDepositTransferFailed => {
+                "the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token)"
+            }
+            Branch::TopUpTransferFailed => {
+                "the token refuses the pull of the added funds"
+            }
+            Branch::RecipientPayoutFailed => {
+                "the token refuses a payout to the recipient"
+            }
+            Branch::SenderRefundFailed => "the token refuses the refund to the sender",
+            Branch::TreasuryPayoutFailed => {
+                "the token refuses the payout of collected protocol fees"
             }
         }
     }
