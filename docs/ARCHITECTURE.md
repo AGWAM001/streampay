@@ -10,7 +10,7 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 ┌────────────────────────────────────────────────────────────────────┐
 │                        StreamingPayments                           │
 │                                                                    │
-│  lib.rs      entrypoints: create_stream / withdraw / withdraw_max / │
+│  lib.rs      entrypoints: create_stream(s) / withdraw / withdraw_max /│
 │              cancel_stream / top_up / get_stream / available /      │
 │              recipient_streams / sender_streams / set_fee_bps /    │
 │              nominate_governor / accept_governor / withdraw_treasury│
@@ -20,9 +20,10 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 │  treasury.rs protocol-fee math, per-token accounting, governor,    │
 │              verification scan (see §11)                           │
 │  errors.rs   StreamError — stable numeric codes, append-only       │
-│  events.rs   StreamCreated / Withdrawn / StreamCancelled /         │
-│              StreamToppedUp (stream_id as topic), FeeCharged       │
-│              (stream_id as topic), FeeWithdrawn (token as topic)   │
+│  events.rs   StreamCreated / Withdrawn / StreamCancelled /        │
+│              StreamToppedUp / FeeCharged (stream_id topic);        │
+│              StreamsCreated (sender topic), FeeWithdrawn          │
+│              (token topic)                                         │
 └──────────────────────────┬─────────────────────────────────────────┘
                            │ token interface (SAC-compatible)
                            ▼
@@ -63,10 +64,13 @@ Instead, discovery is **per-address**: `create_stream` appends the new id to
 the sender's and the recipient's own index lists — each bounded by that one
 user's activity, written only at creation, and paginated on read
 (`recipient_streams` / `sender_streams`, `limit` clamped to
-`MAX_PAGE_SIZE = 50`). The indexes are *advisory*: never authorize against
-them; the `Stream` entry is the source of truth, and `StreamCreated` events
-remain the complete audit trail (an external indexer can still rebuild or
-cross-check the lists).
+`MAX_PAGE_SIZE = 50`). `create_streams` reserves its contiguous id range with
+one counter write and groups token pulls by token; stream records and address
+indexes remain per stream. The indexes are *advisory*: never authorize against
+them; the `Stream` entry is the source of truth. A single-stream call emits
+`StreamCreated`; a batch emits one `StreamsCreated` event listing its ids.
+Fee-enabled batches retain one `FeeCharged` event per charged stream, keeping
+the fee ledger independently auditable.
 
 ## 3. Accrual math
 
@@ -108,6 +112,7 @@ nothing has accrued, at `now ≥ end_time` the full duration has elapsed.
 | Action | who may call | auth consumed |
 |---|---|---|
 | `create_stream` | anyone; `sender` must authorize | sender |
+| `create_streams` | anyone; `sender` must authorize once for the batch | sender |
 | `withdraw` | recipient only | recipient |
 | `cancel_stream` | sender always; recipient iff `cancelable` | caller |
 | `top_up` | sender only | sender |
@@ -130,9 +135,9 @@ happen **before** the token transfers:
   emit `Withdrawn`, *then* `token.transfer`.
 - `cancel_stream`: set `Cancelled`, record the payout as withdrawn, emit
   `StreamCancelled`, *then* the two transfers.
-- `create_stream` / `top_up`: pull tokens first, persist after — if a
-  reentrant callback abused the transfer-in, the persisted state still
-  reconciles with the balance (invariant below).
+- `create_stream` / `create_streams` / `top_up`: pull tokens before persisting
+  stream records — if a reentrant callback abused the transfer-in, the
+  persisted state still reconciles with the balance (invariant below).
 
 Additionally, `withdraw` and `cancel_stream` re-read `status` after auth: a
 malicious token contract that reenters `withdraw` during its own transfer
@@ -206,7 +211,7 @@ the public interface:
 | 15 | `NotGovernor` | non-governor calls a governor-gated function (also: non-nominee `accept_governor`) |
 | 16 | `NoPendingGovernor` | `accept_governor` with no nomination pending |
 | 17 | `InsufficientTreasuryBalance` | treasury withdrawal above fees collected minus fees withdrawn |
-| 18 | `DepositTransferFailed` | `create_stream`'s token pull failed (allowance/balance, or the asset refused the transfer) |
+| 18 | `DepositTransferFailed` | `create_stream` / `create_streams` token pull failed (allowance/balance, or the asset refused the transfer) |
 | 19 | `TopUpTransferFailed` | `top_up`'s token pull failed; `deposit` left unchanged |
 | 20 | `RecipientPayoutFailed` | token refused a payout to the recipient (`withdraw`, `withdraw_max`, or the recipient leg of `cancel_stream`) |
 | 21 | `SenderRefundFailed` | token refused the sender's refund at cancellation; the cancellation rolls back |
@@ -275,10 +280,12 @@ or off-chain UX.
   deposit` exactly.
 - **Rate math is pure** (`streamed_at` takes no `Env`), so the `cargo-fuzz`
   target in [`fuzz/`](../fuzz/fuzz_targets/streamed_at.rs) hammers it without
-  a Soroban host: bounds, exact floor-ratio reference comparison,
-  monotonicity, and "errors are only ever genuine `MathOverflow`". CI runs a
-  scheduled session (`fuzz.yml`, non-blocking); any crash becomes a regression
-  unit test.
+  a Soroban host: bounds (`0 <= result <= deposit`), exact floor-ratio
+  reference comparison, monotonicity in elapsed time, full-duration exactness
+  (`streamed_at(d, dur, dur) == d` for admissible pairs), and no panics for
+  arbitrary inputs (including negative deposits and zero duration where
+  the function returns `Ok(0)` or `Err(MathOverflow)`). CI runs a scheduled
+  session (`fuzz.yml`, non-blocking); any crash becomes a regression unit test.
 - **Error surface** (`error_surface_test.rs`): the branch registry in
   `surface.rs` is walked by generated tests — one probe per branch asserts the
   exact branch fires its declared code — plus coverage tests proving no code is
@@ -306,8 +313,10 @@ or off-chain UX.
   budget, likely `try_create_batch` with per-item results.
 - Gas optimization pass on storage reads — `cancel_stream` does one
   read-modify-write; a `Stream` split into hot/cold fields could shave bytes.
-- Event indexer service — TypeScript worker polling `getEvents` per topic
-  `stream_id`, materializing stream history for the UI.
+- Event indexer & reconciler services — TypeScript workers polling `getEvents` per topic
+  `stream_id`, materializing stream history for the UI, and continuously auditing on-chain truth.
+  Instrumented with Prometheus metrics, Grafana dashboards, and alert rules (see [`infra/observability`](../infra/observability/README.md)
+  and [`docs/RUNBOOK.md`](./RUNBOOK.md)).
 - Contract-side TTL maintenance — extend `NextStreamId`, the instance entry and
   the code entry from inside the contract (or from the deploy path) instead of
   relying on the external sentinel. Costs rent on the write path but removes

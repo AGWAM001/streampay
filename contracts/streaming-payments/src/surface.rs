@@ -148,7 +148,7 @@ impl Branch {
             Branch::CreateDepositNonPositive
             | Branch::CreateStartTimeInPast
             | Branch::CreateInvalidTimeRange
-            | Branch::CreateDurationTooLong => &["create_stream"],
+            | Branch::CreateDurationTooLong => &["create_stream", "create_streams"],
             Branch::WithdrawAmountNonPositive | Branch::WithdrawAmountExceedsAvailable => {
                 &["withdraw"]
             }
@@ -166,7 +166,7 @@ impl Branch {
                 "top_up",
             ],
             Branch::StreamNotActive => &["withdraw", "withdraw_max", "cancel_stream", "top_up"],
-            Branch::CapacityOverflow => &["create_stream", "top_up"],
+            Branch::CapacityOverflow => &["create_stream", "create_streams", "top_up"],
             Branch::RateProductOverflow => &[
                 "streamed_at",
                 "available",
@@ -187,7 +187,7 @@ impl Branch {
             Branch::WithdrawTreasuryAmountNonPositive | Branch::WithdrawTreasuryExceedsBalance => {
                 &["withdraw_treasury"]
             }
-            Branch::CreateDepositTransferFailed => &["create_stream"],
+            Branch::CreateDepositTransferFailed => &["create_stream", "create_streams"],
             Branch::TopUpTransferFailed => &["top_up"],
             Branch::RecipientPayoutFailed => &["withdraw", "withdraw_max", "cancel_stream"],
             Branch::SenderRefundFailed => &["cancel_stream"],
