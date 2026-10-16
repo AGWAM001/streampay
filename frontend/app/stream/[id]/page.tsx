@@ -15,6 +15,7 @@ import {
 } from "@/lib/stellar";
 import { useClaimScheduler } from "@/lib/use-claim-scheduler";
 import ClaimSchedulerSettings from "@/components/ClaimSchedulerSettings";
+import { computeAvailable, StreamSnapshot } from "@/lib/accrual";
 
 function fmtUnits(v: bigint): string {
   return v.toString();
@@ -26,6 +27,10 @@ export default function StreamDetail() {
 
   const [stream, setStream] = useState<StreamView | null>(null);
   const [available, setAvailable] = useState<bigint | null>(null);
+  const [displayAvailable, setDisplayAvailable] = useState<bigint | null>(
+    null
+  );
+  const [snapshot, setSnapshot] = useState<StreamSnapshot | null>(null);
   const [amount, setAmount] = useState<string>("");
   const [address, setAddress] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
@@ -37,6 +42,13 @@ export default function StreamDetail() {
       const [s, a] = await Promise.all([readStream(id), readAvailable(id)]);
       setStream(s);
       setAvailable(a);
+      setSnapshot({
+        deposit: BigInt(s.deposit),
+        startTime: s.startTime,
+        endTime: s.endTime,
+        withdrawn: BigInt(s.withdrawn),
+        status: s.status,
+      });
       setError("");
     } catch (e) {
       setError(describeError(e));
@@ -50,6 +62,23 @@ export default function StreamDetail() {
     const t = setInterval(() => void reload(), 15_000); // live accrual
     return () => clearInterval(t);
   }, [reload]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const timer = setInterval(() => {
+      const now = BigInt(Math.floor(Date.now() / 1000));
+      const next = computeAvailable(
+        snapshot.deposit,
+        snapshot.startTime,
+        snapshot.endTime,
+        snapshot.withdrawn,
+        snapshot.status,
+        now
+      );
+      setDisplayAvailable(next);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [snapshot]);
 
   useEffect(() => {
     void (async () => {
@@ -170,7 +199,11 @@ export default function StreamDetail() {
             </tr>
             <tr>
               <th>Available now</th>
-              <td className="mono">{available?.toString() ?? "…"}</td>
+              <td className="mono">
+                {snapshot?.status === "Active"
+                  ? (displayAvailable ?? available)?.toString() ?? "…"
+                  : available?.toString() ?? "…"}
+              </td>
             </tr>
             <tr>
               <th>Window</th>

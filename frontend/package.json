@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "node --test lib/accrual.test.ts && vitest run",
+    "test:accrual": "node --test lib/accrual.test.ts",
+    "test:scheduler": "vitest run"
   },
   "dependencies": {
     "@stellar/freighter-api": "^6.0.1",
