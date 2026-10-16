@@ -246,6 +246,40 @@ is never part of any stream's `deposit`, so no payout path can reach it.
 - Cancelling a not-yet-started stream is a 100 % refund to the sender.
 - `top_up` on a cancelled/depleted stream reverts.
 
+### 6.1 Withdraw / cancel race semantics
+
+`withdraw` (recipient) and `cancel_stream` (sender) are strictly serial: each
+invocation runs to completion — CEI state writes included — before the next
+begins, even when both land in the same ledger. There is no interleaving and
+no partial application: **last write wins in execution order**, the losing
+call observes the post-write state, and the losing call never mutates
+balances. No dedicated race error code exists; the loser always receives the
+existing `StreamNotActive` (**code 5**).
+
+| # | First call | Second call | Result of second call | Recipient balance | Sender balance |
+|---|---|---|---|---|---|
+| 1 | `withdraw(a)`, partial (`a < streamed`) | `cancel_stream` | succeeds — splits the remainder: `streamed − a` to recipient, `deposit − streamed` to sender | `streamed` at cancel time (conserved exactly) | `headroom + (deposit − streamed)` |
+| 2 | `withdraw_max` (drains to `Depleted`) | `cancel_stream` | reverts `StreamNotActive` (5) | unchanged by the loser | unchanged by the loser |
+| 3 | `cancel_stream` | `withdraw` / `withdraw_max` | reverts `StreamNotActive` (5) | cancel payout only | cancel refund only |
+
+Properties pinned by the `race_*` regression tests in `src/test.rs`:
+
+- **Conservation across the overlap** (row 1): the recipient's total across
+  both calls equals the amount accrued at the later call; the sender's refund
+  is exactly the unaccrued remainder. No unit is lost or double-paid.
+- **The loser is a no-op** (rows 2–3): state, balances, and the event log
+  after the reverting call are identical to the state right after the winner.
+- **Ordering is temporal, not identity-based**: the same table applies whether
+  the recipient or a `cancelable` stream's recipient cancels; authorization
+  is checked independently of the race (§4).
+
+This table is normative for future entrypoints too: any `pause_stream`-like
+or batched lifecycle operation must preserve "loser reverts with an existing
+code, state untouched" rather than introducing a new interleaving case; if it
+cannot, it needs an append-only error code and an updated table, not a silent
+drift. The same-ledger ordering is documented in the rustdoc of `withdraw` and
+`cancel_stream`.
+
 ## 7. Error surface
 
 `StreamError` variants carry explicit numeric codes (`contracterror`), part of

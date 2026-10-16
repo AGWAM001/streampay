@@ -124,4 +124,16 @@ pub trait StreamingPaymentsApi {
     fn get_beneficiary_public_key(env: Env, beneficiary: Address) -> Option<BytesN<32>>;
     fn sponsor_period_spend(env: Env, sponsor: Address) -> PeriodSpend;
     fn beneficiary_spend(env: Env, sponsor: Address, beneficiary: Address) -> PeriodSpend;
+    fn policy_init(env: Env, admin: Address);
+    fn policy_propose_asset(env: Env, asset: Address, allowed: bool) -> Result<(), StreamError>;
+    fn policy_execute_asset(env: Env, asset: Address) -> Result<(), StreamError>;
+    fn policy_propose_handoff(env: Env, new_admin: Address) -> Result<(), StreamError>;
+    fn policy_accept_handoff(env: Env) -> Result<(), StreamError>;
+    fn policy_cancel_handoff(env: Env) -> Result<(), StreamError>;
+    fn policy_admin(env: Env) -> Option<Address>;
+    fn policy_pending_admin(env: Env) -> Option<Address>;
+    fn policy_timelock_delay(env: Env) -> u64;
+    fn policy_set_timelock_delay(env: Env, delay: u64) -> Result<(), StreamError>;
+    fn policy_is_asset_allowed(env: Env, asset: Address) -> bool;
+    fn policy_get_queued_asset(env: Env, asset: Address) -> Option<crate::QueuedAssetChange>;
 }
