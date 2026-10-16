@@ -58,6 +58,7 @@ mod test;
 #[cfg(test)]
 mod test_client;
 mod treasury;
+pub mod verification;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, token::TokenClient, Address, ConversionError, Env,
