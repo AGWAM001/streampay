@@ -177,3 +177,54 @@ pub struct FeeWithdrawn {
     /// Total fees withdrawn for this token after this withdrawal.
     pub withdrawn_total: i128,
 }
+
+/// Emitted when the policy module is initialized with its initial admin.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyInitialized {
+    pub admin: Address,
+}
+
+/// Emitted when an asset allowlist mutation is proposed and queued under timelock.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyAssetQueued {
+    #[topic]
+    pub asset: Address,
+    pub allowed: bool,
+    pub executable_after: u64,
+}
+
+/// Emitted when a queued asset allowlist change is executed after timelock expiry.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyAssetExecuted {
+    #[topic]
+    pub asset: Address,
+    pub allowed: bool,
+}
+
+/// Emitted when the admin proposes a new admin in step 1 of the two-step handoff.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyHandoffProposed {
+    #[topic]
+    pub current_admin: Address,
+    pub proposed_admin: Address,
+}
+
+/// Emitted when the proposed admin accepts the handoff in step 2.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyHandoffAccepted {
+    #[topic]
+    pub new_admin: Address,
+}
+
+/// Emitted when a pending admin handoff is cancelled by the current admin.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyHandoffCancelled {
+    #[topic]
+    pub proposed_admin: Address,
+}

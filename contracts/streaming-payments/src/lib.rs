@@ -55,6 +55,7 @@ mod differential_test;
 mod error_surface_test;
 mod errors;
 mod events;
+mod policy;
 mod schedule;
 #[cfg(test)]
 mod schedule_test;
@@ -76,10 +77,12 @@ use surface::Branch;
 
 pub use errors::StreamError;
 pub use events::{
-    FeeCharged, FeeWithdrawn, ScheduledIntentCancelled, ScheduledIntentExpired,
-    ScheduledStreamExecuted, StreamCancelled, StreamCreated, StreamScheduled, StreamToppedUp,
-    StreamsCreated, Withdrawn,
+    FeeCharged, FeeWithdrawn, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
+    PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized, ScheduledIntentCancelled,
+    ScheduledIntentExpired, ScheduledStreamExecuted, StreamCancelled, StreamCreated,
+    StreamScheduled, StreamToppedUp, StreamsCreated, Withdrawn,
 };
+pub use policy::QueuedAssetChange;
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
@@ -222,6 +225,10 @@ impl StreamingPayments {
 
         let now = env.ledger().timestamp();
         Self::validate_stream_creation(now, deposit_amount, start_time, end_time)?;
+
+        // Policy check: if the policy module is active, the asset must be on
+        // the allowlist. Uninitialized policy permits all assets (opt-in).
+        policy::check_asset_allowed(&env, &token)?;
 
         // Protocol fee, computed at the deposit boundary only. The accrual
         // math (`deposit`, `streamed_at`, cancel splits) never sees it.
@@ -395,6 +402,7 @@ impl StreamingPayments {
                 input.start_time,
                 input.end_time,
             )?;
+            policy::check_asset_allowed(&env, &input.token)?;
 
             let fee = treasury::fee_amount(input.deposit_amount, fee_bps)?;
             let pull_amount = input
@@ -1296,5 +1304,83 @@ impl StreamingPayments {
             .get(&stream::DataKey::NextStreamId)
             .unwrap_or(1);
         next.saturating_sub(1)
+    }
+
+    // ------------------------------------------------------------- policy --
+    //
+    // The optional asset allowlist and governance layer: restricts which assets
+    // may be streamed while guaranteeing existing streams remain withdrawable
+    // and refundable (anti-brick). Features a two-step admin handoff, a timelock
+    // on all allowlist mutations, and permissionless execution once matured.
+
+    /// Initializes the policy module with `admin`. Callable once only; panics
+    /// if called again. Admin authorization is required.
+    pub fn policy_init(env: Env, admin: Address) {
+        policy::init(&env, &admin);
+    }
+
+    /// Queues an allowlist mutation (adding or removing `asset`) with a
+    /// timelock delay. Callable only by the current admin.
+    pub fn policy_propose_asset(
+        env: Env,
+        asset: Address,
+        allowed: bool,
+    ) -> Result<(), StreamError> {
+        policy::propose_asset(&env, asset, allowed)
+    }
+
+    /// Executes a queued asset allowlist change after the timelock has elapsed.
+    ///
+    /// Callable by anyone: once a change has been vetted by the admin and the
+    /// public timelock delay has expired, execution is permissionless so it
+    /// cannot be stalled or held hostage by an absent admin.
+    pub fn policy_execute_asset(env: Env, asset: Address) -> Result<(), StreamError> {
+        policy::execute_asset(&env, asset)
+    }
+
+    /// Proposes a new admin for the two-step handoff (admin-only).
+    pub fn policy_propose_handoff(env: Env, new_admin: Address) -> Result<(), StreamError> {
+        policy::propose_handoff(&env, new_admin)
+    }
+
+    /// Accepts the pending admin handoff. Callable only by the proposed new
+    /// admin, consuming their authorization and clearing the proposal.
+    pub fn policy_accept_handoff(env: Env) -> Result<(), StreamError> {
+        policy::accept_handoff(&env)
+    }
+
+    /// Cancels a pending admin handoff (admin-only).
+    pub fn policy_cancel_handoff(env: Env) -> Result<(), StreamError> {
+        policy::cancel_handoff(&env)
+    }
+
+    /// Returns the current policy admin, if initialized.
+    pub fn policy_admin(env: Env) -> Option<Address> {
+        policy::admin(&env)
+    }
+
+    /// Returns the pending policy admin nominee, if any.
+    pub fn policy_pending_admin(env: Env) -> Option<Address> {
+        policy::pending_admin(&env)
+    }
+
+    /// Returns the on-chain timelock delay in seconds.
+    pub fn policy_timelock_delay(env: Env) -> u64 {
+        policy::timelock_delay(&env)
+    }
+
+    /// Sets the timelock delay in seconds (admin-only).
+    pub fn policy_set_timelock_delay(env: Env, delay: u64) -> Result<(), StreamError> {
+        policy::set_timelock_delay(&env, delay)
+    }
+
+    /// Read-only check whether `asset` is currently allowed for new streams.
+    pub fn policy_is_asset_allowed(env: Env, asset: Address) -> bool {
+        policy::is_asset_allowed(&env, &asset)
+    }
+
+    /// Returns the queued allowlist change for `asset`, if any.
+    pub fn policy_get_queued_asset(env: Env, asset: Address) -> Option<QueuedAssetChange> {
+        policy::get_queued_asset(&env, &asset)
     }
 }

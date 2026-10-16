@@ -3200,6 +3200,446 @@ fn run_fee_property(seed: u64, steps: usize) {
     }
 }
 
+// ------------------------------------------------------------ policy tests --
+
+#[test]
+fn policy_uninitialized_allows_any_asset_without_regression() {
+    let f = Fixture::setup();
+    // In an uninitialized policy state, admin and pending admin are None.
+    assert_eq!(f.client.policy_admin(), None);
+    assert_eq!(f.client.policy_pending_admin(), None);
+    assert!(f.client.policy_is_asset_allowed(&f.token));
+
+    // Creating streams works exactly as before.
+    let now = f.env.ledger().timestamp();
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, true);
+    let s = f.client.get_stream(&id);
+    assert_eq!(s.id, id);
+    assert_eq!(s.start_time, now + DAY);
+}
+
+#[test]
+fn policy_init_sets_admin_and_timelock_delay() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin);
+
+    assert_eq!(f.client.policy_admin(), Some(admin));
+    assert_eq!(f.client.policy_pending_admin(), None);
+    assert_eq!(
+        f.client.policy_timelock_delay(),
+        crate::policy::DEFAULT_TIMELOCK_DELAY
+    );
+}
+
+#[test]
+#[should_panic(expected = "policy already initialized")]
+fn policy_double_init_panics() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin);
+    let other = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&other);
+}
+
+#[test]
+fn policy_anti_brick_invariant_allows_withdraw_and_refund_after_asset_removed() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin);
+
+    // 1. Create a stream with asset f.token while it is allowed.
+    let now = f.env.ledger().timestamp();
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, true);
+
+    // 2. Admin proposes removing f.token from the allowlist.
+    f.client
+        .mock_all_auths()
+        .policy_propose_asset(&f.token, &false);
+    let delay = f.client.policy_timelock_delay();
+    f.advance_time(delay);
+
+    // 3. Permissionlessly execute the queued removal.
+    f.client.mock_all_auths().policy_execute_asset(&f.token);
+    assert!(!f.client.policy_is_asset_allowed(&f.token));
+
+    // 4. Verify new streams with f.token are rejected (single and batch).
+    let res = f.client.mock_all_auths().try_create_stream(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &DEPOSIT,
+        &(now + 2 * DAY),
+        &(now + 5 * DAY),
+        &true,
+    );
+    assert_eq!(
+        res.unwrap_err().unwrap(),
+        StreamError::PolicyAssetNotAllowed
+    );
+
+    let batch_input = crate::StreamInput {
+        recipient: f.recipient.clone(),
+        token: f.token.clone(),
+        deposit_amount: DEPOSIT,
+        start_time: now + 2 * DAY,
+        end_time: now + 5 * DAY,
+        cancelable: true,
+    };
+    let mut inputs = soroban_sdk::Vec::new(&f.env);
+    inputs.push_back(batch_input);
+    let batch_res = f
+        .client
+        .mock_all_auths()
+        .try_create_streams(&f.sender, &inputs);
+    assert_eq!(
+        batch_res.unwrap_err().unwrap(),
+        StreamError::PolicyAssetNotAllowed
+    );
+
+    // 5. Anti-brick invariant: existing stream remains fully withdrawable!
+    f.advance_time(2 * DAY); // now into the stream window
+    let avail = f.client.mock_all_auths().available(&id);
+    assert!(avail > 0);
+    f.client.mock_all_auths().withdraw(&id, &(avail / 2));
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.recipient),
+        avail / 2
+    );
+
+    // 6. Anti-brick invariant: existing stream remains fully refundable (cancelable)!
+    let recipient_before = TokenClient::new(&f.env, &f.token).balance(&f.recipient);
+    let sender_before = TokenClient::new(&f.env, &f.token).balance(&f.sender);
+    f.client.mock_all_auths().cancel_stream(&f.sender, &id);
+
+    // Both recipient and sender received their fair pro-rata split!
+    assert!(TokenClient::new(&f.env, &f.token).balance(&f.recipient) > recipient_before);
+    assert!(TokenClient::new(&f.env, &f.token).balance(&f.sender) > sender_before);
+}
+
+#[test]
+fn policy_timelock_enforcement_and_bypass_attempt() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin);
+
+    // Queue change: remove f.token.
+    f.client
+        .mock_all_auths()
+        .policy_propose_asset(&f.token, &false);
+    let delay = f.client.policy_timelock_delay();
+
+    // 1. Attempt to execute before timelock elapses -> fails with PolicyTimelockNotElapsed.
+    f.advance_time(delay - 10);
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_policy_execute_asset(&f.token)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::PolicyTimelockNotElapsed);
+
+    // 2. Timelock bypass attempt: executing an asset with no queued proposal -> fails with PolicyNoQueuedChange.
+    let other_asset = Address::generate(&f.env);
+    let err_no_change = f
+        .client
+        .mock_all_auths()
+        .try_policy_execute_asset(&other_asset)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err_no_change, StreamError::PolicyNoQueuedChange);
+
+    // 3. Advance the remaining 10 seconds to satisfy the timelock.
+    f.advance_time(10);
+    // Callable by anyone (permissionless).
+    f.client.mock_all_auths().policy_execute_asset(&f.token);
+    assert!(!f.client.policy_is_asset_allowed(&f.token));
+}
+
+#[test]
+fn policy_two_step_handoff_and_cancel() {
+    let f = Fixture::setup();
+    let admin1 = Address::generate(&f.env);
+    let admin2 = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin1);
+
+    // Step 1: Admin1 proposes Admin2.
+    f.client.mock_all_auths().policy_propose_handoff(&admin2);
+    assert_eq!(f.client.policy_pending_admin(), Some(admin2.clone()));
+
+    // Admin1 cancels handoff.
+    f.client.mock_all_auths().policy_cancel_handoff();
+    assert_eq!(f.client.policy_pending_admin(), None);
+
+    // Admin1 proposes Admin2 again.
+    f.client.mock_all_auths().policy_propose_handoff(&admin2);
+
+    // Step 2: Admin2 accepts handoff.
+    f.client.mock_all_auths().policy_accept_handoff();
+    assert_eq!(f.client.policy_admin(), Some(admin2.clone()));
+    assert_eq!(f.client.policy_pending_admin(), None);
+
+    // Admin2 can now propose changes.
+    f.client
+        .mock_all_auths()
+        .policy_propose_asset(&f.token, &false);
+    assert!(f.client.policy_get_queued_asset(&f.token).is_some());
+}
+
+#[test]
+fn policy_handoff_rejection_when_no_handoff_pending() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin);
+
+    // No handoff pending: accept and cancel revert with PolicyNoPendingHandoff.
+    let err_accept = f
+        .client
+        .mock_all_auths()
+        .try_policy_accept_handoff()
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err_accept, StreamError::PolicyNoPendingHandoff);
+
+    let err_cancel = f
+        .client
+        .mock_all_auths()
+        .try_policy_cancel_handoff()
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err_cancel, StreamError::PolicyNoPendingHandoff);
+}
+
+#[test]
+fn policy_handoff_mid_timelock_execution() {
+    let f = Fixture::setup();
+    let admin1 = Address::generate(&f.env);
+    let admin2 = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin1);
+
+    // Propose handoff and queue asset change in parallel.
+    f.client.mock_all_auths().policy_propose_handoff(&admin2);
+    f.client
+        .mock_all_auths()
+        .policy_propose_asset(&f.token, &false);
+
+    // Complete handoff before timelock matures.
+    f.client.mock_all_auths().policy_accept_handoff();
+    assert_eq!(f.client.policy_admin(), Some(admin2));
+
+    // Advance time past delay.
+    let delay = f.client.policy_timelock_delay();
+    f.advance_time(delay);
+
+    // The queued change is still valid and executable permissionlessly.
+    f.client.mock_all_auths().policy_execute_asset(&f.token);
+    assert!(!f.client.policy_is_asset_allowed(&f.token));
+}
+
+#[test]
+fn policy_configurable_timelock_delay() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin);
+
+    // Admin updates delay to 86_400 (1 day).
+    f.client.mock_all_auths().policy_set_timelock_delay(&86_400);
+    assert_eq!(f.client.policy_timelock_delay(), 86_400);
+
+    // Queue change: should mature after 86_400 seconds.
+    let now = f.env.ledger().timestamp();
+    f.client
+        .mock_all_auths()
+        .policy_propose_asset(&f.token, &false);
+    let queued = f.client.policy_get_queued_asset(&f.token).unwrap();
+    assert_eq!(queued.executable_after, now + 86_400);
+}
+
+#[test]
+fn policy_auth_enforcement_panics_without_correct_auth() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    let stranger = Address::generate(&f.env);
+
+    // 1. policy_init requires admin's authorization.
+    f.env.mock_auths(&[MockAuth {
+        address: &stranger,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_init",
+            args: (admin.clone(),).into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(f.client.try_policy_init(&admin).is_err());
+
+    // Initialize with actual admin auth.
+    f.env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_init",
+            args: (admin.clone(),).into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    f.client.policy_init(&admin);
+
+    // 2. policy_propose_asset requires admin auth.
+    f.env.mock_auths(&[MockAuth {
+        address: &stranger,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_propose_asset",
+            args: (f.token.clone(), false).into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(f.client.try_policy_propose_asset(&f.token, &false).is_err());
+
+    // 3. policy_propose_handoff requires admin auth.
+    let new_admin = Address::generate(&f.env);
+    f.env.mock_auths(&[MockAuth {
+        address: &stranger,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_propose_handoff",
+            args: (new_admin.clone(),).into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(f.client.try_policy_propose_handoff(&new_admin).is_err());
+
+    // Propose new_admin with valid admin auth.
+    f.env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_propose_handoff",
+            args: (new_admin.clone(),).into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    f.client.policy_propose_handoff(&new_admin);
+
+    // 4. policy_accept_handoff requires proposed admin (new_admin) auth.
+    f.env.mock_auths(&[MockAuth {
+        address: &stranger,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_accept_handoff",
+            args: ().into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(f.client.try_policy_accept_handoff().is_err());
+
+    // 5. policy_cancel_handoff requires current admin auth.
+    f.env.mock_auths(&[MockAuth {
+        address: &stranger,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_cancel_handoff",
+            args: ().into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(f.client.try_policy_cancel_handoff().is_err());
+
+    // 6. policy_set_timelock_delay requires current admin auth.
+    f.env.mock_auths(&[MockAuth {
+        address: &stranger,
+        invoke: &MockAuthInvoke {
+            contract: &f.client.address,
+            fn_name: "policy_set_timelock_delay",
+            args: (100u64,).into_val(&f.env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(f.client.try_policy_set_timelock_delay(&100).is_err());
+}
+
+#[test]
+fn policy_entrypoints_reject_when_uninitialized() {
+    let f = Fixture::setup();
+    let stranger = Address::generate(&f.env);
+
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .try_policy_propose_asset(&f.token, &false)
+            .unwrap_err()
+            .unwrap(),
+        StreamError::PolicyNotInitialized
+    );
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .try_policy_execute_asset(&f.token)
+            .unwrap_err()
+            .unwrap(),
+        StreamError::PolicyNotInitialized
+    );
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .try_policy_propose_handoff(&stranger)
+            .unwrap_err()
+            .unwrap(),
+        StreamError::PolicyNotInitialized
+    );
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .try_policy_accept_handoff()
+            .unwrap_err()
+            .unwrap(),
+        StreamError::PolicyNotInitialized
+    );
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .try_policy_cancel_handoff()
+            .unwrap_err()
+            .unwrap(),
+        StreamError::PolicyNotInitialized
+    );
+    assert_eq!(
+        f.client
+            .mock_all_auths()
+            .try_policy_set_timelock_delay(&3600)
+            .unwrap_err()
+            .unwrap(),
+        StreamError::PolicyNotInitialized
+    );
+}
+
+#[test]
+fn policy_re_allow_previously_removed_asset() {
+    let f = Fixture::setup();
+    let admin = Address::generate(&f.env);
+    f.client.mock_all_auths().policy_init(&admin);
+    f.client.mock_all_auths().policy_set_timelock_delay(&0);
+
+    // 1. Remove asset
+    f.client
+        .mock_all_auths()
+        .policy_propose_asset(&f.token, &false);
+    f.client.mock_all_auths().policy_execute_asset(&f.token);
+    assert!(!f.client.policy_is_asset_allowed(&f.token));
+
+    // 2. Re-allow asset
+    f.client
+        .mock_all_auths()
+        .policy_propose_asset(&f.token, &true);
+    f.client.mock_all_auths().policy_execute_asset(&f.token);
+    assert!(f.client.policy_is_asset_allowed(&f.token));
+
+    // 3. New stream succeeds now
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, true);
+    assert_eq!(f.client.get_stream(&id).id, id);
+}
+
 // ----------------------------------------- non-native (token) assets ------
 //
 // Tokenized assets (USDC-style) are a first-class path, not an incidental
