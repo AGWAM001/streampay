@@ -43,14 +43,14 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 33 | `PolicyNoQueuedChange` | reachable (1 branch(es)) | `policy_execute_asset` | no policy change is queued for the specified asset |
 | 34 | `PolicyNotInitialized` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff`, `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_set_timelock_delay` | the policy module has not been initialized |
 | 35 | `PolicyNoPendingHandoff` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff` | no admin handoff proposal is pending |
-| 36 | `BatchEmpty` | reachable (1 branch(es)) | `create_streams_batch` | entries is empty |
-| 37 | `BatchTooLarge` | reachable (1 branch(es)) | `create_streams_batch` | entries length exceeds MAX_BATCH |
 | 36 | `ContractFrozen` | reachable (1 branch(es)) | `cancel_stream`, `create_stream`, `create_streams`, `top_up`, `withdraw`, `withdraw_max` | the contract is frozen for maintenance or upgrade |
 | 37 | `ContractNotFrozen` | reachable (1 branch(es)) | `migrate_storage` | storage migration requires the contract to be frozen |
 | 38 | `NoPendingUpgrade` | reachable (2 branch(es)) | `cancel_upgrade`, `execute_upgrade` | execute_upgrade called with no upgrade pending; cancel_upgrade called with no upgrade pending |
 | 39 | `TimelockNotExpired` | reachable (1 branch(es)) | `execute_upgrade` | upgrade timelock delay has not yet expired |
 | 40 | `UpgradeDelayTooShort` | reachable (1 branch(es)) | `propose_upgrade` | proposed upgrade delay is shorter than MIN_UPGRADE_DELAY_SECONDS |
 | 41 | `AlreadyMigrated` | reachable (1 branch(es)) | `migrate_storage` | storage has already been migrated to the target schema version |
+| 42 | `BatchEmpty` | reachable (1 branch(es)) | `create_streams_batch` | entries is empty |
+| 43 | `BatchTooLarge` | reachable (1 branch(es)) | `create_streams_batch` | entries length exceeds MAX_BATCH |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -98,6 +98,8 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `PolicyNoQueuedChange` | `policy_execute_asset` | `PolicyNoQueuedChange` | 33 | no policy change is queued for the specified asset | reachable |
 | `PolicyNotInitialized` | `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_accept_handoff`, `policy_cancel_handoff`, `policy_set_timelock_delay` | `PolicyNotInitialized` | 34 | the policy module has not been initialized | reachable |
 | `PolicyNoPendingHandoff` | `policy_accept_handoff`, `policy_cancel_handoff` | `PolicyNoPendingHandoff` | 35 | no admin handoff proposal is pending | reachable |
+| `CreateBatchEmpty` | `create_streams_batch` | `BatchEmpty` | 42 | entries is empty | reachable |
+| `CreateBatchTooLarge` | `create_streams_batch` | `BatchTooLarge` | 43 | entries length exceeds MAX_BATCH | reachable |
 | `ContractFrozen` | `create_stream`, `create_streams`, `withdraw`, `withdraw_max`, `cancel_stream`, `top_up` | `ContractFrozen` | 36 | the contract is frozen for maintenance or upgrade | reachable |
 | `MigrationNotFrozen` | `migrate_storage` | `ContractNotFrozen` | 37 | storage migration requires the contract to be frozen | reachable |
 | `ExecuteUpgradeNoPending` | `execute_upgrade` | `NoPendingUpgrade` | 38 | execute_upgrade called with no upgrade pending | reachable |
@@ -105,8 +107,6 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `TimelockNotExpired` | `execute_upgrade` | `TimelockNotExpired` | 39 | upgrade timelock delay has not yet expired | reachable |
 | `UpgradeDelayTooShort` | `propose_upgrade` | `UpgradeDelayTooShort` | 40 | proposed upgrade delay is shorter than MIN_UPGRADE_DELAY_SECONDS | reachable |
 | `AlreadyMigrated` | `migrate_storage` | `AlreadyMigrated` | 41 | storage has already been migrated to the target schema version | reachable |
-| `CreateBatchEmpty` | `create_streams_batch` | `BatchEmpty` | 42 | entries is empty | reachable |
-| `CreateBatchTooLarge` | `create_streams_batch` | `BatchTooLarge` | 43 | entries length exceeds MAX_BATCH | reachable |
 
 ## Retired codes
 
