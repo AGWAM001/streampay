@@ -72,6 +72,39 @@ them; the `Stream` entry is the source of truth. A single-stream call emits
 Fee-enabled batches retain one `FeeCharged` event per charged stream, keeping
 the fee ledger independently auditable.
 
+### Storage layout decision & read/write profiling
+
+A gas optimization evaluation (`scripts/benchmark_storage.sh`, benchmark harness at `contracts/streaming-payments/examples/storage_benchmark.rs`) profiled resource consumption across stream lifecycle operations and evaluated splitting hot mutable fields (`withdrawn`, `status`) from cold immutable fields (`sender`, `recipient`, `token`, `deposit`, `start_time`, `end_time`, `cancelable`).
+
+#### Lifecycle Resource Costs (Monolithic Layout)
+
+| Operation | Type | Storage Footprint | CPU Instructions | Memory (Bytes) |
+|---|---|---|---:|---:|
+| `create_stream` | Write | 1 Stream + 2 Indexes | 509,718 | 201,404 |
+| `get_stream` | Read | 1 Stream Entry | 61,239 | 38,379 |
+| `available` | Read | 1 Stream Entry | 54,361 | 37,727 |
+| `withdraw` | RMW | 1 Stream Entry | 333,895 | 135,533 |
+| `top_up` | RMW | 1 Stream Entry | 419,382 | 159,563 |
+| `cancel_stream` | RMW | 1 Stream Entry | 504,711 | 167,915 |
+| `withdraw_max` | RMW | 1 Stream Entry | 330,953 | 131,167 |
+
+#### Architecture Comparison: Monolithic vs Split (Hot/Cold)
+
+| Storage Pattern | Entry Count | Keys Written/Read | CPU Instructions | Memory (Bytes) |
+|---|:---:|:---:|---:|---:|
+| Monolithic `Stream` Write | 1 | 1 key | 54,004 | 39,817 |
+| Split (Cold + Hot) Write | 2 | 2 keys | 90,988 *(+68.5%)* | 57,315 |
+| Monolithic `Stream` Read | 1 | 1 key | 45,094 | 34,207 |
+| Split Read (Both: required by `withdraw`/`cancel`) | 2 | 2 keys | 71,030 *(+57.5%)* | 47,314 |
+| Split Read (Hot-only: status check) | 1 | 1 key | 39,009 | 25,013 |
+
+#### Storage Layout Decision & Negative Result
+
+1. **Monolithic Layout Retained:** Stream state remains in a single `DataKey::Stream(u64)` persistent entry (~188 bytes XDR).
+2. **Negative Result for Hot/Cold Splitting:** In Soroban's storage and metering architecture, ledger entry overhead, storage keys, and per-entry footprint fees heavily outweigh minor payload byte differences. Every mutating entrypoint (`withdraw`, `withdraw_max`, `cancel_stream`, `top_up`) strictly requires both configuration fields (token, deposit, window, recipient/sender authorization) and state fields (`withdrawn`, `status`). Splitting state forces two ledger reads and one write across two keys, incurring a **+57.5% CPU read penalty** and a **+68.5% CPU write penalty** without saving gas on any mutation path.
+3. **Double-Read Elimination:** The contract avoids double reads in `withdraw`: `authorize_withdrawal` loads `s` once and passes `&mut s` directly to `pay_out`, preventing redundant re-reads.
+
+
 ## 3. Accrual math
 
 Everything reduces to one pure function (`stream.rs`):
