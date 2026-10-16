@@ -10,6 +10,9 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- `indexer/` TypeScript service that decodes StreamPay Soroban events into a
+  cursor-backed SQLite projection and exposes stream-by-id and address stream
+  REST endpoints, with local setup/API documentation.
 - **Optional protocol-fee treasury** (`treasury.rs`): a fee charged once at
   the deposit boundary of `create_stream` (`deposit × fee_bps / 10_000`,
   floored, sender pays `deposit + fee`). The stream's `deposit` and every
