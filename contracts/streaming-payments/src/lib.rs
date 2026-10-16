@@ -48,6 +48,10 @@
 extern crate std;
 
 #[cfg(test)]
+mod differential_harness;
+#[cfg(test)]
+mod differential_test;
+#[cfg(test)]
 mod error_surface_test;
 mod errors;
 mod events;
