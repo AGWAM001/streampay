@@ -206,4 +206,9 @@ code,
   border-radius: 8px;
   background: #0d1320;
   font-size: 13px;
+@media (prefers-reduced-motion: reduce) {
+  .mono {
+    transition: none !important;
+    animation: none !important;
+  }
 }

@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+    "test": "node --test"
   },
   "dependencies": {
     "@stellar/freighter-api": "^6.0.1",
