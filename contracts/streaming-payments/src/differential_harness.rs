@@ -35,6 +35,11 @@ pub fn convert_stream_error(err: StreamError) -> ModelError {
         StreamError::NotGovernor => ModelError::NotGovernor,
         StreamError::NoPendingGovernor => ModelError::NoPendingGovernor,
         StreamError::InsufficientTreasuryBalance => ModelError::InsufficientTreasuryBalance,
+        StreamError::DepositTransferFailed => ModelError::DepositTransferFailed,
+        StreamError::TopUpTransferFailed => ModelError::TopUpTransferFailed,
+        StreamError::RecipientPayoutFailed => ModelError::RecipientPayoutFailed,
+        StreamError::SenderRefundFailed => ModelError::SenderRefundFailed,
+        StreamError::TreasuryPayoutFailed => ModelError::TreasuryPayoutFailed,
     }
 }
 

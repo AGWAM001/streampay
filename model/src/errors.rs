@@ -40,6 +40,16 @@ pub enum ModelError {
     NoPendingGovernor = 16,
     /// Treasury withdrawal exceeds collectible balance.
     InsufficientTreasuryBalance = 17,
+    /// Token pull in create_stream failed.
+    DepositTransferFailed = 18,
+    /// Token pull in top_up failed.
+    TopUpTransferFailed = 19,
+    /// Payout of accrued funds to recipient failed.
+    RecipientPayoutFailed = 20,
+    /// Refund of unaccrued funds to sender failed.
+    SenderRefundFailed = 21,
+    /// Payout of collected fees in withdraw_treasury failed.
+    TreasuryPayoutFailed = 22,
 }
 
 impl ModelError {
