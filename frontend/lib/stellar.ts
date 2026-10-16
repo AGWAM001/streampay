@@ -7,7 +7,6 @@
  * simulate and decode the return value without signing.
  */
 import {
-  Account,
   Address,
   nativeToScVal,
   Networks,
@@ -18,6 +17,9 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { signTransaction } from "@stellar/freighter-api";
+import type { StreamArgs } from "@/lib/stream-types";
+
+export type { StreamArgs, StreamView } from "@/lib/stream-types";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
@@ -37,29 +39,6 @@ function contract(): Contract {
   return new Contract(CONTRACT_ID);
 }
 
-export interface StreamArgs {
-  token: string;
-  recipient: string;
-  /** Deposit in smallest token units (stroops for classic assets), as a string. */
-  deposit: string;
-  /** Stream length in days (start = now). */
-  days: string;
-  cancelable: boolean;
-}
-
-export interface StreamView {
-  id: string;
-  sender: string;
-  recipient: string;
-  token: string;
-  deposit: string;
-  withdrawn: string;
-  startTime: number;
-  endTime: number;
-  cancelable: boolean;
-  status: string;
-}
-
 function scAddr(s: string) {
   return nativeToScVal(new Address(s), { type: "address" });
 }
@@ -72,55 +51,11 @@ function i128(v: string) {
   return nativeToScVal(BigInt(v), { type: "i128" });
 }
 
-function u32(v: number) {
-  return nativeToScVal(BigInt(v), { type: "u32" });
-}
-
 /**
  * Network label for localStorage keys — stream ids are per-network facts and
  * must never leak between testnet and publicnet caches.
  */
 export const NETWORK_LABEL = NETWORK === Networks.PUBLIC ? "public" : "testnet";
-
-/** Map a StreamError code (contract errors surface as `Error(Contract, #N)`). */
-const STREAM_ERRORS: Record<number, string> = {
-  1: "StreamNotFound",
-  2: "NotStreamSender",
-  3: "NotStreamRecipient",
-  4: "StreamNotCancellable",
-  5: "StreamNotActive",
-  6: "StartTimeInPast",
-  7: "InvalidTimeRange",
-  8: "DurationTooLong",
-  9: "ZeroAmount",
-  10: "AmountExceedsAvailable",
-  11: "MathOverflow",
-  12: "NotAuthorized",
-  13: "NothingToWithdraw",
-  14: "FeeRateTooHigh",
-  15: "NotGovernor",
-  16: "NoPendingGovernor",
-  17: "InsufficientTreasuryBalance",
-};
-
-/** Rewrites raw simulation/tx error text into a readable StreamError name. */
-export function describeError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const m = message.match(/Error\(Contract, #(\d+)\)/);
-  if (m) {
-    const name = STREAM_ERRORS[Number(m[1])];
-    return name
-      ? `Contract rejected the call: ${name} (#${m[1]})`
-      : `Contract error #${m[1]}`;
-  }
-  return message;
-}
-
-/** The ed25519 all-zero key: a syntactically valid source for simulations. */
-const DUMMY_SOURCE = new Account(
-  "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-  "0"
-);
 
 /**
  * Builds, simulates, Freighter-signs, sends and polls a mutating contract
@@ -245,91 +180,5 @@ export async function cancelStream(
   );
 }
 
-/** Read-only contract call: simulated, never signed, return value decoded. */
-async function simulateRead(
-  method: string,
-  args: xdr.ScVal[]
-): Promise<xdr.ScVal | null> {
-  const server = new rpc.Server(RPC_URL);
-  const tx = new TransactionBuilder(DUMMY_SOURCE, {
-    fee: "100",
-    networkPassphrase: NETWORK,
-  })
-    .addOperation(contract().call(method, ...args))
-    .setTimeout(30)
-    .build();
-  const sim = await server.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) return null;
-  return sim.result?.retval ?? null;
-}
+export { describeError } from "@/lib/errors";
 
-/** Read-only view of one stream. */
-export async function readStream(streamId: string): Promise<StreamView> {
-  const retval = await simulateRead("get_stream", [u64(streamId)]);
-  if (!retval) {
-    throw new Error(`Stream #${streamId} not found or RPC unavailable`);
-  }
-  const raw = scValToNative(retval) as Record<string, unknown>;
-  return {
-    id: String(raw.id),
-    sender: String(raw.sender),
-    recipient: String(raw.recipient),
-    token: String(raw.token),
-    deposit: String(raw.deposit),
-    withdrawn: String(raw.withdrawn),
-    startTime: Number(raw.start_time),
-    endTime: Number(raw.end_time),
-    cancelable: Boolean(raw.cancelable),
-    status: String(raw.status),
-  };
-}
-
-/** Accrued-but-unwithdrawn balance of a stream at the current ledger time. */
-export async function readAvailable(streamId: string): Promise<bigint> {
-  const retval = await simulateRead("available", [u64(streamId)]);
-  if (!retval) {
-    throw new Error(`Stream #${streamId} not found or RPC unavailable`);
-  }
-  return BigInt(scValToNative(retval) as bigint);
-}
-
-const MAX_PAGE_SIZE = 50; // mirrors the contract's MAX_PAGE_SIZE
-
-/** One page of stream ids from an address index view (read-only). */
-async function readStreamIdsPage(
-  view: "recipient_streams" | "sender_streams",
-  address: string,
-  offset: number
-): Promise<string[]> {
-  const retval = await simulateRead(view, [
-    scAddr(address),
-    u32(offset),
-    u32(MAX_PAGE_SIZE),
-  ]);
-  if (!retval) return [];
-  const raw = scValToNative(retval) as bigint[];
-  return (raw ?? []).map((id) => String(id));
-}
-
-/**
- * Discovers all streams for an address through the on-chain indexes,
- * following pagination until exhausted. `role` selects the index:
- * streams where the address receives funds ("recipient") or funds them
- * ("sender"). Streams that fail to read (archived, RPC hiccups) are skipped.
- */
-export async function fetchStreamsFor(
-  address: string,
-  role: "recipient" | "sender"
-): Promise<StreamView[]> {
-  const view = role === "recipient" ? "recipient_streams" : "sender_streams";
-  const ids: string[] = [];
-  for (let offset = 0; ; offset += MAX_PAGE_SIZE) {
-    const page = await readStreamIdsPage(view, address, offset);
-    ids.push(...page);
-    if (page.length < MAX_PAGE_SIZE) break;
-  }
-  const streams = await Promise.all(
-    ids.map((id) => readStream(id).catch(() => null))
-  );
-  return streams.filter((s): s is StreamView => s !== null);
-}

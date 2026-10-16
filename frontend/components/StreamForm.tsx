@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { StreamArgs } from "@/lib/stellar";
+import type { StreamArgs } from "@/lib/stream-types";
 
 export default function StreamForm({
   onCreate,
