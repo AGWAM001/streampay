@@ -14,6 +14,20 @@ docs/                           ARCHITECTURE.md, GOOD_FIRST_ISSUES.md, DEMO.md
 .github/workflows/              ci.yml, fuzz.yml, release.yml
 ```
 
+## Quick-start (one-command local dev)
+
+To go from a fresh clone to a running local demo (contract built, deployed to a local sandbox network, frontend configured and running):
+
+```bash
+# Linux / macOS
+./scripts/dev.sh
+
+# Windows (PowerShell)
+.\scripts\dev.ps1
+```
+
+The bootstrap script verifies toolchain requirements (`stellar-cli >= 25.2.0`, Rust `wasm32v1-none`, Node.js), compiles the smart contract using `stellar contract build`, provisions/connects to a local Stellar sandbox, deploys the contract, writes `frontend/.env.local`, runs `npm ci`, and starts the frontend dev server. It is safe to re-run (idempotent).
+
 ## Setup (clean machine)
 
 1. Install Rust ≥ 1.85 (<https://rustup.rs>) and add the wasm target:

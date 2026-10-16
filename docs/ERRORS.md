@@ -25,16 +25,24 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 15 | `NotGovernor` | reachable (2 branch(es)) | `accept_governor`, `nominate_governor`, `set_fee_bps`, `withdraw_treasury` | the caller is not the treasury governor; the caller is not the nominated governor |
 | 16 | `NoPendingGovernor` | reachable (1 branch(es)) | `accept_governor` | accept_governor with no nomination pending |
 | 17 | `InsufficientTreasuryBalance` | reachable (1 branch(es)) | `withdraw_treasury` | amount exceeds fees collected minus fees already withdrawn |
-| 18 | `DepositTransferFailed` | reachable (1 branch(es)) | `create_stream`, `create_streams` | the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token) |
-| 19 | `TopUpTransferFailed` | reachable (1 branch(es)) | `top_up` | the token refuses the pull of the added funds |
-| 20 | `RecipientPayoutFailed` | reachable (1 branch(es)) | `cancel_stream`, `withdraw`, `withdraw_max` | the token refuses a payout to the recipient |
-| 21 | `SenderRefundFailed` | reachable (1 branch(es)) | `cancel_stream` | the token refuses the refund to the sender |
-| 22 | `TreasuryPayoutFailed` | reachable (1 branch(es)) | `withdraw_treasury` | the token refuses the payout of collected protocol fees |
-| 23 | `PolicyAssetNotAllowed` | reachable (1 branch(es)) | `create_stream`, `create_streams` | the asset is not permitted by the policy module allowlist |
-| 24 | `PolicyTimelockNotElapsed` | reachable (1 branch(es)) | `policy_execute_asset` | the timelock delay has not elapsed for this queued policy change |
-| 25 | `PolicyNoQueuedChange` | reachable (1 branch(es)) | `policy_execute_asset` | no policy change is queued for the specified asset |
-| 26 | `PolicyNotInitialized` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff`, `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_set_timelock_delay` | the policy module has not been initialized |
-| 27 | `PolicyNoPendingHandoff` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff` | no admin handoff proposal is pending |
+| 18 | `IntentNotFound` | reachable (1 branch(es)) | `cancel_scheduled`, `execute_scheduled`, `get_intent`, `reclaim_expired` | no scheduled intent is stored under the id |
+| 19 | `IntentNotPending` | reachable (1 branch(es)) | `cancel_scheduled`, `execute_scheduled`, `reclaim_expired` | the intent is already executed, cancelled, or expired |
+| 20 | `IntentNotYetExecutable` | reachable (1 branch(es)) | `execute_scheduled` | the next occurrence has not reached execute_after |
+| 21 | `IntentExpired` | reachable (1 branch(es)) | `execute_scheduled` | the intent has reached expires_at |
+| 22 | `IntentNotCancellable` | reachable (1 branch(es)) | `cancel_scheduled` | the execution window opened before cancellation |
+| 23 | `InvalidScheduleParameters` | reachable (1 branch(es)) | `schedule_stream` | schedule parameters are inconsistent or out of bounds |
+| 24 | `IntentParamsMismatch` | reachable (1 branch(es)) | `execute_scheduled` | stored parameters do not match the authorization commitment |
+| 25 | `IntentNotExpired` | reachable (1 branch(es)) | `reclaim_expired` | the intent has not reached expires_at |
+| 26 | `DepositTransferFailed` | reachable (1 branch(es)) | `create_stream`, `create_streams` | the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token) |
+| 27 | `TopUpTransferFailed` | reachable (1 branch(es)) | `top_up` | the token refuses the pull of the added funds |
+| 28 | `RecipientPayoutFailed` | reachable (1 branch(es)) | `cancel_stream`, `withdraw`, `withdraw_max` | the token refuses a payout to the recipient |
+| 29 | `SenderRefundFailed` | reachable (1 branch(es)) | `cancel_stream` | the token refuses the refund to the sender |
+| 30 | `TreasuryPayoutFailed` | reachable (1 branch(es)) | `withdraw_treasury` | the token refuses the payout of collected protocol fees |
+| 31 | `PolicyAssetNotAllowed` | reachable (1 branch(es)) | `create_stream`, `create_streams` | the asset is not permitted by the policy module allowlist |
+| 32 | `PolicyTimelockNotElapsed` | reachable (1 branch(es)) | `policy_execute_asset` | the timelock delay has not elapsed for this queued policy change |
+| 33 | `PolicyNoQueuedChange` | reachable (1 branch(es)) | `policy_execute_asset` | no policy change is queued for the specified asset |
+| 34 | `PolicyNotInitialized` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff`, `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_set_timelock_delay` | the policy module has not been initialized |
+| 35 | `PolicyNoPendingHandoff` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff` | no admin handoff proposal is pending |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -64,16 +72,24 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `AcceptGovernorNotNominee` | `accept_governor` | `NotGovernor` | 15 | the caller is not the nominated governor | reachable |
 | `WithdrawTreasuryAmountNonPositive` | `withdraw_treasury` | `ZeroAmount` | 9 | treasury withdrawal amount is zero or negative | reachable |
 | `WithdrawTreasuryExceedsBalance` | `withdraw_treasury` | `InsufficientTreasuryBalance` | 17 | amount exceeds fees collected minus fees already withdrawn | reachable |
-| `CreateDepositTransferFailed` | `create_stream`, `create_streams` | `DepositTransferFailed` | 18 | the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token) | reachable |
-| `TopUpTransferFailed` | `top_up` | `TopUpTransferFailed` | 19 | the token refuses the pull of the added funds | reachable |
-| `RecipientPayoutFailed` | `withdraw`, `withdraw_max`, `cancel_stream` | `RecipientPayoutFailed` | 20 | the token refuses a payout to the recipient | reachable |
-| `SenderRefundFailed` | `cancel_stream` | `SenderRefundFailed` | 21 | the token refuses the refund to the sender | reachable |
-| `TreasuryPayoutFailed` | `withdraw_treasury` | `TreasuryPayoutFailed` | 22 | the token refuses the payout of collected protocol fees | reachable |
-| `PolicyAssetNotAllowed` | `create_stream`, `create_streams` | `PolicyAssetNotAllowed` | 23 | the asset is not permitted by the policy module allowlist | reachable |
-| `PolicyTimelockNotElapsed` | `policy_execute_asset` | `PolicyTimelockNotElapsed` | 24 | the timelock delay has not elapsed for this queued policy change | reachable |
-| `PolicyNoQueuedChange` | `policy_execute_asset` | `PolicyNoQueuedChange` | 25 | no policy change is queued for the specified asset | reachable |
-| `PolicyNotInitialized` | `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_accept_handoff`, `policy_cancel_handoff`, `policy_set_timelock_delay` | `PolicyNotInitialized` | 26 | the policy module has not been initialized | reachable |
-| `PolicyNoPendingHandoff` | `policy_accept_handoff`, `policy_cancel_handoff` | `PolicyNoPendingHandoff` | 27 | no admin handoff proposal is pending | reachable |
+| `IntentNotFound` | `get_intent`, `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotFound` | 18 | no scheduled intent is stored under the id | reachable |
+| `IntentNotPending` | `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotPending` | 19 | the intent is already executed, cancelled, or expired | reachable |
+| `IntentNotYetExecutable` | `execute_scheduled` | `IntentNotYetExecutable` | 20 | the next occurrence has not reached execute_after | reachable |
+| `IntentExpired` | `execute_scheduled` | `IntentExpired` | 21 | the intent has reached expires_at | reachable |
+| `IntentNotCancellable` | `cancel_scheduled` | `IntentNotCancellable` | 22 | the execution window opened before cancellation | reachable |
+| `ScheduleInvalidParameters` | `schedule_stream` | `InvalidScheduleParameters` | 23 | schedule parameters are inconsistent or out of bounds | reachable |
+| `IntentParamsMismatch` | `execute_scheduled` | `IntentParamsMismatch` | 24 | stored parameters do not match the authorization commitment | reachable |
+| `IntentNotExpired` | `reclaim_expired` | `IntentNotExpired` | 25 | the intent has not reached expires_at | reachable |
+| `CreateDepositTransferFailed` | `create_stream`, `create_streams` | `DepositTransferFailed` | 26 | the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token) | reachable |
+| `TopUpTransferFailed` | `top_up` | `TopUpTransferFailed` | 27 | the token refuses the pull of the added funds | reachable |
+| `RecipientPayoutFailed` | `withdraw`, `withdraw_max`, `cancel_stream` | `RecipientPayoutFailed` | 28 | the token refuses a payout to the recipient | reachable |
+| `SenderRefundFailed` | `cancel_stream` | `SenderRefundFailed` | 29 | the token refuses the refund to the sender | reachable |
+| `TreasuryPayoutFailed` | `withdraw_treasury` | `TreasuryPayoutFailed` | 30 | the token refuses the payout of collected protocol fees | reachable |
+| `PolicyAssetNotAllowed` | `create_stream`, `create_streams` | `PolicyAssetNotAllowed` | 31 | the asset is not permitted by the policy module allowlist | reachable |
+| `PolicyTimelockNotElapsed` | `policy_execute_asset` | `PolicyTimelockNotElapsed` | 32 | the timelock delay has not elapsed for this queued policy change | reachable |
+| `PolicyNoQueuedChange` | `policy_execute_asset` | `PolicyNoQueuedChange` | 33 | no policy change is queued for the specified asset | reachable |
+| `PolicyNotInitialized` | `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_accept_handoff`, `policy_cancel_handoff`, `policy_set_timelock_delay` | `PolicyNotInitialized` | 34 | the policy module has not been initialized | reachable |
+| `PolicyNoPendingHandoff` | `policy_accept_handoff`, `policy_cancel_handoff` | `PolicyNoPendingHandoff` | 35 | no admin handoff proposal is pending | reachable |
 
 ## Retired codes
 

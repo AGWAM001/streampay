@@ -13,6 +13,28 @@ interface: they are only ever appended to, never renumbered or reused.
 - `indexer/` TypeScript service that decodes StreamPay Soroban events into a
   cursor-backed SQLite projection and exposes stream-by-id and address stream
   REST endpoints, with local setup/API documentation.
+- Scheduled stream intents: `schedule_stream` pre-authorizes one or more
+  future stream creations (one-shot or recurring "cron") and escrows
+  `(deposit + fee_budget) × occurrences` up front; `execute_scheduled`
+  permissionlessly materializes each occurrence and pays the keeper the
+  escrowed fee; `cancel_scheduled` (sender, before the window) and
+  `reclaim_expired` (anyone, after `expires_at`) refund outstanding escrow;
+  `get_intent` / `sender_intents` provide read access. Sender authorization is
+  consumed at scheduling time (native Soroban auth) and the exact parameters
+  are committed in a SHA-256 `params_hash` so execution cannot be replayed or
+  parameter-swapped.
+- New `StreamError` codes (append-only): `IntentNotFound` (18),
+  `IntentNotPending` (19), `IntentNotYetExecutable` (20), `IntentExpired` (21),
+  `IntentNotCancellable` (22), `InvalidScheduleParameters` (23),
+  `IntentParamsMismatch` (24), `IntentNotExpired` (25).
+- New events: `StreamScheduled`, `ScheduledStreamExecuted`,
+  `ScheduledIntentCancelled`, `ScheduledIntentExpired`.
+- New storage keys (append-only): `NextIntentId`, `Intent(id)`,
+  `SenderIntents(addr)`.
+- `scripts/keeper.sh` — reference keeper (explicit ids or sender discovery,
+  `--send=no` simulation before sending, `MIN_FEE` gate, optional reclaim).
+- `docs/SCHEDULED_INTENTS.md` — keeper guide plus replay / front-running /
+  under-funded-keeper griefing threat model and a testnet run log.
 - **Optional asset allowlist policy module** (`policy.rs`, issue #75): an
   opt-in, strictly-governed policy module restricting which assets may be used
   in new streams while guaranteeing existing streams of a removed asset remain
@@ -27,9 +49,9 @@ interface: they are only ever appended to, never renumbered or reused.
 - Append-only policy events: `PolicyInitialized`, `PolicyAssetQueued`,
   `PolicyAssetExecuted`, `PolicyHandoffProposed`, `PolicyHandoffAccepted`,
   `PolicyHandoffCancelled`.
-- New `StreamError` variants (appended): `PolicyAssetNotAllowed` (23),
-  `PolicyTimelockNotElapsed` (24), `PolicyNoQueuedChange` (25),
-  `PolicyNotInitialized` (26), `PolicyNoPendingHandoff` (27).
+- New `StreamError` variants (appended): `PolicyAssetNotAllowed` (31),
+  `PolicyTimelockNotElapsed` (32), `PolicyNoQueuedChange` (33),
+  `PolicyNotInitialized` (34), `PolicyNoPendingHandoff` (35).
 - Governance failure table and model documentation in `docs/POLICY_GOVERNANCE.md`.
 - **Optional protocol-fee treasury** (`treasury.rs`): a fee charged once at
   the deposit boundary of `create_stream` (`deposit × fee_bps / 10_000`,
@@ -81,10 +103,10 @@ interface: they are only ever appended to, never renumbered or reused.
 - Generated [`docs/ERRORS.md`](./docs/ERRORS.md) (entrypoint × branch → code
   table) with a CI step that regenerates it and diffs the committed artifact.
 - Distinct `StreamError` codes for token-transfer failures, appended after
-  `InsufficientTreasuryBalance = 17`: `DepositTransferFailed` (18),
-  `TopUpTransferFailed` (19), `RecipientPayoutFailed` (20),
-  `SenderRefundFailed` (21), and — for the fee-treasury payout path added
-  above — `TreasuryPayoutFailed` (22). Every token call now runs through the
+  the scheduled-intent codes (18–25): `DepositTransferFailed` (26),
+  `TopUpTransferFailed` (27), `RecipientPayoutFailed` (28),
+  `SenderRefundFailed` (29), and — for the fee-treasury payout path added
+  above — `TreasuryPayoutFailed` (30). Every token call now runs through the
   SDK's fallible (`try_`) client and any failure — missing allowance/balance,
   an asset that refuses transfers, a non-SEP-41 callee — is re-raised as its
   own StreamPay code, because contract error numbers share the
