@@ -51,6 +51,9 @@ extern crate std;
 mod error_surface_test;
 mod errors;
 mod events;
+mod schedule;
+#[cfg(test)]
+mod schedule_test;
 mod stream;
 pub mod surface;
 #[cfg(test)]
@@ -58,6 +61,7 @@ mod test;
 #[cfg(test)]
 mod test_client;
 mod treasury;
+pub mod verification;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, token::TokenClient, Address, ConversionError, Env,
@@ -68,9 +72,11 @@ use surface::Branch;
 
 pub use errors::StreamError;
 pub use events::{
-    FeeCharged, FeeWithdrawn, StreamCancelled, StreamCreated, StreamToppedUp, StreamsCreated,
-    Withdrawn,
+    FeeCharged, FeeWithdrawn, ScheduledIntentCancelled, ScheduledIntentExpired,
+    ScheduledStreamExecuted, StreamCancelled, StreamCreated, StreamScheduled, StreamToppedUp,
+    StreamsCreated, Withdrawn,
 };
+pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
 pub use stream::{streamed_at, Stream, StreamStatus, MAX_DURATION_SECONDS, MAX_PAGE_SIZE};
@@ -302,6 +308,53 @@ impl StreamingPayments {
             return Err(surface::reject(Branch::CreateDurationTooLong));
         }
         stream::validate_capacity(deposit_amount, duration)
+    }
+
+    /// Allocates the next stream id, persists the stream, indexes it under both
+    /// parties, and emits [`StreamCreated`]. No authorization and no token
+    /// movement: callers are responsible for the checks and for having the
+    /// deposit escrowed in the contract (scheduled execution uses an intent's
+    /// already-escrowed deposit).
+    #[allow(clippy::too_many_arguments)]
+    fn create_stream_internal(
+        env: &Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+    ) -> u64 {
+        let id = stream::next_stream_id(env);
+        let stream = Stream {
+            id,
+            sender: sender.clone(),
+            recipient: recipient.clone(),
+            token: token.clone(),
+            deposit,
+            withdrawn: 0,
+            start_time,
+            end_time,
+            cancelable,
+            status: StreamStatus::Active,
+        };
+        stream::put_stream(env, &stream);
+        stream::index_stream(env, &stream);
+
+        StreamCreated {
+            stream_id: id,
+            sender,
+            recipient,
+            token,
+            deposit,
+            start_time,
+            end_time,
+            cancelable,
+        }
+        .publish(env);
+
+        id
     }
 
     /// Creates multiple streams atomically, authorizing the sender once and
@@ -700,6 +753,324 @@ impl StreamingPayments {
     /// pagination and advisory semantics as [`StreamingPayments::recipient_streams`].
     pub fn sender_streams(env: Env, sender: Address, offset: u32, limit: u32) -> Vec<u64> {
         stream::page_stream_ids(&env, &stream::DataKey::SenderStreams(sender), offset, limit)
+    }
+
+    // ------------------------------------------------- scheduled intents ----
+
+    /// Pre-authorizes the creation of one or more streams at a future time and
+    /// escrows the up-front cost.
+    ///
+    /// `sender` must authorize this call (their signature over the invocation
+    /// is verified by the host). The contract escrows
+    /// `(deposit_amount + fee_budget) * occurrences` of `token`:
+    /// `deposit_amount` per occurrence funds the stream, and `fee_budget` per
+    /// occurrence is the reward paid to whichever keeper later executes it.
+    ///
+    /// * A **one-shot** intent is scheduled with `occurrences = 1` and
+    ///   `interval = 0`.
+    /// * A **recurring** intent is scheduled with `occurrences > 1` and a
+    ///   strictly positive `interval` (seconds between occurrence starts). The
+    ///   `i`-th occurrence's stream window is `[start_time + i*interval,
+    ///   end_time + i*interval)`.
+    ///
+    /// Timing constraints: `execute_after <= start_time`, `now <= execute_after`
+    /// and `start_time` must be strictly in the future; `expires_at >
+    /// execute_after` bounds the execution window. The exact parameters are
+    /// committed into the intent's `params_hash`.
+    ///
+    /// Returns the new intent id (monotonically increasing, starting at 1).
+    #[allow(clippy::too_many_arguments)] // the scheduling surface is intentionally explicit
+    pub fn schedule_stream(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+        interval: u64,
+        occurrences: u32,
+        fee_budget: i128,
+        execute_after: u64,
+        expires_at: u64,
+    ) -> Result<u64, StreamError> {
+        sender.require_auth();
+
+        let total_escrow = schedule::validate_schedule(
+            &env,
+            deposit_amount,
+            start_time,
+            end_time,
+            interval,
+            occurrences,
+            fee_budget,
+            execute_after,
+            expires_at,
+        )?;
+
+        // Effects first (CEI): persist the exact authorized intent before the
+        // token call. If the transfer fails, Soroban rolls the whole invocation
+        // back, including these writes and the event.
+        let id = schedule::next_intent_id(&env);
+        let params_hash = schedule::params_hash(
+            &env,
+            &sender,
+            &recipient,
+            &token,
+            deposit_amount,
+            start_time,
+            end_time,
+            cancelable,
+            interval,
+            occurrences,
+            fee_budget,
+            execute_after,
+            expires_at,
+        );
+        let intent = ScheduledIntent {
+            id,
+            sender: sender.clone(),
+            recipient: recipient.clone(),
+            token: token.clone(),
+            deposit: deposit_amount,
+            start_time,
+            end_time,
+            cancelable,
+            interval,
+            occurrences_total: occurrences,
+            occurrences_remaining: occurrences,
+            fee_budget,
+            execute_after,
+            expires_at,
+            params_hash,
+            status: IntentStatus::Pending,
+        };
+        schedule::put_intent(&env, &intent);
+        schedule::index_intent(&env, &intent);
+
+        StreamScheduled {
+            intent_id: id,
+            sender: sender.clone(),
+            recipient,
+            token: token.clone(),
+            deposit: deposit_amount,
+            start_time,
+            end_time,
+            cancelable,
+            interval,
+            occurrences,
+            fee_budget,
+            execute_after,
+            expires_at,
+        }
+        .publish(&env);
+
+        // Interaction: pull the whole escrow (deposit + fee budget, for every
+        // occurrence) into the contract. Reentrant token code cannot observe an
+        // unregistered schedule or execute against an intent without state.
+        TokenClient::new(&env, &token).transfer_from(
+            &env.current_contract_address(),
+            &sender,
+            &env.current_contract_address(),
+            &total_escrow,
+        );
+
+        Ok(id)
+    }
+
+    /// Executes the next due occurrence of a scheduled intent, creating the
+    /// stream and paying `keeper` the escrowed per-occurrence fee.
+    ///
+    /// **Permissionless**: any address may call as `keeper`, but `keeper` must
+    /// authorize the call (so the fee cannot be front-run and redirected to a
+    /// copycat). The contract enforces that the intent is pending, is within its
+    /// `[execute_after, expires_at)` window for the next occurrence, and that
+    /// its stored parameters still match the scheduling commitment.
+    ///
+    /// Execution is **once per occurrence**: each call decrements
+    /// `occurrences_remaining`, and a second call for an already-executed
+    /// occurrence (or a completed one-shot) reverts with
+    /// [`StreamError::IntentNotPending`]. Returns the created stream id.
+    pub fn execute_scheduled(
+        env: Env,
+        intent_id: u64,
+        keeper: Address,
+    ) -> Result<u64, StreamError> {
+        keeper.require_auth();
+
+        let mut intent = schedule::get_intent(&env, intent_id)?;
+        if intent.status != IntentStatus::Pending {
+            return Err(surface::reject(Branch::IntentNotPending));
+        }
+
+        // Defensive: the stored parameters must still hash to the commitment
+        // recorded when the sender authorized the intent.
+        if schedule::intent_params_hash(&env, &intent) != intent.params_hash {
+            return Err(surface::reject(Branch::IntentParamsMismatch));
+        }
+
+        let now = env.ledger().timestamp();
+        if now >= intent.expires_at {
+            return Err(surface::reject(Branch::IntentExpired));
+        }
+        let index = intent.executed_count();
+        if now < intent.occurrence_due(index) {
+            return Err(surface::reject(Branch::IntentNotYetExecutable));
+        }
+
+        let (start_time, end_time) = intent.occurrence_window(index);
+
+        // Effects first (CEI): advance the intent before moving any tokens.
+        intent.occurrences_remaining = intent
+            .occurrences_remaining
+            .checked_sub(1)
+            .ok_or(StreamError::MathOverflow)?;
+        if intent.occurrences_remaining == 0 {
+            intent.status = IntentStatus::Executed;
+        }
+        schedule::put_intent(&env, &intent);
+
+        // The stream deposit is already escrowed; only bookkeeping is required.
+        let stream_id = Self::create_stream_internal(
+            &env,
+            intent.sender.clone(),
+            intent.recipient.clone(),
+            intent.token.clone(),
+            intent.deposit,
+            start_time,
+            end_time,
+            intent.cancelable,
+        );
+
+        // Pay the keeper its escrowed fee for this occurrence.
+        let fee_paid = intent.fee_budget;
+        if fee_paid > 0 {
+            TokenClient::new(&env, &intent.token).transfer(
+                &env.current_contract_address(),
+                stream::muxed(&keeper),
+                &fee_paid,
+            );
+        }
+
+        ScheduledStreamExecuted {
+            intent_id,
+            keeper,
+            stream_id,
+            occurrence_index: index,
+            occurrences_remaining: intent.occurrences_remaining,
+            fee_paid,
+        }
+        .publish(&env);
+
+        Ok(stream_id)
+    }
+
+    /// Cancels a pending scheduled intent and refunds the sender the escrow for
+    /// every outstanding occurrence.
+    ///
+    /// Only the intent's sender may cancel (their authorization is required),
+    /// and only **before the execution window opens** (`now < execute_after`).
+    /// Once the window is open, keepers may execute and cancellation is
+    /// disallowed ([`StreamError::IntentNotCancellable`]) to remove a
+    /// cancel/execute race that would otherwise burn keeper gas. After
+    /// `expires_at`, use [`StreamingPayments::reclaim_expired`] instead.
+    pub fn cancel_scheduled(env: Env, sender: Address, intent_id: u64) -> Result<(), StreamError> {
+        sender.require_auth();
+
+        let mut intent = schedule::get_intent(&env, intent_id)?;
+        if intent.status != IntentStatus::Pending {
+            return Err(surface::reject(Branch::IntentNotPending));
+        }
+        if sender != intent.sender {
+            return Err(StreamError::NotAuthorized);
+        }
+
+        let now = env.ledger().timestamp();
+        if now >= intent.expires_at {
+            return Err(surface::reject(Branch::IntentExpired));
+        }
+        if now >= intent.execute_after {
+            return Err(surface::reject(Branch::IntentNotCancellable));
+        }
+
+        let refund = intent.remaining_escrow()?;
+
+        // Effects first (CEI).
+        intent.status = IntentStatus::Cancelled;
+        schedule::put_intent(&env, &intent);
+
+        if refund > 0 {
+            TokenClient::new(&env, &intent.token).transfer(
+                &env.current_contract_address(),
+                stream::muxed(&intent.sender),
+                &refund,
+            );
+        }
+
+        ScheduledIntentCancelled {
+            intent_id,
+            sender: intent.sender.clone(),
+            refund,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// Reclaims a pending intent that passed `expires_at` without being fully
+    /// executed, refunding the sender the escrow for every outstanding
+    /// occurrence.
+    ///
+    /// **Permissionless**: anyone may trigger the refund (the funds always go
+    /// to the sender), so abandoned intents cannot lock capital indefinitely.
+    /// Reverts with [`StreamError::IntentExpired`]-style semantics via
+    /// [`StreamError::IntentNotExpired`] if called too early, and with
+    /// [`StreamError::IntentNotPending`] if the intent is terminal.
+    pub fn reclaim_expired(env: Env, intent_id: u64) -> Result<(), StreamError> {
+        let mut intent = schedule::get_intent(&env, intent_id)?;
+        if intent.status != IntentStatus::Pending {
+            return Err(surface::reject(Branch::IntentNotPending));
+        }
+        let now = env.ledger().timestamp();
+        if now < intent.expires_at {
+            return Err(surface::reject(Branch::IntentNotExpired));
+        }
+
+        let refund = intent.remaining_escrow()?;
+
+        // Effects first (CEI).
+        intent.status = IntentStatus::Expired;
+        schedule::put_intent(&env, &intent);
+
+        if refund > 0 {
+            TokenClient::new(&env, &intent.token).transfer(
+                &env.current_contract_address(),
+                stream::muxed(&intent.sender),
+                &refund,
+            );
+        }
+
+        ScheduledIntentExpired {
+            intent_id,
+            sender: intent.sender.clone(),
+            refund,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// Read-only view of a scheduled intent's full state.
+    pub fn get_intent(env: Env, intent_id: u64) -> Result<ScheduledIntent, StreamError> {
+        schedule::get_intent(&env, intent_id)
+    }
+
+    /// A page of scheduled-intent ids created by `sender`, in creation order.
+    /// Same pagination and advisory semantics as
+    /// [`StreamingPayments::sender_streams`].
+    pub fn sender_intents(env: Env, sender: Address, offset: u32, limit: u32) -> Vec<u64> {
+        stream::page_stream_ids(&env, &stream::DataKey::SenderIntents(sender), offset, limit)
     }
 
     // ------------------------------------------------------------ treasury --

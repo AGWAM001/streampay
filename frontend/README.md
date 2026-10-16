@@ -45,10 +45,10 @@ For a one-command deployed contract + demo stream, see
   asset costs one extra signature instead of failing at simulation.
 - Read-only calls (`get_stream`, `available`, the index views, `allowance`)
   simulate against the RPC without signing.
-- Contract errors decode to `StreamError` names, including the transfer-
-  failure codes: `DepositTransferFailed` (18), `TopUpTransferFailed` (19),
-  `RecipientPayoutFailed` (20), `SenderRefundFailed` (21),
-  `TreasuryPayoutFailed` (22).
+- Contract errors decode to `StreamError` names, including the scheduled-intent
+  codes (18–25) and the transfer-failure codes: `DepositTransferFailed` (26),
+  `TopUpTransferFailed` (27), `RecipientPayoutFailed` (28),
+  `SenderRefundFailed` (29), `TreasuryPayoutFailed` (30).
 - Amounts are **smallest token units** (stroops for classic assets).
 - The batch form accepts `address,rate,duration` CSV rows. Rate is an integer
   in smallest token units per second; duration is integer seconds. Each

@@ -10,7 +10,7 @@
 
 use soroban_sdk::{contractclient, Address, Env, Vec};
 
-use crate::{FeeScan, Stream, StreamError, StreamInput, TreasuryStatus};
+use crate::{FeeScan, ScheduledIntent, Stream, StreamError, StreamInput, TreasuryStatus};
 
 /// Interface of the StreamPay streaming-payments contract.
 #[contractclient(name = "StreamingPaymentsClient")]
@@ -40,6 +40,31 @@ pub trait StreamingPaymentsApi {
     fn available(env: Env, stream_id: u64) -> Result<i128, StreamError>;
     fn recipient_streams(env: Env, recipient: Address, offset: u32, limit: u32) -> Vec<u64>;
     fn sender_streams(env: Env, sender: Address, offset: u32, limit: u32) -> Vec<u64>;
+
+    // --- scheduled intents ---
+    #[allow(clippy::too_many_arguments)] // mirrors the contract's scheduling surface
+    fn schedule_stream(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+        interval: u64,
+        occurrences: u32,
+        fee_budget: i128,
+        execute_after: u64,
+        expires_at: u64,
+    ) -> Result<u64, StreamError>;
+    fn execute_scheduled(env: Env, intent_id: u64, keeper: Address) -> Result<u64, StreamError>;
+    fn cancel_scheduled(env: Env, sender: Address, intent_id: u64) -> Result<(), StreamError>;
+    fn reclaim_expired(env: Env, intent_id: u64) -> Result<(), StreamError>;
+    fn get_intent(env: Env, intent_id: u64) -> Result<ScheduledIntent, StreamError>;
+    fn sender_intents(env: Env, sender: Address, offset: u32, limit: u32) -> Vec<u64>;
+
+    // --- treasury ---
     fn set_fee_bps(env: Env, caller: Address, new_fee_bps: u32) -> Result<(), StreamError>;
     fn nominate_governor(
         env: Env,
