@@ -153,9 +153,9 @@ Fuzz the accrual math (nightly, optional):
 cd fuzz && cargo +nightly fuzz run streamed_at -- -max_total_time=60
 ```
 
-**Live testnet demo in one command:** [`./scripts/deploy_testnet.sh`](./scripts/deploy_testnet.sh)
-deploys the contract, mints a demo token, and opens a 1-hour stream — full
-walkthrough in [`docs/DEMO.md`](./docs/DEMO.md).
+**Testnet Demo & Walkthrough:**
+- **One-command deploy & demo stream:** [`./scripts/deploy_testnet.sh`](./scripts/deploy_testnet.sh) deploys the contract, mints demo SAC tokens, and opens an active 1-hour stream.
+- **Full lifecycle walkthrough:** See [`docs/DEMO.md`](./docs/DEMO.md) for step-by-step CLI commands (`create_stream` → `withdraw` / `withdraw_max` → `cancel_stream`), expected outputs, and troubleshooting.
 
 Run the frontend:
 
