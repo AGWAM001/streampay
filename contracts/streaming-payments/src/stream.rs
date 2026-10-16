@@ -103,6 +103,8 @@ pub struct BatchEntry {
     pub start_time: u64,
     pub end_time: u64,
     pub cancelable: bool,
+}
+
 /// Proposed contract upgrade pending timelock expiration.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

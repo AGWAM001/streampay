@@ -4496,6 +4496,7 @@ fn measure_batch_instruction_costs() {
         let mem = f.env.cost_estimate().budget().memory_bytes_cost();
         std::println!("BATCH_MEASUREMENT: size={} cpu={} mem={}", size, cpu, mem);
     }
+}
 
 // ------------------------------------------------ upgrade & migration tests --
 

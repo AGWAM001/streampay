@@ -487,6 +487,7 @@ fn probe(branch: Branch) -> Option<StreamError> {
                 .client
                 .mock_all_auths()
                 .try_create_streams_batch(&entries)))
+        }
         Branch::ContractFrozen => {
             let f = Fixture::setup_quiet();
             let now = f.env.ledger().timestamp();
@@ -709,7 +710,7 @@ fn stream_error_variant_list_is_exhaustive() {
             | StreamError::PolicyNoPendingHandoff
             | StreamError::BatchEmpty
             | StreamError::BatchTooLarge => StreamError::ALL.contains(&e),
-            | StreamError::ContractFrozen
+            StreamError::ContractFrozen
             | StreamError::ContractNotFrozen
             | StreamError::NoPendingUpgrade
             | StreamError::TimelockNotExpired

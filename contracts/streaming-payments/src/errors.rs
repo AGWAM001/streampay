@@ -125,10 +125,6 @@ pub enum StreamError {
     PolicyNotInitialized = 34,
     /// No admin handoff proposal is pending.
     PolicyNoPendingHandoff = 35,
-    /// Batch creation was requested with zero entries.
-    BatchEmpty = 36,
-    /// Batch creation was requested with more entries than MAX_BATCH.
-    BatchTooLarge = 37,
     /// The contract is currently frozen for maintenance or upgrade.
     ContractFrozen = 36,
     /// The operation requires the contract to be frozen.
@@ -141,6 +137,10 @@ pub enum StreamError {
     UpgradeDelayTooShort = 40,
     /// The storage migration has already been completed.
     AlreadyMigrated = 41,
+    /// Batch creation was requested with zero entries.
+    BatchEmpty = 42,
+    /// Batch creation was requested with more entries than MAX_BATCH.
+    BatchTooLarge = 43,
 }
 
 impl StreamError {
@@ -183,14 +183,14 @@ impl StreamError {
         StreamError::PolicyNoQueuedChange,
         StreamError::PolicyNotInitialized,
         StreamError::PolicyNoPendingHandoff,
-        StreamError::BatchEmpty,
-        StreamError::BatchTooLarge,
         StreamError::ContractFrozen,
         StreamError::ContractNotFrozen,
         StreamError::NoPendingUpgrade,
         StreamError::TimelockNotExpired,
         StreamError::UpgradeDelayTooShort,
         StreamError::AlreadyMigrated,
+        StreamError::BatchEmpty,
+        StreamError::BatchTooLarge,
     ];
 
     /// The stable numeric value carried across the contract boundary
