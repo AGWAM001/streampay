@@ -22,7 +22,7 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 12 | `NotAuthorized` | reachable (1 branch(es)) | `cancel_stream` | the caller is neither the sender nor the recipient |
 | 13 | `NothingToWithdraw` | reachable (1 branch(es)) | `withdraw_max` | nothing has accrued yet, or everything accrued was already withdrawn |
 | 14 | `FeeRateTooHigh` | reachable (1 branch(es)) | `set_fee_bps` | new_fee_bps exceeds MAX_FEE_BPS (the protocol cap) |
-| 15 | `NotGovernor` | reachable (2 branch(es)) | `accept_governor`, `nominate_governor`, `set_fee_bps`, `withdraw_treasury` | the caller is not the treasury governor; the caller is not the nominated governor |
+| 15 | `NotGovernor` | reachable (2 branch(es)) | `accept_governor`, `cancel_upgrade`, `execute_upgrade`, `migrate_storage`, `nominate_governor`, `propose_upgrade`, `set_fee_bps`, `set_frozen`, `withdraw_treasury` | the caller is not the treasury governor; the caller is not the nominated governor |
 | 16 | `NoPendingGovernor` | reachable (1 branch(es)) | `accept_governor` | accept_governor with no nomination pending |
 | 17 | `InsufficientTreasuryBalance` | reachable (1 branch(es)) | `withdraw_treasury` | amount exceeds fees collected minus fees already withdrawn |
 | 18 | `IntentNotFound` | reachable (1 branch(es)) | `cancel_scheduled`, `execute_scheduled`, `get_intent`, `reclaim_expired` | no scheduled intent is stored under the id |
@@ -45,6 +45,12 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 35 | `PolicyNoPendingHandoff` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff` | no admin handoff proposal is pending |
 | 36 | `BatchEmpty` | reachable (1 branch(es)) | `create_streams_batch` | entries is empty |
 | 37 | `BatchTooLarge` | reachable (1 branch(es)) | `create_streams_batch` | entries length exceeds MAX_BATCH |
+| 36 | `ContractFrozen` | reachable (1 branch(es)) | `cancel_stream`, `create_stream`, `create_streams`, `top_up`, `withdraw`, `withdraw_max` | the contract is frozen for maintenance or upgrade |
+| 37 | `ContractNotFrozen` | reachable (1 branch(es)) | `migrate_storage` | storage migration requires the contract to be frozen |
+| 38 | `NoPendingUpgrade` | reachable (2 branch(es)) | `cancel_upgrade`, `execute_upgrade` | execute_upgrade called with no upgrade pending; cancel_upgrade called with no upgrade pending |
+| 39 | `TimelockNotExpired` | reachable (1 branch(es)) | `execute_upgrade` | upgrade timelock delay has not yet expired |
+| 40 | `UpgradeDelayTooShort` | reachable (1 branch(es)) | `propose_upgrade` | proposed upgrade delay is shorter than MIN_UPGRADE_DELAY_SECONDS |
+| 41 | `AlreadyMigrated` | reachable (1 branch(es)) | `migrate_storage` | storage has already been migrated to the target schema version |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -69,7 +75,7 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `CancelSplitOverflow` | `cancel_stream` | `MathOverflow` | 11 | the cancel pro-rata split would underflow | defensive (unreachable) |
 | `PayoutOverflow` | `withdraw`, `withdraw_max` | `MathOverflow` | 11 | withdrawn + amount would overflow i128 | defensive (unreachable) |
 | `SetFeeRateTooHigh` | `set_fee_bps` | `FeeRateTooHigh` | 14 | new_fee_bps exceeds MAX_FEE_BPS (the protocol cap) | reachable |
-| `GovernorNotAllowed` | `set_fee_bps`, `nominate_governor`, `withdraw_treasury` | `NotGovernor` | 15 | the caller is not the treasury governor | reachable |
+| `GovernorNotAllowed` | `set_fee_bps`, `nominate_governor`, `withdraw_treasury`, `set_frozen`, `propose_upgrade`, `cancel_upgrade`, `execute_upgrade`, `migrate_storage` | `NotGovernor` | 15 | the caller is not the treasury governor | reachable |
 | `AcceptGovernorNoPending` | `accept_governor` | `NoPendingGovernor` | 16 | accept_governor with no nomination pending | reachable |
 | `AcceptGovernorNotNominee` | `accept_governor` | `NotGovernor` | 15 | the caller is not the nominated governor | reachable |
 | `WithdrawTreasuryAmountNonPositive` | `withdraw_treasury` | `ZeroAmount` | 9 | treasury withdrawal amount is zero or negative | reachable |
@@ -94,6 +100,13 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `PolicyNoPendingHandoff` | `policy_accept_handoff`, `policy_cancel_handoff` | `PolicyNoPendingHandoff` | 35 | no admin handoff proposal is pending | reachable |
 | `CreateBatchEmpty` | `create_streams_batch` | `BatchEmpty` | 36 | entries is empty | reachable |
 | `CreateBatchTooLarge` | `create_streams_batch` | `BatchTooLarge` | 37 | entries length exceeds MAX_BATCH | reachable |
+| `ContractFrozen` | `create_stream`, `create_streams`, `withdraw`, `withdraw_max`, `cancel_stream`, `top_up` | `ContractFrozen` | 36 | the contract is frozen for maintenance or upgrade | reachable |
+| `MigrationNotFrozen` | `migrate_storage` | `ContractNotFrozen` | 37 | storage migration requires the contract to be frozen | reachable |
+| `ExecuteUpgradeNoPending` | `execute_upgrade` | `NoPendingUpgrade` | 38 | execute_upgrade called with no upgrade pending | reachable |
+| `CancelUpgradeNoPending` | `cancel_upgrade` | `NoPendingUpgrade` | 38 | cancel_upgrade called with no upgrade pending | reachable |
+| `TimelockNotExpired` | `execute_upgrade` | `TimelockNotExpired` | 39 | upgrade timelock delay has not yet expired | reachable |
+| `UpgradeDelayTooShort` | `propose_upgrade` | `UpgradeDelayTooShort` | 40 | proposed upgrade delay is shorter than MIN_UPGRADE_DELAY_SECONDS | reachable |
+| `AlreadyMigrated` | `migrate_storage` | `AlreadyMigrated` | 41 | storage has already been migrated to the target schema version | reachable |
 
 ## Retired codes
 
