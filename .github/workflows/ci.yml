@@ -101,6 +101,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Regenerate differential vectors
+        run: node ../scripts/generate-vectors.mjs
+
+      - name: Differential tests (against shared vector corpus)
+        run: node --experimental-strip-types --test lib/oracle.test.ts
+
       - name: Build
         run: npm run build
 
