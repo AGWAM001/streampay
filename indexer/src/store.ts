@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { DecodedEvent, Stream } from "./types.js";
 import { WebhookStore } from "./webhooks/store.js";
+import { globalIndexerTracer } from "./telemetry.js";
+import { sanitizeAddress } from "./privacy.js";
 
 export class StreamStore {
   readonly db: Database.Database;
@@ -54,10 +56,49 @@ export class StreamStore {
   }
 
   private ingestWithinTransaction(event: DecodedEvent): void {
-    const inserted = this.db.prepare(`INSERT OR IGNORE INTO events
-      (id, stream_id, name, ledger, ledger_closed_at, payload) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(event.id, event.streamId, event.name, event.ledger, event.ledgerClosedAt, JSON.stringify(event.data, (_key, value: unknown) => typeof value === "bigint" ? value.toString() : value));
-    if (inserted.changes === 0) return;
+    const ingestSpan = globalIndexerTracer.startSpan("indexer.ingest_event", {
+      kind: "CONSUMER",
+      attributes: {
+        "event.name": event.name,
+        "ledger.sequence": event.ledger,
+        "stream.id": event.streamId,
+        "soroban.tx_hash": event.txHash || "unknown",
+      },
+    });
+
+    // Cross-process continuation through events via Span Links (not parent-child)
+    if (event.linkedSpanContext) {
+      ingestSpan.addLink({
+        context: event.linkedSpanContext,
+        attributes: {
+          "link.relationship": "ledger_event_continuation",
+          "event.name": event.name,
+          "ledger.sequence": event.ledger,
+          "soroban.tx_hash": event.txHash || "unknown",
+        },
+      });
+    }
+
+    try {
+      const dbSpan = globalIndexerTracer.startSpan("indexer.db_write", {
+        parent: ingestSpan,
+        kind: "INTERNAL",
+        attributes: {
+          "db.system": "sqlite",
+          "stream.id": event.streamId,
+          "event.name": event.name,
+        },
+      });
+
+      const inserted = this.db.prepare(`INSERT OR IGNORE INTO events
+        (id, stream_id, name, ledger, ledger_closed_at, payload) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(event.id, event.streamId, event.name, event.ledger, event.ledgerClosedAt, JSON.stringify(event.data, (_key, value: unknown) => typeof value === "bigint" ? value.toString() : value));
+      if (inserted.changes === 0) {
+        dbSpan.end();
+        ingestSpan.setStatus("OK");
+        ingestSpan.end();
+        return;
+      }
 
     // Queue webhook deliveries for subscribers
     try {
@@ -142,6 +183,17 @@ export class StreamStore {
       cancelable=excluded.cancelable, status=excluded.status, cancelled_by=excluded.cancelled_by,
       recipient_amount=excluded.recipient_amount, sender_amount=excluded.sender_amount,
       last_ledger=excluded.last_ledger, updated_at=excluded.updated_at`).run(row);
+
+      dbSpan.setStatus("OK");
+      dbSpan.end();
+      ingestSpan.setStatus("OK");
+    } catch (err) {
+      ingestSpan.recordException(err);
+      ingestSpan.setStatus("ERROR", String(err));
+      throw err;
+    } finally {
+      ingestSpan.end();
+    }
   }
 
   getStream(id: string): Stream | undefined {
