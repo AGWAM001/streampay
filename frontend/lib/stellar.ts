@@ -47,18 +47,8 @@ export interface StreamArgs {
   cancelable: boolean;
 }
 
-export interface StreamView {
-  id: string;
-  sender: string;
-  recipient: string;
-  token: string;
-  deposit: string;
-  withdrawn: string;
-  startTime: number;
-  endTime: number;
-  cancelable: boolean;
-  status: string;
-}
+import type { StreamView } from "./pagination";
+export type { StreamView };
 
 function scAddr(s: string) {
   return nativeToScVal(new Address(s), { type: "address" });
@@ -250,17 +240,22 @@ async function simulateRead(
   method: string,
   args: xdr.ScVal[]
 ): Promise<xdr.ScVal | null> {
-  const server = new rpc.Server(RPC_URL);
-  const tx = new TransactionBuilder(DUMMY_SOURCE, {
-    fee: "100",
-    networkPassphrase: NETWORK,
-  })
-    .addOperation(contract().call(method, ...args))
-    .setTimeout(30)
-    .build();
-  const sim = await server.simulateTransaction(tx);
-  if (rpc.Api.isSimulationError(sim)) return null;
-  return sim.result?.retval ?? null;
+  if (!CONTRACT_ID) return null;
+  try {
+    const server = new rpc.Server(RPC_URL);
+    const tx = new TransactionBuilder(DUMMY_SOURCE, {
+      fee: "100",
+      networkPassphrase: NETWORK,
+    })
+      .addOperation(contract().call(method, ...args))
+      .setTimeout(30)
+      .build();
+    const sim = await server.simulateTransaction(tx);
+    if (rpc.Api.isSimulationError(sim)) return null;
+    return sim.result?.retval ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Read-only view of one stream. */
@@ -333,3 +328,54 @@ export async function fetchStreamsFor(
   );
   return streams.filter((s): s is StreamView => s !== null);
 }
+
+import {
+  paginateStreamsByCursor,
+  type CursorPaginationOptions,
+  type PaginatedStreamsResponse,
+} from "./pagination";
+
+export {
+  paginateStreamsByCursor,
+  type StreamRoleFilter,
+  type StreamStatusFilter,
+  type PaginationDirection,
+  type CursorPaginationOptions,
+  type PaginatedStreamsResponse,
+} from "./pagination";
+
+/**
+ * Discovers and paginates streams for any Stellar address across incoming
+ * and outgoing indexes with stable cursor semantics.
+ */
+export async function fetchAddressStreamsPage(
+  address: string,
+  options: CursorPaginationOptions = {}
+): Promise<PaginatedStreamsResponse> {
+  const asOfTimestamp = Math.floor(Date.now() / 1000);
+  const role = options.role || "all";
+
+  let streams: StreamView[] = [];
+  try {
+    if (role === "incoming") {
+      streams = await fetchStreamsFor(address, "recipient");
+    } else if (role === "outgoing") {
+      streams = await fetchStreamsFor(address, "sender");
+    } else {
+      const [asRecipient, asSender] = await Promise.all([
+        fetchStreamsFor(address, "recipient").catch(() => []),
+        fetchStreamsFor(address, "sender").catch(() => []),
+      ]);
+      const byId = new Map<string, StreamView>();
+      for (const s of [...asRecipient, ...asSender]) {
+        byId.set(s.id, s);
+      }
+      streams = [...byId.values()];
+    }
+  } catch {
+    streams = [];
+  }
+
+  return paginateStreamsByCursor(streams, options, asOfTimestamp);
+}
+
