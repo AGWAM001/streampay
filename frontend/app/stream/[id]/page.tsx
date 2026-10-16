@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -155,12 +154,6 @@ export default function StreamDetail() {
     }
   }
 
-export default async function StreamDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
   return (
     <main className="wrap">
       <p className="kicker mono">STREAM #{stream.id}</p>

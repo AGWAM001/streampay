@@ -1,5 +1,4 @@
-import { Suspense } from "react";
-import Dashboard from "@/components/Dashboard";
+"use client";
 
 import { useState } from "react";
 import Link from "next/link";
