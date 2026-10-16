@@ -2,23 +2,25 @@
 
 The StreamPay Event Indexer is a standalone TypeScript Node.js service that polls Soroban RPC `getEvents` for StreamPay smart contract events, decodes the contract's typed XDR event payloads using `@stellar/stellar-sdk`, persists stream metadata and an append-only event log in SQLite, maintains cursor persistence, and serves a lightweight HTTP query API.
 
+The service indexes the contract's emitted event topics: `stream_created`, `withdrawn`, `stream_cancelled`, and `stream_topped_up` (the Rust event types are `StreamCreated`, `Withdrawn`, `StreamCancelled`, and `StreamToppedUp`). It also recognizes `stream_paused` and `stream_resumed` for forward-compatible status updates. Unknown topics are filtered out at RPC.
+
 ---
 
 ## 1. Prerequisites
 
-- **Node.js**: `v22.5.0` or higher (uses built-in `node:sqlite`).
-- **npm**: `v10+` or `v11+`.
+- **Node.js**: `v22.0.0` or higher
+- **npm**: `v10+` or `v11+`
 
 ### Environment Variables
 
-| Variable | Description | Default |
+| Variable | Default | Purpose |
 |---|---|---|
-| `RPC_URL` | Soroban RPC endpoint URL | `https://soroban-testnet.stellar.org` |
-| `CONTRACT_ID` | StreamPay contract address (`C...`) to filter events | `""` (all events if unset) |
-| `DATABASE_PATH` | Path to the SQLite database file | `indexer.sqlite` |
-| `POLL_INTERVAL_SECONDS` | Interval between RPC poll cycles in seconds | `5` |
-| `PORT` | Port for the HTTP API server | `3001` |
-| `START_LEDGER` | Initial ledger sequence if starting fresh without a saved cursor | `1` |
+| `RPC_URL` | `https://soroban-testnet.stellar.org` | Stellar Soroban RPC URL |
+| `CONTRACT_ID` | Required | StreamPay contract address (`C...`) |
+| `POLL_INTERVAL_MS` | `5000` | Delay between polls (minimum 250 ms) |
+| `PORT` | `8787` | HTTP listen port |
+| `DATABASE_PATH` | `./data/streampay.sqlite` | SQLite database file |
+| `START_LEDGER` | Latest RPC ledger | Initial ledger sequence if starting fresh without a saved cursor |
 
 ---
 
@@ -29,173 +31,140 @@ The StreamPay Event Indexer is a standalone TypeScript Node.js service that poll
 ```bash
 cd indexer
 npm install
+npm run typecheck
+npm test
 npm run build
-```
-
-### Running the Indexer
-
-```bash
 npm start
 ```
 
-Or run directly with specific environment settings:
+### Running with Environment Variables
 
-```bash
-PORT=3001 CONTRACT_ID="CB..." DATABASE_PATH="data/indexer.sqlite" npm start
+The service reads `.env` when your shell/environment loader provides it; Node does not load `.env` automatically. For example, on PowerShell:
+
+```powershell
+$env:RPC_URL = "https://soroban-testnet.stellar.org"
+$env:CONTRACT_ID = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+$env:PORT = "8787"
+npm start
 ```
 
----
-
-## 3. How to Run Against Testnet vs. Local RPC Node
-
-### Running Against Stellar Testnet
+Or on Linux / macOS:
 
 ```bash
 export RPC_URL="https://soroban-testnet.stellar.org"
 export CONTRACT_ID="<YOUR_TESTNET_CONTRACT_ADDRESS>"
-export START_LEDGER=1000000
-npm start
-```
-
-### Running Against Local RPC Node (e.g. Local Soroban Network / Standalone)
-
-```bash
-export RPC_URL="http://localhost:8000/soroban/rpc"
-export CONTRACT_ID="<LOCAL_CONTRACT_ADDRESS>"
-export START_LEDGER=1
-export POLL_INTERVAL_SECONDS=2
 npm start
 ```
 
 ---
 
-## 4. Database Location & Resetting the Cursor
+## 3. Database Persistence & Restarts
 
-The SQLite database path is controlled by `DATABASE_PATH` (defaults to `indexer.sqlite` in the current working directory).
+The SQLite database stores:
+- **`streams` table**: Latest materialized state per stream (`stream_id`, `sender`, `recipient`, `deposit`, `withdrawn`, `status`, cancel amounts).
+- **`events` table**: Append-only log of every received event (`id`, `stream_id`, `name`, `ledger`, `ledger_closed_at`, `payload`).
+- **`indexer_state` table**: Persisted `cursor` and `lastLedger`.
 
-### Database Schema
-
-- **`streams`**: Stream metadata upserted on `stream_created`, `withdrawn`, `stream_topped_up`, and `stream_cancelled` events.
-- **`events`**: Append-only log of every processed event with `event_id`, `stream_id`, `contract_id`, `ledger`, `tx_hash`, `event_type`, and decoded `payload` stored as JSON.
-- **`cursor`**: Single-row cursor table tracking `last_ledger` to guarantee zero double-counting across restarts.
-
-### How to Reset Cursor
-
-To re-index from a specific ledger or reprocess all events:
-
-1. **Option A: Reset cursor table to a specific ledger:**
-   ```bash
-   sqlite3 indexer.sqlite "UPDATE cursor SET last_ledger = 100000 WHERE id = 1;"
-   ```
-
-2. **Option B: Reset cursor to start from scratch:**
-   ```bash
-   sqlite3 indexer.sqlite "DELETE FROM cursor; DELETE FROM events; DELETE FROM streams;"
-   ```
-
-3. **Option C: Remove the database file:**
-   ```bash
-   rm indexer.sqlite
-   ```
+Repeated events are safe and idempotent: event IDs are unique, preventing double-counting across service restarts.
 
 ---
 
-## 5. API Endpoint Reference
+## 4. HTTP API Reference
 
-The service exposes an HTTP API on the configured `PORT` (default `3001`).
+### Health Check
+`GET /health`
 
-### `GET /streams?recipient=<address>`
-
-Returns all streams where `recipient` matches the query parameter in creation order. Returns an empty array `[]` (with HTTP 200) if no streams are found or if the parameter is omitted.
-
-#### Example Response:
-```json
-[
-  {
-    "id": "1",
-    "sender": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-    "recipient": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-    "token": "CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL",
-    "deposit": "15000000",
-    "withdrawn": "5000000",
-    "start_time": 1700000000,
-    "end_time": 1700864000,
-    "cancelable": 1,
-    "status": "Cancelled",
-    "cancelled_by": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-    "recipient_amount": "3000000",
-    "sender_amount": "10000000",
-    "created_at_ledger": 100,
-    "updated_at_ledger": 115
-  }
-]
-```
-
-### `GET /streams/:id/history`
-
-Returns the full event history for a stream ID in ledger order (`ledger ASC, id ASC`). Returns an empty array `[]` (with HTTP 200) if no events exist for the given stream ID.
-
-#### Example Response:
-```json
-[
-  {
-    "id": 1,
-    "event_id": "0000000100-00001",
-    "stream_id": "1",
-    "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-    "ledger": 100,
-    "ledger_closed_at": "2026-01-01T00:00:00Z",
-    "tx_hash": "txhash1",
-    "event_type": "stream_created",
-    "payload": {
-      "stream_id": "1",
-      "sender": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-      "recipient": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-      "token": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-      "deposit": "10000000",
-      "start_time": 100,
-      "end_time": 500,
-      "cancelable": true
-    },
-    "created_at": "2026-10-16 07:00:00"
-  },
-  {
-    "id": 2,
-    "event_id": "0000000105-00001",
-    "stream_id": "1",
-    "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-    "ledger": 105,
-    "ledger_closed_at": "2026-01-01T00:05:00Z",
-    "tx_hash": "txhash2",
-    "event_type": "withdrawn",
-    "payload": {
-      "stream_id": "1",
-      "recipient": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-      "amount": "2000000",
-      "withdrawn_total": "2000000"
-    },
-    "created_at": "2026-10-16 07:05:00"
-  }
-]
-```
-
-### `GET /health`
-
-Health check endpoint returning indexer status and current cursor ledger.
 ```json
 {
+  "ok": true,
   "status": "ok",
-  "cursor": 120
+  "lastLedger": "123456",
+  "cursor": "0000000123456"
+}
+```
+
+### Recipient Stream Query (Frontend discovery)
+`GET /streams?recipient=<address>`
+
+Returns all streams for the given recipient address. Returns `[]` if none found.
+
+```json
+[
+  {
+    "streamId": "1",
+    "id": "1",
+    "sender": "G...",
+    "recipient": "G...",
+    "token": "C...",
+    "deposit": "1000000",
+    "withdrawn": "250000",
+    "status": "active"
+  }
+]
+```
+
+### Stream Event History
+`GET /streams/:id/history`
+
+Returns the full event log for a stream ID in ledger sequence order. Returns `[]` if not found.
+
+```json
+[
+  {
+    "id": "event-1",
+    "stream_id": "1",
+    "event_type": "stream_created",
+    "ledger": 100,
+    "payload": { ... }
+  },
+  {
+    "id": "event-2",
+    "stream_id": "1",
+    "event_type": "withdrawn",
+    "ledger": 105,
+    "payload": { ... }
+  }
+]
+```
+
+### Stream Details by ID
+`GET /streams/:id`
+
+Returns the latest indexed projection, or `404` if not found:
+
+```json
+{
+  "streamId": "7",
+  "sender": "G...",
+  "recipient": "G...",
+  "token": "C...",
+  "deposit": "1000000",
+  "withdrawn": "250000",
+  "status": "active",
+  "lastLedger": 123456,
+  "updatedAt": "2026-01-01T00:00:00Z"
+}
+```
+
+### Streams by Address
+`GET /address/:addr/streams`
+
+Returns streams where the address is sender or recipient:
+
+```json
+{
+  "address": "G...",
+  "count": 1,
+  "streams": [...]
 }
 ```
 
 ---
 
-## 6. Testing
+## 5. Testing
 
-Run the integration test suite:
+Run all unit, decoder, database, and integration tests:
 
 ```bash
 npm test
 ```
-
