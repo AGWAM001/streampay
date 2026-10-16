@@ -162,6 +162,15 @@ stellar contract deploy \
   -- --governor "$(stellar keys address deployer)"
 ```
 
+## Headless CLI
+
+The TypeScript CLI supports stream creation, withdrawals, cancellation,
+top-ups, and recipient `claim-all`, with environment, encrypted-file, and
+hardware-wallet handoff signers. Dry-runs use Soroban RPC transaction
+simulation and report its footprint and event-derived token deltas. It
+requires Node.js ≥ 22.6; setup, JSON schema v1, and exit codes are documented
+in [`tools/streampay-cli`](./tools/streampay-cli/README.md).
+
 ## TTL & rent operations
 
 Streams and address indexes extend their TTL on every write (a ~29-day
