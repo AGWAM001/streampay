@@ -10,7 +10,7 @@
 extern crate std;
 
 use soroban_sdk::testutils::{Address as _, Events as _};
-use soroban_sdk::{token::Client as TokenClient, Address, BytesN, Env, Event as _};
+use soroban_sdk::{token::Client as TokenClient, Address, BytesN, Env, Event as _, String};
 
 use crate::sponsor;
 use crate::test::Fixture;
@@ -416,4 +416,58 @@ fn sponsoring_someone_who_is_not_the_recipient_is_rejected() {
         res.expect_err("expected rejection").unwrap(),
         StreamError::StreamNotActive
     );
+}
+
+/// Cross-language parity pin for the signed relay payload.
+///
+/// `frontend/lib/sponsor.ts` rebuilds this exact message in JavaScript and
+/// hashes it with `sha256`; both sides hardcode this vector, so a change to the
+/// field order, field types, or domain tag breaks `cargo test` *and* the
+/// frontend test instead of silently invalidating sponsors' signatures.
+#[test]
+fn canonical_relay_message_has_a_frozen_wire_form() {
+    use soroban_sdk::xdr::ToXdr;
+    let env = Env::default();
+    env.mock_all_auths();
+    let addr = |s: &str| Address::from_string(&String::from_str(&env, s));
+
+    let parts = sponsor::message(
+        &env,
+        &addr("CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"),
+        &addr("CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"),
+        &addr("CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"),
+        &addr("CBEPDNVYXQGWB5YUBXKJWYJA7OXTZW5LFLNO5JRRGE6Z6C5OSUZPCCEL"),
+        42,
+        1_000_000_000,
+        7,
+        1_800_000_000,
+    );
+
+    assert_eq!(
+        hex_bytes(&parts.clone().to_xdr(&env)),
+        "000000100000000100000009\
+         0000000e0000001f53747265616d5061792f73706f6e736f7265642d77697468647261772f7631\
+         000000000e00000038434141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414d445234\
+         0000000e00000038434141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414f4c5a4d\
+         0000000e000000384341414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414149544134\
+         0000000e0000003843424550444e5659585147574235595542584b4a57594a41374f58545a57354c464c4e4f354a52524745365a3643354f53555a504343454c\
+         00000005000000000000002a\
+         0000000a0000000000000000000000003b9aca00\
+         000000050000000000000007\
+         00000005000000006b49d200"
+    );
+
+    let digest = sponsor::signature_digest(&env, &parts);
+    assert_eq!(
+        hex_bytes(&digest.into()),
+        "e2c974bef0af32c95b39bd02965fe636cbed3e8397af2158e9c534560f2de186"
+    );
+}
+
+fn hex_bytes(b: &soroban_sdk::Bytes) -> std::string::String {
+    let mut s = std::string::String::new();
+    for i in 0..b.len() {
+        s.push_str(&std::format!("{:02x}", b.get(i).unwrap()));
+    }
+    s
 }
