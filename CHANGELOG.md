@@ -131,6 +131,14 @@ interface: they are only ever appended to, never renumbered or reused.
 - Append-only deployment records in `deployments/` (promotion log, per-run
   records, per-environment contract-interface baselines) and the design +
   operator docs `docs/DEPLOY_PIPELINE.md` and `docs/CANARY_RUNBOOK.md`.
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §13–§14: the append-only
+  public-interface rules (storage keys, event shapes, error codes — current
+  tail 17) and the Soroban traps we've hit, each re-verified against the
+  current toolchain: `extend_ttl` panics `Error(Storage, MissingValue)` on
+  never-written keys (read paths existence-check first), `#[contractimpl]`
+  signatures are syntactic (type aliases produce undefined spec types), and
+  sdk-28 rejects plain `cargo build` for Wasm (requires `stellar contract
+  build`). Linked from the README and CONTRIBUTING.
 
 ### Changed
 - **Deployment interface:** the contract now has a constructor. Deploy with
