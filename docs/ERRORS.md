@@ -43,6 +43,8 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 33 | `PolicyNoQueuedChange` | reachable (1 branch(es)) | `policy_execute_asset` | no policy change is queued for the specified asset |
 | 34 | `PolicyNotInitialized` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff`, `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_set_timelock_delay` | the policy module has not been initialized |
 | 35 | `PolicyNoPendingHandoff` | reachable (1 branch(es)) | `policy_accept_handoff`, `policy_cancel_handoff` | no admin handoff proposal is pending |
+| 36 | `BatchEmpty` | reachable (1 branch(es)) | `create_streams_batch` | entries is empty |
+| 37 | `BatchTooLarge` | reachable (1 branch(es)) | `create_streams_batch` | entries length exceeds MAX_BATCH |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -90,6 +92,8 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `PolicyNoQueuedChange` | `policy_execute_asset` | `PolicyNoQueuedChange` | 33 | no policy change is queued for the specified asset | reachable |
 | `PolicyNotInitialized` | `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_accept_handoff`, `policy_cancel_handoff`, `policy_set_timelock_delay` | `PolicyNotInitialized` | 34 | the policy module has not been initialized | reachable |
 | `PolicyNoPendingHandoff` | `policy_accept_handoff`, `policy_cancel_handoff` | `PolicyNoPendingHandoff` | 35 | no admin handoff proposal is pending | reachable |
+| `CreateBatchEmpty` | `create_streams_batch` | `BatchEmpty` | 36 | entries is empty | reachable |
+| `CreateBatchTooLarge` | `create_streams_batch` | `BatchTooLarge` | 37 | entries length exceeds MAX_BATCH | reachable |
 
 ## Retired codes
 

@@ -125,6 +125,10 @@ pub enum StreamError {
     PolicyNotInitialized = 34,
     /// No admin handoff proposal is pending.
     PolicyNoPendingHandoff = 35,
+    /// Batch creation was requested with zero entries.
+    BatchEmpty = 36,
+    /// Batch creation was requested with more entries than MAX_BATCH.
+    BatchTooLarge = 37,
 }
 
 impl StreamError {
@@ -167,6 +171,8 @@ impl StreamError {
         StreamError::PolicyNoQueuedChange,
         StreamError::PolicyNotInitialized,
         StreamError::PolicyNoPendingHandoff,
+        StreamError::BatchEmpty,
+        StreamError::BatchTooLarge,
     ];
 
     /// The stable numeric value carried across the contract boundary

@@ -130,13 +130,18 @@ pub enum Branch {
     PolicyNotInitialized,
     /// `policy_accept_handoff` / `policy_cancel_handoff`: no handoff pending.
     PolicyNoPendingHandoff,
+    // ---------------------------------------------------- create_streams_batch
+    /// `create_streams_batch`: entries is empty.
+    CreateBatchEmpty,
+    /// `create_streams_batch`: entries length exceeds MAX_BATCH.
+    CreateBatchTooLarge,
 }
 
 impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 42] = [
+    pub const ALL: [Branch; 44] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -179,6 +184,8 @@ impl Branch {
         Branch::PolicyNoQueuedChange,
         Branch::PolicyNotInitialized,
         Branch::PolicyNoPendingHandoff,
+        Branch::CreateBatchEmpty,
+        Branch::CreateBatchTooLarge,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -190,6 +197,7 @@ impl Branch {
             | Branch::CreateStartTimeInPast
             | Branch::CreateInvalidTimeRange
             | Branch::CreateDurationTooLong => &["create_stream", "create_streams"],
+            Branch::CreateBatchEmpty | Branch::CreateBatchTooLarge => &["create_streams_batch"],
             Branch::WithdrawAmountNonPositive | Branch::WithdrawAmountExceedsAvailable => {
                 &["withdraw"]
             }
@@ -312,6 +320,8 @@ impl Branch {
             Branch::PolicyNoQueuedChange => StreamError::PolicyNoQueuedChange,
             Branch::PolicyNotInitialized => StreamError::PolicyNotInitialized,
             Branch::PolicyNoPendingHandoff => StreamError::PolicyNoPendingHandoff,
+            Branch::CreateBatchEmpty => StreamError::BatchEmpty,
+            Branch::CreateBatchTooLarge => StreamError::BatchTooLarge,
         }
     }
 
@@ -392,6 +402,8 @@ impl Branch {
             Branch::PolicyNoQueuedChange => "no policy change is queued for the specified asset",
             Branch::PolicyNotInitialized => "the policy module has not been initialized",
             Branch::PolicyNoPendingHandoff => "no admin handoff proposal is pending",
+            Branch::CreateBatchEmpty => "entries is empty",
+            Branch::CreateBatchTooLarge => "entries length exceeds MAX_BATCH",
         }
     }
 
