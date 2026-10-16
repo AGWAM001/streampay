@@ -7,8 +7,10 @@
 //! malicious token contract, event payloads, an exhaustive accrual property
 //! test over the pure rate function, the per-address discovery indexes
 //! (append order, pagination, clamping, terminal streams), and `withdraw_max`
-//! semantics. Fixed-seed Proptest state-machine sequences exercise the funds
-//! invariants across creates, top-ups, withdrawals, and cancellations.
+//! semantics. A dedicated section pins the withdraw/cancel race semantics
+//! (same-ledger ordering, losing-call error codes). Fixed-seed Proptest
+//! state-machine sequences exercise the funds invariants across creates,
+//! top-ups, withdrawals, and cancellations.
 #![cfg(test)]
 
 // The crate is `no_std`, but the test build links std: the property-test
@@ -1035,6 +1037,171 @@ fn cancel_with_zero_sender_amount_skips_transfer() {
     assert_eq!(
         TokenClient::new(&f.env, &f.token).balance(&f.sender),
         DEPOSIT // headroom only, no refund
+    );
+}
+
+// ------------------------------------- withdraw/cancel race semantics -------
+//
+// Pinned semantics for the withdraw (recipient) / cancel_stream (sender)
+// race. Each invocation runs to completion (CEI) before the next begins, even
+// within a single ledger: last write wins in execution order, the losing call
+// observes the post-write state, and the loser's error is always
+// StreamNotActive (code 5) — no dedicated race code exists. Race table:
+// docs/ARCHITECTURE.md §6.1; rustdoc on `withdraw` / `cancel_stream`.
+
+#[test]
+fn race_withdraw_then_cancel_splits_only_the_remainder() {
+    // Partial withdraw first: the cancel pays the recipient the rest of the
+    // accrued balance and refunds the sender the unaccrued remainder.
+    // Conservation: the recipient ends with exactly `streamed` at cancel
+    // time, regardless of how many withdrawals preceded the cancel.
+    let f = Fixture::setup();
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+    f.advance_time(3 * DAY); // 2 of 10 days elapsed → streamed = DEPOSIT / 5
+
+    let accrued = DEPOSIT / 5;
+    let first = DEPOSIT / 10; // partial withdrawal
+    f.client.mock_all_auths().withdraw(&id, &first);
+
+    f.client.mock_all_auths().cancel_stream(&f.sender, &id);
+
+    let stream = f.client.mock_all_auths().get_stream(&id);
+    assert_eq!(stream.status, StreamStatus::Cancelled);
+    // The cancel recorded only the *remaining* accrued amount.
+    assert_eq!(stream.withdrawn, accrued);
+    // Recipient total = first + (accrued - first) = accrued.
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.recipient),
+        accrued
+    );
+    // Sender = unspent headroom (DEPOSIT) + refund (DEPOSIT - accrued).
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.sender),
+        DEPOSIT + (DEPOSIT - accrued)
+    );
+    // Contract empty: nothing lost, nothing double-paid by the overlap.
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        0
+    );
+    assert_eq!(f.client.mock_all_auths().available(&id), 0);
+}
+
+#[test]
+fn race_withdraw_max_then_cancel_reverts_stream_not_active() {
+    // Full withdrawal first (drains to Depleted): the cancel loses the race
+    // and reverts with StreamNotActive (#5); nothing else moves.
+    let f = Fixture::setup();
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+    f.advance_time(20 * DAY); // fully accrued
+    f.client.mock_all_auths().withdraw_max(&id);
+
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_cancel_stream(&f.sender, &id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::StreamNotActive);
+    assert_eq!(err.code(), 5);
+
+    // State and balances unchanged by the losing call.
+    let stream = f.client.mock_all_auths().get_stream(&id);
+    assert_eq!(stream.status, StreamStatus::Depleted);
+    assert_eq!(stream.withdrawn, DEPOSIT);
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.recipient),
+        DEPOSIT
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.sender),
+        DEPOSIT // headroom only; the losing cancel refunded nothing
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        0
+    );
+}
+
+#[test]
+fn race_cancel_then_withdraw_reverts_stream_not_active() {
+    // Cancel first: the withdraw loses the race and reverts with
+    // StreamNotActive (#5), leaving the cancelled balances untouched.
+    let f = Fixture::setup();
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+    f.advance_time(3 * DAY); // 2 of 10 days elapsed
+    f.client.mock_all_auths().cancel_stream(&f.sender, &id);
+
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_withdraw(&id, &(DEPOSIT / 10))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::StreamNotActive);
+    assert_eq!(err.code(), 5);
+
+    let stream = f.client.mock_all_auths().get_stream(&id);
+    assert_eq!(stream.status, StreamStatus::Cancelled);
+    assert_eq!(stream.withdrawn, DEPOSIT / 5); // cancel payout only
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.recipient),
+        DEPOSIT / 5
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.sender),
+        2 * DEPOSIT - DEPOSIT / 5 // headroom + refund
+    );
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.client.address),
+        0
+    );
+}
+
+#[test]
+fn race_cancel_then_withdraw_max_reverts_stream_not_active() {
+    // `withdraw_max` loses the same race as `withdraw`: same code, same
+    // rollback guarantee.
+    let f = Fixture::setup();
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+    f.advance_time(3 * DAY);
+    f.client.mock_all_auths().cancel_stream(&f.sender, &id);
+
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_withdraw_max(&id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::StreamNotActive);
+    assert_eq!(err.code(), 5);
+    assert_eq!(f.client.mock_all_auths().available(&id), 0);
+}
+
+#[test]
+fn race_same_ledger_timestamp_cancel_wins() {
+    // Both calls land at the same ledger timestamp with no time advance in
+    // between: execution order alone decides. The cancel executes first, so
+    // the withdraw observes Cancelled and reverts — the race is strictly
+    // serial, never interleaved.
+    let f = Fixture::setup();
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+    f.advance_time(3 * DAY);
+    let t = f.env.ledger().timestamp();
+
+    f.client.mock_all_auths().cancel_stream(&f.sender, &id);
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_withdraw(&id, &1)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::StreamNotActive);
+    assert_eq!(err.code(), 5);
+    assert_eq!(f.env.ledger().timestamp(), t); // same ledger: no time passed
+    assert_eq!(
+        TokenClient::new(&f.env, &f.token).balance(&f.recipient),
+        DEPOSIT / 5
     );
 }
 

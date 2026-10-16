@@ -510,6 +510,30 @@ impl StreamingPayments {
     /// A token-side failure to deliver the payout returns
     /// [`StreamError::RecipientPayoutFailed`] and rolls the recorded
     /// `withdrawn` update back with it.
+    ///
+    /// # Ordering against `cancel_stream` (same-ledger race)
+    ///
+    /// `withdraw` and `cancel_stream` are strictly serial: each invocation
+    /// runs to completion — including its CEI state writes — before the next
+    /// begins, even when both land in the same ledger. There is no
+    /// interleaving and no partial application; whichever call executes
+    /// first wins, and the loser observes the post-write state:
+    ///
+    /// * If `cancel_stream` executes first, the stream is already `Cancelled`
+    ///   when `withdraw` runs, so it reverts with
+    ///   [`StreamError::StreamNotActive`] (code 5) without moving tokens.
+    /// * If `withdraw` executes first, a subsequent `cancel_stream` splits
+    ///   only the *remaining* balance (`streamed − withdrawn`). If this
+    ///   withdrawal drained the stream (`withdrawn == deposit`, status
+    ///   `Depleted`), the cancel instead reverts with
+    ///   [`StreamError::StreamNotActive`] (code 5).
+    ///
+    /// The losing call never mutates state, so the funds-conservation
+    /// outcome is identical to the serial composition: the recipient
+    /// receives exactly the amount accrued at the later call and the sender
+    /// is refunded the unaccrued remainder. Regression tests pin these
+    /// sequences in `test.rs` (`race_*`); the race table lives in
+    /// `docs/ARCHITECTURE.md` §6.1.
     pub fn withdraw(env: Env, stream_id: u64, amount: i128) -> Result<(), StreamError> {
         if amount <= 0 {
             return Err(surface::reject(Branch::WithdrawAmountNonPositive));
@@ -600,6 +624,26 @@ impl StreamingPayments {
     /// share and [`StreamError::SenderRefundFailed`] for the sender's refund —
     /// and any failure rolls the whole cancellation back: the stream stays
     /// `Active`, `withdrawn` is restored, and no event survives.
+    ///
+    /// # Ordering against `withdraw` (same-ledger race)
+    ///
+    /// The counterpart of the ordering documented on
+    /// [`StreamingPayments::withdraw`]: cancellation is atomic and sees the
+    /// `withdrawn` balance as of *its* execution point.
+    ///
+    /// * If the recipient's `withdraw` executes first, the cancel splits the
+    ///   remainder only (`streamed − withdrawn` to the recipient,
+    ///   `deposit − streamed` to the sender). If that withdrawal already
+    ///   drained the stream to `Depleted`, the cancel reverts with
+    ///   [`StreamError::StreamNotActive`] (code 5).
+    /// * If this cancel executes first, the stream is `Cancelled` and any
+    ///   later `withdraw` / `withdraw_max` reverts with
+    ///   [`StreamError::StreamNotActive`] (code 5).
+    ///
+    /// Last write wins in execution order; no interleaving exists within a
+    /// ledger, and the losing call leaves state and balances untouched.
+    /// Pinned by the `race_*` regression tests in `test.rs`; see
+    /// `docs/ARCHITECTURE.md` §6.1 for the race table.
     pub fn cancel_stream(env: Env, caller: Address, stream_id: u64) -> Result<(), StreamError> {
         caller.require_auth();
 
