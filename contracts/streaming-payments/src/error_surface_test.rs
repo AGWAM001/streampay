@@ -18,13 +18,31 @@ use std::vec::Vec;
 
 use soroban_sdk::testutils::Address as _;
 
-use crate::stream::streamed_at;
+use crate::stream::{streamed_at, DataKey};
 use crate::surface::{trace, Branch, Reachability, RETIRED_CODES};
 use crate::test::{Fixture, RefusingFixture};
 use crate::{StreamError, MAX_DURATION_SECONDS, MAX_FEE_BPS};
 
 const DAY: u64 = 24 * 60 * 60;
 const DEPOSIT: i128 = 10_000_000_000;
+
+fn schedule_intent(f: &Fixture, execute_after: u64, expires_at: u64) -> u64 {
+    let now = f.env.ledger().timestamp();
+    f.client.mock_all_auths().schedule_stream(
+        &f.sender,
+        &f.recipient,
+        &f.token,
+        &DEPOSIT,
+        &(now + 2 * DAY),
+        &(now + 3 * DAY),
+        &false,
+        &0,
+        &1,
+        &0,
+        &execute_after,
+        &expires_at,
+    )
+}
 
 /// Unwraps the contract's rejection into its `StreamError`.
 macro_rules! rejected {
@@ -228,6 +246,99 @@ fn probe(branch: Branch) -> Option<StreamError> {
                 &1,
             )))
         }
+        // ------------------------------------------------ scheduled intents
+        Branch::IntentNotFound => {
+            let f = Fixture::setup_quiet();
+            Some(rejected!(f.client.try_get_intent(&999)))
+        }
+        Branch::IntentNotPending => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let id = schedule_intent(&f, now, now + DAY);
+            let _ = f
+                .client
+                .mock_all_auths()
+                .execute_scheduled(&id, &f.recipient);
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_execute_scheduled(&id, &f.recipient,)))
+        }
+        Branch::IntentNotYetExecutable => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let id = schedule_intent(&f, now + DAY, now + 3 * DAY);
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_execute_scheduled(&id, &f.recipient,)))
+        }
+        Branch::IntentExpired => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let id = schedule_intent(&f, now, now + DAY);
+            f.advance_time(DAY);
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_execute_scheduled(&id, &f.recipient,)))
+        }
+        Branch::IntentNotCancellable => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let id = schedule_intent(&f, now, now + DAY);
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_cancel_scheduled(&f.sender, &id,)))
+        }
+        Branch::ScheduleInvalidParameters => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            Some(rejected!(f.client.mock_all_auths().try_schedule_stream(
+                &f.sender,
+                &f.recipient,
+                &f.token,
+                &DEPOSIT,
+                &(now + 2 * DAY),
+                &(now + 3 * DAY),
+                &false,
+                &0,
+                &0,
+                &0,
+                &now,
+                &(now + DAY),
+            )))
+        }
+        Branch::IntentParamsMismatch => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let id = schedule_intent(&f, now, now + DAY);
+            let contract = f.client.address.clone();
+            f.env.as_contract(&contract, || {
+                let mut intent: crate::ScheduledIntent = f
+                    .env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Intent(id))
+                    .unwrap();
+                intent.deposit += 1;
+                f.env
+                    .storage()
+                    .persistent()
+                    .set(&DataKey::Intent(id), &intent);
+            });
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_execute_scheduled(&id, &f.recipient,)))
+        }
+        Branch::IntentNotExpired => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let id = schedule_intent(&f, now, now + DAY);
+            Some(rejected!(f.client.try_reclaim_expired(&id)))
+        }
         // ---------------------------------------------- token interactions
         //
         // These branches fire when the *token* refuses a movement. The probes
@@ -422,6 +533,14 @@ fn stream_error_variant_list_is_exhaustive() {
             | StreamError::NotGovernor
             | StreamError::NoPendingGovernor
             | StreamError::InsufficientTreasuryBalance
+            | StreamError::IntentNotFound
+            | StreamError::IntentNotPending
+            | StreamError::IntentNotYetExecutable
+            | StreamError::IntentExpired
+            | StreamError::IntentNotCancellable
+            | StreamError::InvalidScheduleParameters
+            | StreamError::IntentParamsMismatch
+            | StreamError::IntentNotExpired
             | StreamError::DepositTransferFailed
             | StreamError::TopUpTransferFailed
             | StreamError::RecipientPayoutFailed
