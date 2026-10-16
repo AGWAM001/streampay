@@ -7,6 +7,7 @@
  * simulate and decode the return value without signing.
  */
 import {
+  Account,
   Address,
   nativeToScVal,
   Networks,
@@ -65,6 +66,10 @@ function u64(id: string | number | bigint) {
 
 function i128(v: string) {
   return nativeToScVal(BigInt(v), { type: "i128" });
+}
+
+function u32(v: number) {
+  return nativeToScVal(BigInt(v), { type: "u32" });
 }
 
 /**
