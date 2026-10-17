@@ -44,6 +44,9 @@ jobs:
       - name: Unit + property tests
         run: cargo test -p streampay-contract --locked
 
+      - name: Reference model + differential tests
+        run: cargo test -p streampay-model --locked
+
       # The error-surface table is generated from the contract's branch
       # instrumentation. Regenerate it and fail if the committed artifact has
       # drifted — this also fails on any error code with zero coverage or any
@@ -98,7 +101,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test (scheduler + fee-series simulation)
+      - name: Regenerate differential vectors
+        run: node ../scripts/generate-vectors.mjs
+
+      - name: Differential tests (against shared vector corpus)
+        run: node --experimental-strip-types --test lib/oracle.test.ts
+
+      - name: Test (node suites + scheduler / fee-series simulation)
         run: npm test
 
       - name: Build
@@ -167,7 +176,6 @@ jobs:
 
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
-
 
   supply-chain:
     name: Security — advisories / licenses

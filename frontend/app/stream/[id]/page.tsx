@@ -101,7 +101,6 @@ export default function StreamDetail() {
   // inert until an address is available.
   const scheduler = useClaimScheduler(address);
 
-  if (error && !stream) {
   if (loadError && !stream) {
     return (
       <main className="wrap">

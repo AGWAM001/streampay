@@ -18,7 +18,7 @@ promise. Read §1 before trusting any of the rest.
 - Storage: `frontend/lib/pending-queue.ts`
 - Wallet glue + UI: `frontend/lib/use-claim-scheduler.ts`,
   `frontend/components/ClaimSchedulerSettings.tsx`
-- Simulation: `frontend/lib/claim-scheduler.test.ts` (recorded series in
+- Simulation: `frontend/lib/claim-scheduler.spec.ts` (recorded series in
   `frontend/lib/__fixtures__/fee-series.json`)
 
 ---
@@ -222,10 +222,10 @@ the shared pending queue.
 
 ## 5. Simulation
 
-`frontend/lib/claim-scheduler.test.ts` replays a **recorded fee series**
+`frontend/lib/claim-scheduler.spec.ts` replays a **recorded fee series**
 (`frontend/lib/__fixtures__/fee-series.json`) through `replaySeries` and asserts
 the decisions. The rendered tables are committed as vitest snapshots
-(`frontend/lib/__snapshots__/claim-scheduler.test.ts.snap`), so any change to
+(`frontend/lib/__snapshots__/claim-scheduler.spec.ts.snap`), so any change to
 the decision math fails the test until the table is deliberately updated.
 
 Fixture: a 1-hour stream (`streamStart = t0`, `streamEnd = t0 + 3600`), default
