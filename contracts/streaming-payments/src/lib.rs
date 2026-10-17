@@ -85,9 +85,7 @@ pub use events::{
     StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet, StreamScheduled,
     StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
-pub use policy::{
-    validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy,
-};
+pub use policy::{validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
