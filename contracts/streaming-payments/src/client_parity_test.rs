@@ -69,11 +69,15 @@ fn shared_client_parity_fixtures_match_event_xdr_and_balances() {
             &end_time,
             &cancelable,
         );
+        // `events().all()` reports the last invocation's events, so snapshot
+        // it before any further client calls.
+        let created_events = env.events().all().filter_by_contract(&contract_id);
         env.ledger()
             .with_mut(|ledger| ledger.timestamp = withdraw_time);
         client
             .mock_all_auths()
             .withdraw(&stream_id, &withdraw_amount);
+        let withdrawn_events = env.events().all().filter_by_contract(&contract_id);
 
         let token_client = TokenClient::new(&env, &token);
         if bless {
@@ -100,58 +104,60 @@ fn shared_client_parity_fixtures_match_event_xdr_and_balances() {
         let expected_withdrawn = &case["events"][1]["payload"];
         assert_eq!(case["events"][0]["name"], "StreamCreated");
         assert_eq!(case["events"][1]["name"], "Withdrawn");
-        let expected_events = [
-            StreamCreated {
-                stream_id: expected_created["stream_id"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                sender: sender.clone(),
-                recipient: recipient.clone(),
-                token: token.clone(),
-                deposit: expected_created["deposit"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                start_time: expected_created["start_time"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                end_time: expected_created["end_time"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                cancelable: expected_created["cancelable"].as_bool().unwrap(),
-            }
-            .to_xdr(&env, &contract_id),
-            Withdrawn {
-                stream_id: expected_withdrawn["stream_id"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                recipient: recipient.clone(),
-                amount: expected_withdrawn["amount"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                withdrawn_total: expected_withdrawn["withdrawn_total"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-            }
-            .to_xdr(&env, &contract_id),
-        ];
-        let actual_events = env.events().all().filter_by_contract(&contract_id);
+        let expected_create_events = [StreamCreated {
+            stream_id: expected_created["stream_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            sender: sender.clone(),
+            recipient: recipient.clone(),
+            token: token.clone(),
+            deposit: expected_created["deposit"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            start_time: expected_created["start_time"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            end_time: expected_created["end_time"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            cancelable: expected_created["cancelable"].as_bool().unwrap(),
+        }
+        .to_xdr(&env, &contract_id)];
+        let expected_withdraw_events = [Withdrawn {
+            stream_id: expected_withdrawn["stream_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            recipient: recipient.clone(),
+            amount: expected_withdrawn["amount"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            withdrawn_total: expected_withdrawn["withdrawn_total"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        }
+        .to_xdr(&env, &contract_id)];
         assert_eq!(
-            actual_events, expected_events,
-            "event XDR diverged for fixture {}",
+            created_events, expected_create_events,
+            "create-event XDR diverged for fixture {}",
+            case["id"]
+        );
+        assert_eq!(
+            withdrawn_events, expected_withdraw_events,
+            "withdraw-event XDR diverged for fixture {}",
             case["id"]
         );
         let balances = &case["balances"];
