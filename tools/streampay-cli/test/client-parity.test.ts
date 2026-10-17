@@ -43,7 +43,7 @@ test("CLI operation builders match canonical Soroban XDR for shared fixtures", (
       nativeToScVal(BigInt(scenario.endTime), { type: "u64" }),
       nativeToScVal(scenario.cancelable)
     );
-    assert.equal(create.toXDR().toString("base64"), expectedCreate.toXDR().toString("base64"));
+    assert.equal(create.toXDR("base64"), expectedCreate.toXDR("base64"));
 
     const withdraw = buildWithdrawOperation(contract, 1n, BigInt(scenario.withdrawAmount));
     const expectedWithdraw = new Contract(contract).call(
@@ -51,7 +51,7 @@ test("CLI operation builders match canonical Soroban XDR for shared fixtures", (
       nativeToScVal(1n, { type: "u64" }),
       nativeToScVal(BigInt(scenario.withdrawAmount), { type: "i128" })
     );
-    assert.equal(withdraw.toXDR().toString("base64"), expectedWithdraw.toXDR().toString("base64"));
+    assert.equal(withdraw.toXDR("base64"), expectedWithdraw.toXDR("base64"));
   }
 });
 

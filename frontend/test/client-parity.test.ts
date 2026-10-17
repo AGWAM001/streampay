@@ -48,7 +48,7 @@ test("frontend operation builders match canonical Soroban XDR for lifecycle fixt
       nativeToScVal(BigInt(scenario.endTime), { type: "u64" }),
       nativeToScVal(scenario.cancelable)
     );
-    assert.equal(create.toXDR().toString("base64"), expectedCreate.toXDR().toString("base64"));
+    assert.equal(create.toXDR("base64"), expectedCreate.toXDR("base64"));
 
     const withdraw = buildWithdrawOperation(contract, "1", scenario.withdrawAmount);
     const expectedWithdraw = new Contract(contract).call(
@@ -56,7 +56,7 @@ test("frontend operation builders match canonical Soroban XDR for lifecycle fixt
       nativeToScVal(1n, { type: "u64" }),
       nativeToScVal(BigInt(scenario.withdrawAmount), { type: "i128" })
     );
-    assert.equal(withdraw.toXDR().toString("base64"), expectedWithdraw.toXDR().toString("base64"));
+    assert.equal(withdraw.toXDR("base64"), expectedWithdraw.toXDR("base64"));
   }
 });
 
@@ -83,11 +83,11 @@ test("frontend and CLI operation builders match XDR for shared lifecycle fixture
       BigInt(scenario.endTime),
       scenario.cancelable
     );
-    assert.equal(frontendCreate.toXDR().toString("base64"), cliCreate.toXDR().toString("base64"));
+    assert.equal(frontendCreate.toXDR("base64"), cliCreate.toXDR("base64"));
 
     const frontendWithdraw = buildWithdrawOperation(contract, "1", scenario.withdrawAmount);
     const cliWithdraw = buildCliWithdrawOperation(contract, 1n, BigInt(scenario.withdrawAmount));
-    assert.equal(frontendWithdraw.toXDR().toString("base64"), cliWithdraw.toXDR().toString("base64"));
+    assert.equal(frontendWithdraw.toXDR("base64"), cliWithdraw.toXDR("base64"));
   }
 });
 
@@ -123,7 +123,7 @@ test("frontend create-stream duration path builds canonical XDR for duration fix
       nativeToScVal(endTime, { type: "u64" }),
       nativeToScVal(true)
     );
-    assert.equal(operation.toXDR().toString("base64"), expected.toXDR().toString("base64"));
+    assert.equal(operation.toXDR("base64"), expected.toXDR("base64"));
   }
 });
 
