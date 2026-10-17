@@ -103,6 +103,10 @@ def cmd_render(a):
         t["corpus"] = r["corpus"] or t["corpus"]
         t["panics"].update(r["panics"])
 
+    for name, t in targets.items():
+        d = os.path.join(a.fuzz, "corpus", name)
+        if os.path.isdir(d):
+            t["corpus"] = len(os.listdir(d))
     wall = sum(t["seconds"] for t in targets.values())
     execs = sum(t["execs"] for t in targets.values())
     out = []
@@ -115,7 +119,7 @@ def cmd_render(a):
     out.append(f"- **Total executions:** {execs:,} ({execs / wall if wall else 0:,.0f}/s across all workers)\n")
 
     out.append("## Per target\n")
-    out.append("| Target | Fuzzing time | Executions | Runs/sec | Edge coverage | Coverage gained | Corpus (pre-merge) | New crashers |")
+    out.append("| Target | Fuzzing time | Executions | Runs/sec | Edge coverage | Gained after first slice | Corpus after merge | New crashers |")
     out.append("|---|---|---|---|---|---|---|---|")
     for name, t in targets.items():
         rate = t["execs"] / t["seconds"] if t["seconds"] else 0
@@ -134,7 +138,10 @@ def cmd_render(a):
             status = f"{entry['status']} — `{entry['dir']}`" if entry else "untriaged — run scripts/fuzz/triage.sh"
             out.append(f"- `{name}`: {p}\n  - **Status:** {status}")
     if not any_crash:
-        out.append("None. Every execution kept the contract and the reference model in agreement.")
+        out.append("No crashers. No divergence between the contract and the reference model "
+                   "(`campaign`, `differential`), and no broken property (`conservation`, `streamed_at`).")
+    out.append("\nKnown divergences suppressed during this run (see docs/FUZZ_CAMPAIGN.md): "
+               "KD-1, unless the run set STREAMPAY_FUZZ_STRICT.")
 
     cov_path = os.path.join(a.campaign, "coverage-summary.json")
     if os.path.exists(cov_path):
