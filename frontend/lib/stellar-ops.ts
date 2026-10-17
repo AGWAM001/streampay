@@ -5,7 +5,7 @@
  * headless tooling): no Freighter, no RPC, no env-derived state.
  */
 import { Address, Contract, nativeToScVal, xdr } from "@stellar/stellar-sdk";
-import { durationSecondsFromDays } from "../../scripts/lib/duration.ts";
+import { durationSecondsFromDays } from "./duration.ts";
 
 export function scAddr(s: string) {
   return nativeToScVal(new Address(s), { type: "address" });

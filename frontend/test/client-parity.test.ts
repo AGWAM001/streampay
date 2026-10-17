@@ -10,7 +10,8 @@ import {
   buildCreateStreamOperation as buildCliCreateStreamOperation,
   buildWithdrawOperation as buildCliWithdrawOperation,
 } from "../../tools/streampay-cli/src/cli.ts";
-import { durationSecondsFromDays } from "../../scripts/lib/duration.ts";
+import { durationSecondsFromDays as canonicalDurationSecondsFromDays } from "../../scripts/lib/duration.ts";
+import { durationSecondsFromDays as frontendDurationSecondsFromDays } from "../lib/duration.ts";
 
 const fixtures = JSON.parse(readFileSync(new URL("../../tests/client-parity/fixtures.json", import.meta.url), "utf8")) as {
   operationAddresses: { contract: string; token: string; sender: string; recipient: string };
@@ -94,7 +95,14 @@ test("frontend and CLI operation builders match XDR for shared lifecycle fixture
 
 test("frontend exact decimal day conversion matches shared boundary fixtures", () => {
   for (const scenario of fixtures.durationCases) {
-    assert.equal(durationSecondsFromDays(scenario.days).toString(), scenario.seconds);
+    assert.equal(frontendDurationSecondsFromDays(scenario.days).toString(), scenario.seconds);
+    assert.equal(
+      frontendDurationSecondsFromDays(scenario.days),
+      canonicalDurationSecondsFromDays(scenario.days)
+    );
+  }
+  for (const invalid of ["0", "36500.1", "1e-3"]) {
+    assert.throws(() => frontendDurationSecondsFromDays(invalid), RangeError);
   }
 });
 
