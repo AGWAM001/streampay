@@ -40,7 +40,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ proposal: null }, { status: 200 });
   }
 
-  return NextResponse.json({ proposal }, { status: 200 });
+  return NextResponse.json(
+    { proposal },
+    {
+      status: 200,
+      headers: {
+        "X-Discovery-Durability": "prototype-in-memory",
+      },
+    }
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -124,6 +132,11 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(
     { success: true, message: "Proposal saved for counterparty co-signature" },
-    { status: 201 }
+    {
+      status: 201,
+      headers: {
+        "X-Discovery-Durability": "prototype-in-memory",
+      },
+    }
   );
 }

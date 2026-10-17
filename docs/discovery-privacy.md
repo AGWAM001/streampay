@@ -282,6 +282,62 @@ The directory service validates submissions by executing the following steps in 
 
 ---
 
-## 8. Conclusion
+## 8. Storage Durability, Rate Limiting & Deployment Topology
 
-The privacy-preserving discovery directory guarantees that participants retain total sovereignty over their financial privacy. Anonymity is preserved mathematically and procedurally through data minimization, coarse aggregation, $k$-anonymity suppression, dual-consent authorization, and unilateral revocation.
+### 8.1 Prototype-Grade Durability (Reference Implementation)
+
+The reference discovery directory service in the frontend application (`frontend/lib/discovery/store.ts` and `frontend/lib/discovery/rateLimit.ts`) operates with **in-memory process-local storage** via `globalThis`:
+- **Directory Records & Proposals**: Stored in JavaScript `Map` collections.
+- **Rate Limit Buckets**: Stored in a process-local IP map (`ipBuckets`).
+- **API Visibility**: All discovery HTTP endpoints emit an `X-Discovery-Durability: prototype-in-memory` header to explicitly advertise this persistence level to API consumers.
+
+### 8.2 Operational Caveats in Serverless & Distributed Environments
+
+Deploying process-local in-memory stores in serverless or multi-instance environments introduces specific operational limitations:
+1. **Serverless Cold Starts (Netlify Functions, AWS Lambda, Vercel)**:
+   Serverless runtimes spin up isolated execution environments on demand. When an instance undergoes a cold start or container recycle, process memory is erased. Directory listings published in an earlier execution instance will vanish from the directory until re-submitted.
+2. **Multi-Instance Cluster State Fragmentation**:
+   When running multiple concurrent server instances (e.g. behind a load balancer), each instance maintains an isolated in-memory `Map`. A listing saved on Instance A is not immediately queryable on Instance B.
+3. **Ephemeral Rate Limit Budgets**:
+   Process-local rate limiting buckets reset upon container recycling, allowing clients to reset their request quota by routing through newly spawned serverless instances.
+4. **Consent Record Auditability**:
+   Consent and withdrawal signatures stored solely in ephemeral memory are purged across process lifecycles, which undermines long-term non-repudiation and consent audit trails.
+
+### 8.3 Production Architecture: Moving Storage Behind the Indexer Store
+
+For production deployments, the `IDiscoveryStore` interface must be backed by persistent, ACID-compliant storage integrated into the StreamPay Indexer service (`indexer/`):
+
+```
+                        ┌────────────────────────────────────────────────────────┐
+                        │              Frontend / API Gateway                     │
+                        │      (Next.js Server / Edge API Handlers)              │
+                        └──────────┬─────────────────────────────────┬───────────┘
+                                   │                                 │
+                 Public Queries    │               Private Proof Ingestion / Verif.
+                                   ▼                                 ▼
+         ┌──────────────────────────────────────┐  ┌──────────────────────────────────────┐
+         │     `discovery_listings` Table       │  │    `discovery_consent_vault` Table   │
+         │   (Indexer SQLite / PostgreSQL)      │  │    (Encrypted / Access-Gated Store)  │
+         ├──────────────────────────────────────┤  ├──────────────────────────────────────┤
+         │ • listing_id (UUIDv4)                │  │ • listing_id (FK)                    │
+         │ • asset (Token address)              │  │ • stream_id (On-chain ID)            │
+         │ • rate_bucket (RATE_LOW, etc.)       │  │ • deposit_raw (Exact stroop amount)  │
+         │ • duration_bucket (DUR_WEEK, etc.)   │  │ • sender / recipient addresses       │
+         │ • state (PUBLISHED / WITHDRAWN)      │  │ • Ed25519 signatures & nonces        │
+         │ • listed_day (YYYY-MM-DD)            │  │ • expiry / timestamp                 │
+         │ • verification_hash (HMAC)           │  │                                      │
+         └──────────────────────────────────────┘  └──────────────────────────────────────┘
+```
+
+#### Dedicated Persistent Schema (`indexer/db/schema.sql`):
+1. **`discovery_listings`**: Stores coarsened, allowlisted public projections. Queryable by equivalence class `(asset, rate_bucket, duration_bucket, state)` to enable efficient $k$-anonymity counting and filtering.
+2. **`discovery_consent_vault`**: Stores private authorization proofs (raw `stream_id`, exact deposit amounts, Ed25519 signature strings, and nonces). Strictly partitioned from public API search queries.
+3. **`discovery_nonces`**: Persistent table for consumed replay nonces across proposals, listings, and withdrawals.
+4. **Distributed Rate Limiting**: Production rate limiting should be delegated to centralized atomic storage (e.g. Redis `INCR` with sliding TTL or Cloudflare / Upstash rate limiting) to enforce global rate budgets uniformly across all serverless nodes.
+
+---
+
+## 9. Conclusion
+
+The privacy-preserving discovery directory guarantees that participants retain total sovereignty over their financial privacy. Anonymity is preserved mathematically and procedurally through data minimization, coarse aggregation, $k$-anonymity suppression, dual-consent authorization, and unilateral revocation. In production environments, backing the discovery abstraction with the indexer store ensures durable persistence of public listings and consent audit records across serverless process recycles.
+

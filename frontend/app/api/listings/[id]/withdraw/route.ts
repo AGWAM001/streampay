@@ -76,6 +76,11 @@ export async function POST(
       listingId: id,
       message: "Listing has been successfully withdrawn and unlisted.",
     },
-    { status: 200 }
+    {
+      status: 200,
+      headers: {
+        "X-Discovery-Durability": "prototype-in-memory",
+      },
+    }
   );
 }

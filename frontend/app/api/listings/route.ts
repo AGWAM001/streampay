@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
     headers: {
       "X-RateLimit-Remaining": String(rateLimit.remaining),
       "X-RateLimit-Reset": String(rateLimit.reset),
+      "X-Discovery-Durability": "prototype-in-memory",
     },
   });
 }
@@ -102,5 +103,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  return NextResponse.json(result.listing, { status: 201 });
+  return NextResponse.json(result.listing, {
+    status: 201,
+    headers: {
+      "X-Discovery-Durability": "prototype-in-memory",
+    },
+  });
 }

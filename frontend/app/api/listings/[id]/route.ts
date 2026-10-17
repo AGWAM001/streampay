@@ -42,6 +42,7 @@ export async function GET(
     headers: {
       "X-RateLimit-Remaining": String(rateLimit.remaining),
       "X-RateLimit-Reset": String(rateLimit.reset),
+      "X-Discovery-Durability": "prototype-in-memory",
     },
   });
 }

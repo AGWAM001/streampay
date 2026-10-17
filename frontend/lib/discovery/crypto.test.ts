@@ -233,6 +233,81 @@ describe("Discovery Serialization & Crypto", () => {
     assert.equal(result.valid, true);
     assert.equal(result.error, undefined);
   });
+
+  it("rejects withdrawal signature if listingId does not match (cryptographically binds listingId)", () => {
+    const kp = Keypair.random();
+    const network = "Test SDF Network ; September 2015";
+    const contractId = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+    const streamId = "101";
+    const signedListingId = "uuid-listing-signed-1";
+    const targetListingId = "uuid-listing-target-2";
+    const nonce = "withdraw-nonce-12345678";
+    const now = 1700000000;
+
+    // Signed for listing 1
+    const message = buildCanonicalWithdrawMessage({
+      network,
+      contractId,
+      streamId,
+      listingId: signedListingId,
+      nonce,
+      timestamp: now,
+    });
+    const signature = signCanonicalPayload(kp, message);
+
+    // Attempting to verify against listing 2
+    const result = verifyPartyWithdrawal({
+      expectedSigner: kp.publicKey(),
+      expectedNetwork: network,
+      expectedContractId: contractId,
+      expectedStreamId: streamId,
+      listingId: targetListingId, // Mismatched listingId!
+      nonce,
+      timestamp: now,
+      signature,
+      nowSeconds: now,
+    });
+
+    assert.equal(result.valid, false);
+    assert.equal(result.error, "INVALID_SIGNATURE");
+  });
+
+  it("rejects withdrawal signature if listingId is tampered with or modified", () => {
+    const kp = Keypair.random();
+    const network = "Test SDF Network ; September 2015";
+    const contractId = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+    const streamId = "101";
+    const listingId = "c85d7b32-901e-4581-81f7-e23a45610bc9";
+    const nonce = "withdraw-nonce-12345678";
+    const now = 1700000000;
+
+    const message = buildCanonicalWithdrawMessage({
+      network,
+      contractId,
+      streamId,
+      listingId,
+      nonce,
+      timestamp: now,
+    });
+    const signature = signCanonicalPayload(kp, message);
+
+    // Tamper single character in UUID
+    const tamperedListingId = "c85d7b32-901e-4581-81f7-e23a45610bc0";
+    const result = verifyPartyWithdrawal({
+      expectedSigner: kp.publicKey(),
+      expectedNetwork: network,
+      expectedContractId: contractId,
+      expectedStreamId: streamId,
+      listingId: tamperedListingId,
+      nonce,
+      timestamp: now,
+      signature,
+      nowSeconds: now,
+    });
+
+    assert.equal(result.valid, false);
+    assert.equal(result.error, "INVALID_SIGNATURE");
+  });
 });
 
 describe("Discovery Bucketing & k-Anonymity", () => {

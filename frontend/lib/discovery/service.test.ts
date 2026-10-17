@@ -388,6 +388,152 @@ describe("Discovery Service & Privacy Egress", () => {
     if (!withdrawRes.success) {
       assert.equal(withdrawRes.error, "UNAUTHORIZED_SIGNER");
     }
+
+    // Verify listing remains published and untouched
+    const stillActive = service.getListingById(listingId);
+    assert.notEqual(stillActive, null);
+  });
+
+  it("rejects withdrawal when caller attempts to use a signature signed for a different listing (binding listingId)", async () => {
+    // 1. Create Listing A for stream 101
+    const { submission: subA } = createValidSubmission({ streamId: "101" });
+    const pubA = await service.submitListing(subA, { nowSeconds: 1700000000 });
+    assert.equal(pubA.success, true);
+    if (!pubA.success) return;
+    const listingIdA = pubA.listing.listingId;
+
+    // 2. Create Listing B for stream 102 (mock on-chain stream 102)
+    mockStreams.set("102", {
+      id: "102",
+      sender: senderKp.publicKey(),
+      recipient: recipientKp.publicKey(),
+      token: "CC_TEST_TOKEN",
+      deposit: "5000000000",
+      startTime: 1700000000,
+      endTime: 1700086400,
+      cancelable: true,
+      status: "Active",
+    });
+    const { submission: subB } = createValidSubmission({
+      streamId: "102",
+      nonce: "nonce-proposal-sub-B-9988",
+    });
+    const pubB = await service.submitListing(subB, { nowSeconds: 1700000000 });
+    assert.equal(pubB.success, true);
+    if (!pubB.success) return;
+    const listingIdB = pubB.listing.listingId;
+
+    // 3. Sender signs a legitimate withdrawal explicitly bound to Listing A
+    const now = 1700000100;
+    const nonce = "nonce-withdraw-binding-test";
+    const withdrawMsgA = buildCanonicalWithdrawMessage({
+      network: NETWORK,
+      contractId: CONTRACT_ID,
+      streamId: "101",
+      listingId: listingIdA, // Strictly bound to Listing A
+      nonce,
+      timestamp: now,
+    });
+    const sigA = signCanonicalPayload(senderKp, withdrawMsgA);
+
+    // 4. Caller attempts to withdraw Listing B using the signature generated for Listing A
+    const attackPayload: ListingWithdrawPayload = {
+      listingId: listingIdB, // Target is Listing B
+      streamId: "102",
+      nonce,
+      timestamp: now,
+      signerAddress: senderKp.publicKey(),
+      signature: sigA, // Signature was generated for Listing A!
+    };
+
+    const attackRes = service.withdrawListing(attackPayload, { nowSeconds: now });
+    assert.equal(attackRes.success, false);
+    if (!attackRes.success) {
+      assert.equal(attackRes.error, "INVALID_WITHDRAWAL_SIGNATURE: INVALID_SIGNATURE");
+    }
+
+    // Crucial: Listing B MUST remain active and unrevoked
+    const listingBActive = service.getListingById(listingIdB);
+    assert.notEqual(listingBActive, null);
+    assert.equal(listingBActive?.listingId, listingIdB);
+  });
+
+  it("rejects withdrawal when caller attempts to spoof sender address using unauthorized key", async () => {
+    const { submission } = createValidSubmission();
+    const pubRes = await service.submitListing(submission, { nowSeconds: 1700000000 });
+    assert.equal(pubRes.success, true);
+    if (!pubRes.success) return;
+
+    const listingId = pubRes.listing.listingId;
+    const withdrawNonce = "nonce-withdraw-spoof-1";
+    const now = 1700000100;
+
+    const withdrawMsg = buildCanonicalWithdrawMessage({
+      network: NETWORK,
+      contractId: CONTRACT_ID,
+      streamId: "101",
+      listingId,
+      nonce: withdrawNonce,
+      timestamp: now,
+    });
+    // Attacker signs with their own key
+    const attackerSig = signCanonicalPayload(thirdPartyKp, withdrawMsg);
+
+    // Attacker claims signerAddress is sender's public key
+    const spoofPayload: ListingWithdrawPayload = {
+      listingId,
+      streamId: "101",
+      nonce: withdrawNonce,
+      timestamp: now,
+      signerAddress: senderKp.publicKey(), // Spoofed sender public key
+      signature: attackerSig,              // Signed by third party private key!
+    };
+
+    const withdrawRes = service.withdrawListing(spoofPayload, { nowSeconds: now });
+    assert.equal(withdrawRes.success, false);
+    if (!withdrawRes.success) {
+      assert.equal(withdrawRes.error, "INVALID_WITHDRAWAL_SIGNATURE: INVALID_SIGNATURE");
+    }
+
+    assert.notEqual(service.getListingById(listingId), null);
+  });
+
+  it("rejects replay of an already consumed withdrawal nonce", async () => {
+    const { submission } = createValidSubmission();
+    const pubRes = await service.submitListing(submission, { nowSeconds: 1700000000 });
+    assert.equal(pubRes.success, true);
+    if (!pubRes.success) return;
+
+    const listingId = pubRes.listing.listingId;
+    const withdrawNonce = "nonce-withdraw-replay-nonce-1";
+    const now = 1700000100;
+
+    const withdrawMsg = buildCanonicalWithdrawMessage({
+      network: NETWORK,
+      contractId: CONTRACT_ID,
+      streamId: "101",
+      listingId,
+      nonce: withdrawNonce,
+      timestamp: now,
+    });
+    const senderSig = signCanonicalPayload(senderKp, withdrawMsg);
+
+    const withdrawPayload: ListingWithdrawPayload = {
+      listingId,
+      streamId: "101",
+      nonce: withdrawNonce,
+      timestamp: now,
+      signerAddress: senderKp.publicKey(),
+      signature: senderSig,
+    };
+
+    // First withdrawal succeeds
+    const res1 = service.withdrawListing(withdrawPayload, { nowSeconds: now });
+    assert.equal(res1.success, true);
+
+    // Second attempt with exact same payload and nonce must be rejected
+    const res2 = service.withdrawListing(withdrawPayload, { nowSeconds: now });
+    assert.equal(res2.success, false);
   });
 });
 

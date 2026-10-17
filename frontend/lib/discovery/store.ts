@@ -24,11 +24,59 @@ export interface PrivateConsentProof {
   expiry: number;
 }
 
+export interface PendingProposal {
+  streamId: string;
+  nonce: string;
+  expiry: number;
+  initiatorConsent: {
+    address: string;
+    signature: string;
+    shareAddress: boolean;
+  };
+}
+
 /**
- * In-Memory Directory Store with Strict Physical Separation
- * between Public Index Entries and Private Consent Proofs.
+ * Interface contract for Discovery Storage.
+ * Implementations can be in-memory (prototype) or backed by the StreamPay indexer store.
  */
-class DiscoveryStore {
+export interface IDiscoveryStore {
+  saveListing(record: InternalListingRecord): void;
+  getListing(listingId: string): InternalListingRecord | undefined;
+  getProof(listingId: string): PrivateConsentProof | undefined;
+  getActiveListings(): InternalListingRecord[];
+  markWithdrawn(listingId: string, timestamp: number): boolean;
+  hasNonce(nonce: string): boolean;
+  addNonce(nonce: string): void;
+  saveProposal(proposalId: string, proposal: PendingProposal): void;
+  getProposal(proposalId: string): PendingProposal | undefined;
+  clear(): void;
+}
+
+/**
+ * ARCHITECTURAL NOTICE — PROTOTYPE-GRADE IN-MEMORY DURABILITY:
+ * -------------------------------------------------------------
+ * This default implementation stores directory records, proposals, nonces, and
+ * private consent proofs in process memory via Node's `globalThis`.
+ *
+ * Operational Caveats:
+ * 1. Serverless Environments (Netlify Functions, Vercel, AWS Lambda):
+ *    Process state is ephemeral. Cold starts, container recycling, or worker terminations
+ *    reset in-memory records. Listings created on one instance are invisible to sibling
+ *    instances unless persisted.
+ * 2. Multi-Instance Deployments:
+ *    Independent server instances maintain isolated Map instances, fragmenting directory
+ *    queries and rate limits.
+ * 3. Consent Audit Durability:
+ *    Consent records that die with the process undermine the durable consent story.
+ *
+ * Production Migration Path:
+ * - Back this `IDiscoveryStore` interface with the StreamPay indexer SQLite/Postgres store
+ *   (see `indexer/src/store.ts` and `indexer/db/schema.sql` for `discovery_listings`
+ *   and `discovery_consent_vault` tables).
+ * - Maintain strict physical and authorization separation between the public listings index
+ *   and the private consent vault.
+ */
+class DiscoveryStore implements IDiscoveryStore {
   // Public index table: contains only aggregated metadata and lifecycle state
   private publicRecords = new Map<string, InternalListingRecord>();
 

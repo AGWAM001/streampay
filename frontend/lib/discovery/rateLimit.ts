@@ -1,5 +1,14 @@
 /**
  * Lightweight in-memory rate limiter for discovery API endpoints.
+ *
+ * ARCHITECTURAL NOTICE — PROTOTYPE-GRADE RATE BUDGETING:
+ * ------------------------------------------------------
+ * IP bucket counters are stored in an in-memory Map (`ipBuckets`).
+ * On serverless platforms (Netlify, Vercel, AWS Lambda) or multi-instance clusters,
+ * rate budgets reset per instance and upon container recycling.
+ *
+ * For distributed production enforcement, replace or back this implementation with
+ * an atomic centralized store (e.g., Redis `INCR` + `EXPIRE` or Cloudflare/Upstash rate limiting).
  */
 interface RateLimitBucket {
   count: number;

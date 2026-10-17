@@ -249,6 +249,12 @@ export class DiscoveryService {
       return { success: false, error: `INVALID_WITHDRAWAL_SIGNATURE: ${verifyRes.error}` };
     }
 
+    // Anti-replay: ensure withdrawal nonce was not already consumed
+    if (discoveryStore.hasNonce(withdrawPayload.nonce)) {
+      return { success: false, error: "REPLAYED_NONCE" };
+    }
+    discoveryStore.addNonce(withdrawPayload.nonce);
+
     // Revoke listing immediately
     discoveryStore.markWithdrawn(withdrawPayload.listingId, now);
     return { success: true, listingId: withdrawPayload.listingId };
