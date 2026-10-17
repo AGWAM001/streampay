@@ -24,7 +24,13 @@ MAX_FILE_BYTES=4096
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FUZZ="$ROOT/fuzz"
 WORK="$(mktemp -d)"
-trap 'git -C "$ROOT" worktree remove --force "$WORK" >/dev/null 2>&1 || rm -rf "$WORK"' EXIT
+# Remove the scratch worktree, and the local branch used to start the orphan
+# the first time, so a second run does not trip over a leftover branch.
+cleanup() {
+  git -C "$ROOT" worktree remove --force "$WORK" >/dev/null 2>&1 || rm -rf "$WORK"
+  git -C "$ROOT" branch -D "$BRANCH-new" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
 checkout() {
   if git -C "$ROOT" fetch --depth 1 "$REMOTE" "$BRANCH" 2>/dev/null; then
