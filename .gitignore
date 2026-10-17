@@ -49,3 +49,6 @@ fuzz/Cargo.lock
 fuzz/campaign/
 fuzz/triage/
 fuzz/coverage/
+
+# Python bytecode
+__pycache__/
