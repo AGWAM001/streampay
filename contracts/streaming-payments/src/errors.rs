@@ -147,6 +147,10 @@ pub enum StreamError {
     PolicyDurationAboveCeiling = 45,
     /// Stream deposit is below the governance policy floor.
     PolicyDepositBelowFloor = 46,
+    /// Batch creation was requested with zero entries.
+    BatchEmpty = 47,
+    /// Batch creation was requested with more entries than MAX_BATCH.
+    BatchTooLarge = 48,
 }
 
 impl StreamError {
@@ -200,6 +204,8 @@ impl StreamError {
         StreamError::PolicyDurationBelowFloor,
         StreamError::PolicyDurationAboveCeiling,
         StreamError::PolicyDepositBelowFloor,
+        StreamError::BatchEmpty,
+        StreamError::BatchTooLarge,
     ];
 
     /// The stable numeric value carried across the contract boundary
