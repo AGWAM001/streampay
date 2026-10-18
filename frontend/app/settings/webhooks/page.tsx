@@ -80,10 +80,27 @@ export default function WebhooksSettingsPage() {
         else setDlqItems(data);
       })
       .catch((e: unknown) => toast.error(`Failed to load webhook data: ${String(e)}`));
+  const loadData = useCallback(async () => {
+    try {
+      if (activeTab === "endpoints") {
+        const res = await fetch("/api/webhooks?type=endpoints");
+        if (res.ok) setEndpoints(await res.json());
+      } else if (activeTab === "deliveries") {
+        const res = await fetch("/api/webhooks?type=deliveries");
+        if (res.ok) setDeliveries(await res.json());
+      } else if (activeTab === "dlq") {
+        const res = await fetch("/api/webhooks?type=dlq");
+        if (res.ok) setDlqItems(await res.json());
+      }
+    } catch (e: unknown) {
+      toast.error(`Failed to load webhook data: ${String(e)}`);
+    }
   }, [activeTab, toast]);
 
   useEffect(() => {
-    void loadData();
+    void (async () => {
+      await loadData();
+    })();
   }, [loadData]);
 
   async function handleRegisterEndpoint(e: React.FormEvent) {
