@@ -274,3 +274,36 @@ jobs:
           wasm=target/wasm32v1-none/release/streampay_contract.wasm
           [ -s "$wasm" ] || { echo "wasm missing or empty"; exit 1; }
           echo "OK: $(ls -sh "$wasm")"
+
+  perf-budgets:
+    name: Perf budgets — bounds on indexer, RPC reads & frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install indexer dependencies
+        working-directory: indexer
+        run: npm ci
+
+      - name: Build indexer
+        working-directory: indexer
+        run: npm run build
+
+      - name: Check performance budgets (3-run median & bounds)
+        run: node perf/harness/check_budgets.mjs
+
+      - name: Seeded regression defense test
+        run: node --test perf/test/seeded_regression.test.mjs
+
+      - name: Lint runbook command freshness
+        run: ./scripts/lint_runbook_commands.sh
+
+      - name: Error catalog regeneration diff check
+        run: |
+          node tooling/generate-error-catalog.mjs
+          git diff --exit-code docs/errors.md docs/errors/ frontend/lib/errors.ts
+
