@@ -60,7 +60,6 @@ export default function WebhooksSettingsPage() {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [dlqItems, setDlqItems] = useState<WebhookDLQItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   // Form states
   const [newUrl, setNewUrl] = useState("");
@@ -71,7 +70,6 @@ export default function WebhooksSettingsPage() {
   const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
     try {
       if (activeTab === "endpoints") {
         const res = await fetch("/api/webhooks?type=endpoints");
@@ -85,14 +83,32 @@ export default function WebhooksSettingsPage() {
       }
     } catch (e: unknown) {
       toast.error(`Failed to load webhook data: ${String(e)}`);
-    } finally {
-      setLoading(false);
     }
   }, [activeTab, toast]);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    let ignore = false;
+    async function fetchData() {
+      try {
+        if (activeTab === "endpoints") {
+          const res = await fetch("/api/webhooks?type=endpoints");
+          if (res.ok && !ignore) setEndpoints(await res.json());
+        } else if (activeTab === "deliveries") {
+          const res = await fetch("/api/webhooks?type=deliveries");
+          if (res.ok && !ignore) setDeliveries(await res.json());
+        } else if (activeTab === "dlq") {
+          const res = await fetch("/api/webhooks?type=dlq");
+          if (res.ok && !ignore) setDlqItems(await res.json());
+        }
+      } catch (e: unknown) {
+        if (!ignore) toast.error(`Failed to load webhook data: ${String(e)}`);
+      }
+    }
+    void fetchData();
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, toast]);
 
   async function handleRegisterEndpoint(e: React.FormEvent) {
     e.preventDefault();

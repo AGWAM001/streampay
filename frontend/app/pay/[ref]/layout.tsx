@@ -1,10 +1,6 @@
 import type { Metadata } from "next";
 import { readPaymentLinkAction } from "@/app/actions";
 
-interface LayoutProps {
-  params: Promise<{ ref: string }>;
-  children: React.ReactNode;
-}
 
 export async function generateMetadata({
   params,
