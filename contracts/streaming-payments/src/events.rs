@@ -225,6 +225,8 @@ pub struct DisputeExpired {
     pub sender_share: i128,
     /// The remainder of the bond refunded to the recipient.
     pub recipient_share: i128,
+}
+
 /// Emitted when the policy module is initialized with its initial admin.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
