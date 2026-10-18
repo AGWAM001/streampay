@@ -8,7 +8,6 @@
  */
 import {
   Account,
-  Address,
   nativeToScVal,
   Networks,
   rpc,
@@ -21,11 +20,13 @@ import {
 import { signTransaction } from "@stellar/freighter-api";
 import type { BatchStreamEntry } from "./batch";
 import {
-  globalFrontendTracer,
-  W3CTraceContextPropagator,
-  traceCorrelationRegistry,
-} from "./telemetry";
-import { sanitizeAddress } from "./privacy";
+  buildCreateStreamOperationForDays,
+  buildWithdrawOperation,
+  i128,
+  scAddr,
+  u32,
+  u64,
+} from "./stellar-ops.ts";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
@@ -59,24 +60,8 @@ export interface StreamArgs {
   cancelable: boolean;
 }
 
-import type { StreamView } from "./pagination";
+import type { StreamView } from "./pagination.ts";
 export type { StreamView };
-
-function scAddr(s: string) {
-  return nativeToScVal(new Address(s), { type: "address" });
-}
-
-function u64(id: string | number | bigint) {
-  return nativeToScVal(BigInt(id), { type: "u64" });
-}
-
-function i128(v: string) {
-  return nativeToScVal(BigInt(v), { type: "i128" });
-}
-
-function u32(v: number) {
-  return nativeToScVal(BigInt(v), { type: "u32" });
-}
 
 /**
  * Network label for localStorage keys — stream ids are per-network facts and
@@ -317,21 +302,20 @@ export async function createStream(
   args: StreamArgs
 ): Promise<bigint> {
   const token = tokenContractId(args.token); // "native" → the network's XLM SAC
-  const start = Math.floor(Date.now() / 1000) + 1;
-  const end = start + Math.ceil(Number(args.days) * 86_400);
+  const start = BigInt(Math.floor(Date.now() / 1000) + 1);
   // The contract pulls the deposit through a token allowance — make sure it
   // is in place before simulation (one extra Freighter signature on the
   // first stream with a given asset).
   await ensureAllowance(sender, token, args.deposit);
-  const op = contract().call(
-    "create_stream",
-    scAddr(sender),
-    scAddr(args.recipient),
-    scAddr(token),
-    i128(args.deposit),
-    u64(start),
-    u64(end),
-    nativeToScVal(args.cancelable)
+  const op = buildCreateStreamOperationForDays(
+    CONTRACT_ID,
+    sender,
+    args.recipient,
+    token,
+    args.deposit,
+    start,
+    args.days,
+    args.cancelable
   );
   // create_stream returns the new stream id (u64).
   return send(sender, op, (v) => BigInt(scValToNative(v) as bigint));
@@ -393,53 +377,10 @@ export async function withdrawFromStream(
   streamId: string,
   amount: string
 ): Promise<void> {
-  return globalFrontendTracer.withSpan(
-    "browser.claim_click",
-    async (span) => {
-      span.setAttributes({
-        "user.action": "withdraw",
-        "stream.id": streamId,
-        "recipient.address": sanitizeAddress(recipient),
-        "amount": amount,
-      });
-
-      const carrier: Record<string, string> = {};
-      W3CTraceContextPropagator.inject(span.context, carrier);
-
-      try {
-        if (typeof fetch !== "undefined") {
-          const res = await fetch("/api/claim", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...carrier,
-            },
-            body: JSON.stringify({
-              streamId,
-              recipient,
-              amount,
-              max: false,
-            }),
-          });
-          if (res.ok) {
-            const data = (await res.json().catch(() => ({}))) as { txHash?: string };
-            if (data.txHash) {
-              span.setAttribute("soroban.tx_hash", data.txHash);
-              traceCorrelationRegistry.register(data.txHash, span.context, streamId);
-            }
-          }
-        }
-      } catch {
-        // Fallthrough to direct wallet invocation
-      }
-
-      await send(
-        recipient,
-        contract().call("withdraw", u64(streamId), i128(amount)),
-        () => undefined
-      );
-    },
-    { kind: "CLIENT" }
+  await send(
+    recipient,
+    buildWithdrawOperation(CONTRACT_ID, streamId, amount),
+    () => undefined
   );
 }
 
@@ -653,7 +594,7 @@ import {
   paginateStreamsByCursor,
   type CursorPaginationOptions,
   type PaginatedStreamsResponse,
-} from "./pagination";
+} from "./pagination.ts";
 
 export {
   paginateStreamsByCursor,
@@ -662,7 +603,7 @@ export {
   type PaginationDirection,
   type CursorPaginationOptions,
   type PaginatedStreamsResponse,
-} from "./pagination";
+} from "./pagination.ts";
 
 /**
  * Discovers and paginates streams for any Stellar address across incoming

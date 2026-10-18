@@ -66,7 +66,6 @@ export default function WebhooksSettingsPage() {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [dlqItems, setDlqItems] = useState<WebhookDLQItem[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Form states
   const [newUrl, setNewUrl] = useState("");
@@ -77,7 +76,6 @@ export default function WebhooksSettingsPage() {
   const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
     try {
       if (activeTab === "endpoints") {
         const res = await fetch("/api/webhooks?type=endpoints");
@@ -91,36 +89,14 @@ export default function WebhooksSettingsPage() {
       }
     } catch (e: unknown) {
       toast.error(`Failed to load webhook data: ${String(e)}`);
-    } finally {
-      setLoading(false);
     }
   }, [activeTab, toast]);
 
   useEffect(() => {
-    let ignore = false;
-    const fetchData = async () => {
-      try {
-        if (activeTab === "endpoints") {
-          const res = await fetch("/api/webhooks?type=endpoints");
-          if (res.ok && !ignore) setEndpoints(await res.json());
-        } else if (activeTab === "deliveries") {
-          const res = await fetch("/api/webhooks?type=deliveries");
-          if (res.ok && !ignore) setDeliveries(await res.json());
-        } else if (activeTab === "dlq") {
-          const res = await fetch("/api/webhooks?type=dlq");
-          if (res.ok && !ignore) setDlqItems(await res.json());
-        }
-      } catch (e: unknown) {
-        if (!ignore) toast.error(`Failed to load webhook data: ${String(e)}`);
-      } finally {
-        if (!ignore) setLoading(false);
-      }
-    };
-    void fetchData();
-    return () => {
-      ignore = true;
-    };
-  }, [activeTab, toast]);
+    void (async () => {
+      await loadData();
+    })();
+  }, [loadData]);
 
   async function handleRegisterEndpoint(e: React.FormEvent) {
     e.preventDefault();
