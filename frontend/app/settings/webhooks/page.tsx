@@ -60,7 +60,6 @@ export default function WebhooksSettingsPage() {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [dlqItems, setDlqItems] = useState<WebhookDLQItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   // Form states
   const [newUrl, setNewUrl] = useState("");
@@ -71,7 +70,6 @@ export default function WebhooksSettingsPage() {
   const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
     try {
       if (activeTab === "endpoints") {
         const res = await fetch("/api/webhooks?type=endpoints");
@@ -85,13 +83,13 @@ export default function WebhooksSettingsPage() {
       }
     } catch (e: unknown) {
       toast.error(`Failed to load webhook data: ${String(e)}`);
-    } finally {
-      setLoading(false);
     }
   }, [activeTab, toast]);
 
   useEffect(() => {
-    void loadData();
+    void (async () => {
+      await loadData();
+    })();
   }, [loadData]);
 
   async function handleRegisterEndpoint(e: React.FormEvent) {

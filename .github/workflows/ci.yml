@@ -98,6 +98,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install CLI dependencies for cross-client parity
+        run: npm install --prefix ../tools/streampay-cli --no-package-lock --ignore-scripts --no-audit --no-fund
+
       - name: Lint
         run: npm run lint
 
@@ -109,6 +112,9 @@ jobs:
 
       - name: Differential tests (against shared vector corpus)
         run: node --experimental-strip-types --test lib/oracle.test.ts
+
+      - name: Client parity smoke tests
+        run: npm run test:parity
 
       # -----------------------------------------------------------------------
       # WCAG 2.1 AA accessibility gate (issue #98)
@@ -190,6 +196,30 @@ jobs:
 
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
+
+  cli-parity:
+    name: CLI — client parity smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/streampay-cli
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install CLI dependencies
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+
+      - name: CLI tests including parity fixtures
+        run: npm test
+
+      # `npm run typecheck` is intentionally not gated here yet: it surfaces
+      # pre-existing cli.ts debt (diagnostic-event/footprint decoding against
+      # the SDK 17 xdr renames, noUncheckedIndexedAccess in the arg parser)
+      # that needs an RPC-backed follow-up before it can be fixed safely.
 
   supply-chain:
     name: Security — advisories / licenses
