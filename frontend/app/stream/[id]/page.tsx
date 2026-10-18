@@ -1,5 +1,4 @@
 "use client";
-
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -17,6 +16,11 @@ import {
 import { computeAvailable, StreamSnapshot } from "@/lib/accrual";
 import { useToast } from "@/components/toast";
 import { fmtUnits, validateWithdrawal } from "@/lib/withdrawal";
+import DiscoveryConsentModal from "@/components/DiscoveryConsentModal";
+
+function fmtUnits(v: bigint): string {
+  return v.toString();
+}
 
 export default function StreamDetail() {
   const toast = useToast();
@@ -33,6 +37,7 @@ export default function StreamDetail() {
   const [loadError, setLoadError] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [discoveryModalOpen, setDiscoveryModalOpen] = useState<boolean>(false);
 
   const reload = useCallback(async () => {
     if (!id) return;
@@ -325,8 +330,62 @@ export default function StreamDetail() {
           </section>
         )}
 
-      <p>
+      {(isSender || isRecipient) && (
+        <section className="card">
+          <h2>Anonymized Discovery Listing</h2>
+          <p className="muted">
+            Opt into publishing an anonymized, verifiable listing for this stream to the public directory.
+            Requires cryptographic consent from both parties. No addresses are shared by default.
+          </p>
+          <button
+            type="button"
+            onClick={() => setDiscoveryModalOpen(true)}
+          >
+            Manage Discovery Listing
+          </button>
+        </section>
+      )}
+
+      {discoveryModalOpen && address && stream && (
+        <DiscoveryConsentModal
+          stream={stream}
+          currentUserAddress={address}
+          isOpen={discoveryModalOpen}
+          onClose={() => setDiscoveryModalOpen(false)}
+        />
+      )}
+
+      <section className="card">
+        <h2>Shareable Payment Link</h2>
+        <p className="muted">
+          Generate a deterministic, privacy-blinded claim URL for this stream. The recipient can claim without logging in first.
+        </p>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const { encodePaymentLinkRef } = await import("@/lib/payment-link");
+              const ref = await encodePaymentLinkRef({
+                streamId: stream.id,
+                recipient: stream.recipient,
+              });
+              const url = `${window.location.origin}/pay/${ref}`;
+              await navigator.clipboard.writeText(url);
+              toast.success("Payment link copied to clipboard!");
+            } catch (err: unknown) {
+              toast.error(`Failed to copy payment link: ${String(err)}`);
+            }
+          }}
+        >
+          Copy Shareable Payment Link
+        </button>
+      </section>
+
+      <p style={{ display: "flex", gap: "16px" }}>
         <Link href="/">← All streams</Link>
+        <Link href="/listings" style={{ color: "var(--accent2)" }}>
+          Browse Discovery Directory →
+        </Link>
       </p>
     </main>
   );
