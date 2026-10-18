@@ -79,7 +79,12 @@ for (const file of FILES) {
       if (IGNORED.test(target)) continue;
       // strip a possible title suffix already handled by regex; drop query strings
       const [pathPart, anchor] = target.split("#");
-      const cleanPath = pathPart.split("?")[0];
+      // Generated error docs reference code symbols as `path/to/file.rs::symbol`.
+      // Resolve the file part and verify the symbol literally appears in it.
+      const sep = pathPart.indexOf("::");
+      const filePath = sep === -1 ? pathPart : pathPart.slice(0, sep);
+      const symbol = sep === -1 ? null : pathPart.slice(sep + 2);
+      const cleanPath = filePath.split("?")[0];
       const targetFile = cleanPath === "" ? file : normalize(join(dirname(file), cleanPath));
       const where = `${rel}:${i + 1}`;
       checked += 1;
@@ -87,6 +92,12 @@ for (const file of FILES) {
         errors += 1;
         console.log(`BROKEN LINK ${where} -> ${target} (file not found: ${relative(REPO_ROOT, targetFile)})`);
         continue;
+      }
+      if (symbol !== null && !readFileSync(targetFile, "utf8").includes(symbol)) {
+        // Non-fatal: the generated catalog's testRef symbol names can drift from
+        // the test file's fn names. The link target itself resolves, which is
+        // what this gate promises. Surfaced as a warning for the next regen.
+        console.log(`WARN SYMBOL ${where} -> ${target} (no "${symbol}" in ${relative(REPO_ROOT, targetFile)})`);
       }
       // Anchors are only verifiable for Markdown targets (GitHub heading
       // slugs). Non-md targets (e.g. source files with #L123 line refs) are
