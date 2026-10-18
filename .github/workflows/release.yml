@@ -120,7 +120,7 @@ jobs:
       # Bit-for-bit reproducibility must be verified independently by rebuilding
       # from the tag using the verify-reproducible-build action.
       - name: Attest Wasm build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             target/wasm32v1-none/release/streampay_contract.wasm
