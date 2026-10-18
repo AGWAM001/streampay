@@ -7,10 +7,7 @@ import {
   readPaymentLinkAction,
   PaymentLinkResolution,
 } from "@/app/actions";
-import {
-  verifyRecipientBinding,
-  PaymentLinkData,
-} from "@/lib/payment-link";
+import { verifyRecipientBinding } from "@/lib/payment-link";
 import {
   claimStreamWithReceipt,
   ClaimReceipt,
