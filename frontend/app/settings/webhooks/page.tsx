@@ -56,11 +56,17 @@ export default function WebhooksSettingsPage() {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<"endpoints" | "deliveries" | "dlq">("endpoints");
 
+  const handleTabChange = (tab: "endpoints" | "deliveries" | "dlq") => {
+    if (tab === activeTab) return;
+    setLoading(true);
+    setActiveTab(tab);
+  };
+
   // Data states
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [dlqItems, setDlqItems] = useState<WebhookDLQItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Form states
   const [newUrl, setNewUrl] = useState("");
@@ -91,8 +97,30 @@ export default function WebhooksSettingsPage() {
   }, [activeTab, toast]);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    let ignore = false;
+    const fetchData = async () => {
+      try {
+        if (activeTab === "endpoints") {
+          const res = await fetch("/api/webhooks?type=endpoints");
+          if (res.ok && !ignore) setEndpoints(await res.json());
+        } else if (activeTab === "deliveries") {
+          const res = await fetch("/api/webhooks?type=deliveries");
+          if (res.ok && !ignore) setDeliveries(await res.json());
+        } else if (activeTab === "dlq") {
+          const res = await fetch("/api/webhooks?type=dlq");
+          if (res.ok && !ignore) setDlqItems(await res.json());
+        }
+      } catch (e: unknown) {
+        if (!ignore) toast.error(`Failed to load webhook data: ${String(e)}`);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+    void fetchData();
+    return () => {
+      ignore = true;
+    };
+  }, [activeTab, toast]);
 
   async function handleRegisterEndpoint(e: React.FormEvent) {
     e.preventDefault();
@@ -230,10 +258,11 @@ export default function WebhooksSettingsPage() {
           </div>
           <button
             type="button"
+            disabled={loading}
             onClick={() => void loadData()}
-            className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-xl text-xs font-medium text-neutral-300 transition"
+            className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 disabled:opacity-50 rounded-xl text-xs font-medium text-neutral-300 transition"
           >
-            ↻ Refresh
+            {loading ? "Refreshing…" : "↻ Refresh"}
           </button>
         </div>
 
@@ -275,7 +304,7 @@ export default function WebhooksSettingsPage() {
         <div className="flex gap-2 border-b border-neutral-800 pb-2">
           <button
             type="button"
-            onClick={() => setActiveTab("endpoints")}
+            onClick={() => handleTabChange("endpoints")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "endpoints"
                 ? "bg-neutral-800 text-white"
@@ -286,7 +315,7 @@ export default function WebhooksSettingsPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("deliveries")}
+            onClick={() => handleTabChange("deliveries")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "deliveries"
                 ? "bg-neutral-800 text-white"
@@ -297,7 +326,7 @@ export default function WebhooksSettingsPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("dlq")}
+            onClick={() => handleTabChange("dlq")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "dlq"
                 ? "bg-neutral-800 text-white"
