@@ -63,6 +63,11 @@ export interface StreamArgs {
 import type { StreamView } from "./pagination.ts";
 export type { StreamView };
 
+export interface AssetMeta {
+  code: string;
+  decimals: number;
+}
+
 /**
  * Network label for localStorage keys — stream ids are per-network facts and
  * must never leak between testnet and publicnet caches.
@@ -556,6 +561,173 @@ async function simulateRead(
   } catch {
     return null;
   }
+}
+
+// In-memory per-session cache for token metadata (code & decimals)
+const assetMetaCache = new Map<string, AssetMeta>();
+const pendingMetaRequests = new Map<string, Promise<AssetMeta>>();
+
+function getSessionStorageKey(token: string): string {
+  return `streampay_asset_meta_${NETWORK_LABEL}_${token}`;
+}
+
+/**
+ * Returns cached token metadata if already loaded in this session, or XLM defaults
+ * for native streams. Returns null if not yet resolved.
+ */
+export function getCachedAssetMeta(token: string): AssetMeta | null {
+  if (
+    !token ||
+    token === NATIVE_XLM ||
+    token.toLowerCase() === "native" ||
+    isNativeXlm(token)
+  ) {
+    return { code: "XLM", decimals: 7 };
+  }
+  if (assetMetaCache.has(token)) {
+    return assetMetaCache.get(token)!;
+  }
+  if (typeof window !== "undefined" && window.sessionStorage) {
+    try {
+      const stored = window.sessionStorage.getItem(getSessionStorageKey(token));
+      if (stored) {
+        const parsed = JSON.parse(stored) as AssetMeta;
+        if (
+          parsed &&
+          typeof parsed.code === "string" &&
+          typeof parsed.decimals === "number"
+        ) {
+          assetMetaCache.set(token, parsed);
+          return parsed;
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+/**
+ * Fetches asset metadata (code/decimals) for a token contract via Soroban RPC simulation.
+ * Results are cached in-memory and in sessionStorage for the duration of the session.
+ */
+export async function fetchAssetMeta(token: string): Promise<AssetMeta> {
+  if (
+    !token ||
+    token === NATIVE_XLM ||
+    token.toLowerCase() === "native" ||
+    isNativeXlm(token)
+  ) {
+    return { code: "XLM", decimals: 7 };
+  }
+
+  const cached = getCachedAssetMeta(token);
+  if (cached) return cached;
+
+  if (pendingMetaRequests.has(token)) {
+    return pendingMetaRequests.get(token)!;
+  }
+
+  if (!StrKey.isValidContract(token)) {
+    const fallback: AssetMeta = {
+      code:
+        token.length > 8
+          ? `${token.slice(0, 4)}…${token.slice(-4)}`
+          : token || "TOKEN",
+      decimals: 7,
+    };
+    return fallback;
+  }
+
+  const req = (async (): Promise<AssetMeta> => {
+    try {
+      const [decimalsVal, symbolVal] = await Promise.all([
+        simulateRead(token, "decimals", []).catch(() => null),
+        simulateRead(token, "symbol", []).catch(() => null),
+      ]);
+
+      let decimals = 7;
+      if (decimalsVal !== null) {
+        try {
+          const dec = scValToNative(decimalsVal);
+          const num = typeof dec === "number" ? dec : Number(dec);
+          if (Number.isFinite(num) && num >= 0 && num <= 36) {
+            decimals = num;
+          }
+        } catch {
+          decimals = 7;
+        }
+      }
+
+      let code = "";
+      if (symbolVal !== null) {
+        try {
+          const sym = scValToNative(symbolVal);
+          if (typeof sym === "string" && sym.trim()) {
+            code = sym.trim();
+          } else if (
+            sym !== null &&
+            typeof sym === "object" &&
+            "toString" in sym
+          ) {
+            const str = String(sym).trim();
+            if (str) code = str;
+          }
+        } catch {}
+      }
+
+      if (!code) {
+        const nameVal = await simulateRead(token, "name", []).catch(() => null);
+        if (nameVal !== null) {
+          try {
+            const name = scValToNative(nameVal);
+            if (typeof name === "string" && name.trim()) {
+              code = name.trim();
+            }
+          } catch {}
+        }
+      }
+
+      if (!code) {
+        code =
+          token.length > 8
+            ? `${token.slice(0, 4)}…${token.slice(-4)}`
+            : token || "TOKEN";
+      }
+
+      const meta: AssetMeta = { code, decimals };
+      assetMetaCache.set(token, meta);
+
+      if (typeof window !== "undefined" && window.sessionStorage) {
+        try {
+          window.sessionStorage.setItem(
+            getSessionStorageKey(token),
+            JSON.stringify(meta)
+          );
+        } catch {}
+      }
+
+      return meta;
+    } catch {
+      const fallback: AssetMeta = {
+        code:
+          token.length > 8
+            ? `${token.slice(0, 4)}…${token.slice(-4)}`
+            : token || "TOKEN",
+        decimals: 7,
+      };
+      return fallback;
+    } finally {
+      pendingMetaRequests.delete(token);
+    }
+  })();
+
+  pendingMetaRequests.set(token, req);
+  return req;
+}
+
+export function clearAssetMetaCache(): void {
+  assetMetaCache.clear();
+  pendingMetaRequests.clear();
 }
 
 /** Read-only view of one stream. */

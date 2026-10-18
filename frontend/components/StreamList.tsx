@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { isNativeXlm, type StreamView } from "@/lib/stellar";
+import { useEffect, useState } from "react";
+import { isNativeXlm, fetchAssetMeta, type AssetMeta, type StreamView } from "@/lib/stellar";
+import { formatAmount } from "@/lib/format";
 
 export default function StreamList({
   streams,
@@ -20,6 +21,28 @@ export default function StreamList({
   onRefresh: (id: string) => void | Promise<void>;
 }) {
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [metas, setMetas] = useState<Record<string, AssetMeta>>({});
+
+  useEffect(() => {
+    let active = true;
+    const tokens = Array.from(new Set(streams.map((s) => s.token)));
+    Promise.all(
+      tokens.map(async (token) => {
+        const meta = await fetchAssetMeta(token);
+        return [token, meta] as const;
+      })
+    ).then((entries) => {
+      if (active) {
+        setMetas((prev) => ({
+          ...prev,
+          ...Object.fromEntries(entries),
+        }));
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [streams]);
 
   if (streams.length === 0) {
     return (
@@ -49,6 +72,17 @@ export default function StreamList({
         {streams.map((s) => {
           // Stable ID for the per-row amount input so label can reference it
           const amountInputId = `stream-amount-${s.id}`;
+          const meta =
+            metas[s.token] ??
+            (isNativeXlm(s.token) ? { code: "XLM", decimals: 7 } : null);
+          const tokenLabel =
+            meta?.code ?? (isNativeXlm(s.token) ? "XLM" : `${s.token.slice(0, 10)}…`);
+          const depositDisplay = meta
+            ? `${formatAmount(BigInt(s.deposit), meta.decimals)} ${meta.code}`
+            : s.deposit;
+          const withdrawnDisplay = meta
+            ? `${formatAmount(BigInt(s.withdrawn), meta.decimals)} ${meta.code}`
+            : s.withdrawn;
 
           return (
             <tr key={s.id}>
@@ -56,11 +90,15 @@ export default function StreamList({
                 <Link href={`/stream/${s.id}`}>#{s.id}</Link>
               </td>
               <td className="mono" title={s.token}>
-                {isNativeXlm(s.token) ? "XLM" : `${s.token.slice(0, 10)}…`}
+                {tokenLabel}
               </td>
               <td className="mono">{s.recipient.slice(0, 8)}…</td>
-              <td className="mono">{s.deposit}</td>
-              <td className="mono">{s.withdrawn}</td>
+              <td className="mono" title={`${s.deposit} base units`}>
+                {depositDisplay}
+              </td>
+              <td className="mono" title={`${s.withdrawn} base units`}>
+                {withdrawnDisplay}
+              </td>
               <td>
                 {/* Status badge uses colour + text — WCAG 1.4.1 */}
                 <span className={`status-badge status-${s.status.toLowerCase()}`}>

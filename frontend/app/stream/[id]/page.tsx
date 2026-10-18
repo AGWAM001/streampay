@@ -11,18 +11,17 @@ import {
   readStream,
   withdrawFromStream,
   withdrawMaxFromStream,
+  fetchAssetMeta,
+  type AssetMeta,
   type StreamView,
 } from "@/lib/stellar";
 import { useClaimScheduler } from "@/lib/use-claim-scheduler";
 import ClaimSchedulerSettings from "@/components/ClaimSchedulerSettings";
 import { computeAvailable, StreamSnapshot } from "@/lib/accrual";
 import { useToast } from "@/components/toast";
-import { fmtUnits, validateWithdrawal } from "@/lib/withdrawal";
+import { validateWithdrawal } from "@/lib/withdrawal";
+import { formatAmount } from "@/lib/format";
 import DiscoveryConsentModal from "@/components/DiscoveryConsentModal";
-
-function fmtUnits(v: bigint): string {
-  return v.toString();
-}
 
 export default function StreamDetail() {
   const toast = useToast();
@@ -30,6 +29,7 @@ export default function StreamDetail() {
   const id = params?.id ?? "";
 
   const [stream, setStream] = useState<StreamView | null>(null);
+  const [assetMeta, setAssetMeta] = useState<AssetMeta | null>(null);
   const [available, setAvailable] = useState<bigint | null>(null);
   const [displayAvailable, setDisplayAvailable] = useState<bigint | null>(null);
   const [snapshot, setSnapshot] = useState<StreamSnapshot | null>(null);
@@ -48,6 +48,7 @@ export default function StreamDetail() {
       const [s, a] = await Promise.all([readStream(id), readAvailable(id)]);
       setStream(s);
       setAvailable(a);
+      fetchAssetMeta(s.token).then((meta) => setAssetMeta(meta));
       setSnapshot({
         deposit: BigInt(s.deposit),
         startTime: s.startTime,
@@ -151,19 +152,29 @@ export default function StreamDetail() {
     try {
       if (max) {
         const paid = await withdrawMaxFromStream(address, stream!.id);
-        toast.success(`Claimed ${fmtUnits(paid)} units.`);
+        const paidStr = assetMeta
+          ? `${formatAmount(paid, assetMeta.decimals)} ${assetMeta.code}`
+          : `${paid} units`;
+        toast.success(`Claimed ${paidStr}.`);
         setAmount("");
         setIsAmountDirty(false);
       } else {
         if (!validation.valid) {
+          const availStr =
+            available !== null && assetMeta
+              ? `${formatAmount(available, assetMeta.decimals)} ${assetMeta.code}`
+              : `${available?.toString()} units`;
           toast.error(
             validation.error ||
-              `Amount exceeds the accrued balance (${available?.toString()} units). Try “Withdraw max”.`
+              `Amount exceeds the accrued balance (${availStr}). Try “Withdraw max”.`
           );
           return;
         }
         await withdrawFromStream(address, stream!.id, validation.amount.toString());
-        toast.success(`Successfully withdrew ${fmtUnits(validation.amount)} units.`);
+        const withdrewStr = assetMeta
+          ? `${formatAmount(validation.amount, assetMeta.decimals)} ${assetMeta.code}`
+          : `${validation.amount} units`;
+        toast.success(`Successfully withdrew ${withdrewStr}.`);
         setAmount("");
         setIsAmountDirty(false);
       }
@@ -223,23 +234,39 @@ export default function StreamDetail() {
               <td className="mono" style={{ wordBreak: "break-all" }}>
                 {isNativeXlm(stream.token)
                   ? `Native XLM — ${stream.token}`
+                  : assetMeta
+                  ? `${assetMeta.code} — ${stream.token}`
                   : stream.token}
               </td>
             </tr>
             <tr>
               <th>Deposit</th>
-              <td className="mono">{stream.deposit}</td>
+              <td className="mono" title={`${stream.deposit} base units`}>
+                {assetMeta
+                  ? `${formatAmount(deposit, assetMeta.decimals)} ${assetMeta.code}`
+                  : stream.deposit}
+              </td>
             </tr>
             <tr>
               <th>Withdrawn</th>
-              <td className="mono">{stream.withdrawn}</td>
+              <td className="mono" title={`${stream.withdrawn} base units`}>
+                {assetMeta
+                  ? `${formatAmount(withdrawn, assetMeta.decimals)} ${assetMeta.code}`
+                  : stream.withdrawn}
+              </td>
             </tr>
             <tr>
               <th>Available now</th>
               <td className="mono">
-                {snapshot?.status === "Active"
-                  ? (displayAvailable ?? available)?.toString() ?? "…"
-                  : available?.toString() ?? "…"}
+                {(() => {
+                  const availVal =
+                    snapshot?.status === "Active"
+                      ? (displayAvailable ?? available)
+                      : available;
+                  if (availVal === null) return "…";
+                  if (!assetMeta) return availVal.toString();
+                  return `${formatAmount(availVal, assetMeta.decimals)} ${assetMeta.code}`;
+                })()}
                 {stream.status === "Active" && (
                   <button
                     onClick={() => void reload()}
@@ -290,6 +317,14 @@ export default function StreamDetail() {
               }}
               disabled={submitting}
             />
+            {amount && !isNaN(Number(amount)) && BigInt(amount || "0") > 0n && assetMeta && (
+              <span
+                className="mono muted"
+                style={{ fontSize: "0.85rem", alignSelf: "center", whiteSpace: "nowrap" }}
+              >
+                ≈ {formatAmount(BigInt(amount), assetMeta.decimals)} {assetMeta.code}
+              </span>
+            )}
             {available !== null && available > 0n && (
               <button
                 type="button"
