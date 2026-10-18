@@ -8,25 +8,38 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test && vitest run",
+    "test:accrual": "node --test lib/accrual.test.ts",
+    "test:scheduler": "vitest run",
+    "test": "node --test",
+    "test:parity": "node --experimental-strip-types --test test/client-parity.test.ts",
+    "test:a11y": "node --experimental-strip-types --test test/a11y.test.ts",
+    "generate:openapi": "npx tsx scripts/generate-openapi.ts"
   },
   "dependencies": {
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^17.2.1",
-    "next": "^16.3.8",
+    "next": "^16.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
+    "@types/jsdom": "21.1.7",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "eslint": "^9.39.5",
+    "axe-core": "4.10.3",
+    "eslint": "^10.12.0",
     "eslint-config-next": "^16.3.8",
-    "typescript": "^5.7.0"
+    "jsdom": "26.1.0",
+    "typescript": "^5.7.0",
+    "vitest": "^5.0.5"
   },
   "overrides": {
     "postcss": "8.5.28",
+    "sharp": "0.35.5",
+    "source-map-js": "1.2.2",
     "toml": "4.3.0"
   }
 }
