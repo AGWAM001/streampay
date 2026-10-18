@@ -44,6 +44,9 @@ jobs:
       - name: Unit + property tests
         run: cargo test -p streampay-contract --locked
 
+      - name: CEI operation-order goldens
+        run: cargo test -p streampay-contract --lib operation_order_matches_golden --locked
+
       - name: Reference model + differential tests
         run: cargo test -p streampay-model --locked
 

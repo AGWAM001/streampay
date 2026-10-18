@@ -48,6 +48,8 @@
 extern crate std;
 
 #[cfg(test)]
+mod cei_trace;
+#[cfg(test)]
 mod differential_harness;
 #[cfg(test)]
 mod differential_test;
@@ -83,9 +85,7 @@ pub use events::{
     StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet, StreamScheduled,
     StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
-pub use policy::{
-    validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy,
-};
+pub use policy::{validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
@@ -150,6 +150,8 @@ fn pull(
     amount: i128,
     on_failure: Branch,
 ) -> Result<(), StreamError> {
+    #[cfg(test)]
+    cei_trace::record("transfer_from token");
     let res = TokenClient::new(env, token).try_transfer_from(
         &env.current_contract_address(),
         payer,
@@ -168,6 +170,13 @@ fn push(
     amount: i128,
     on_failure: Branch,
 ) -> Result<(), StreamError> {
+    #[cfg(test)]
+    cei_trace::record(match on_failure {
+        Branch::RecipientPayoutFailed => "transfer recipient payout",
+        Branch::SenderRefundFailed => "transfer sender refund",
+        Branch::TreasuryPayoutFailed => "transfer treasury payout",
+        _ => "transfer token",
+    });
     let res = TokenClient::new(env, token).try_transfer(
         &env.current_contract_address(),
         recipient,
@@ -374,6 +383,8 @@ impl StreamingPayments {
         stream::put_stream(env, &stream);
         stream::index_stream(env, &stream);
 
+        #[cfg(test)]
+        cei_trace::record("event StreamCreated");
         StreamCreated {
             stream_id: id,
             sender,
@@ -631,6 +642,8 @@ impl StreamingPayments {
         }
         stream::put_stream(env, s);
 
+        #[cfg(test)]
+        cei_trace::record("event Withdrawn");
         Withdrawn {
             stream_id: s.id,
             recipient: s.recipient.clone(),
@@ -708,6 +721,8 @@ impl StreamingPayments {
             .ok_or_else(|| surface::reject(Branch::CancelSplitOverflow))?;
         stream::put_stream(&env, &s);
 
+        #[cfg(test)]
+        cei_trace::record("event StreamCancelled");
         StreamCancelled {
             stream_id,
             cancelled_by: caller,
@@ -798,6 +813,8 @@ impl StreamingPayments {
         s.deposit = new_deposit;
         stream::put_stream(&env, &s);
 
+        #[cfg(test)]
+        cei_trace::record("event StreamToppedUp");
         StreamToppedUp {
             stream_id,
             sender: s.sender.clone(),
@@ -1035,6 +1052,8 @@ impl StreamingPayments {
         // Pay the keeper its escrowed fee for this occurrence.
         let fee_paid = intent.fee_budget;
         if fee_paid > 0 {
+            #[cfg(test)]
+            cei_trace::record("transfer keeper fee");
             TokenClient::new(&env, &intent.token).transfer(
                 &env.current_contract_address(),
                 stream::muxed(&keeper),
@@ -1042,6 +1061,8 @@ impl StreamingPayments {
             );
         }
 
+        #[cfg(test)]
+        cei_trace::record("event ScheduledStreamExecuted");
         ScheduledStreamExecuted {
             intent_id,
             keeper,
@@ -1090,6 +1111,8 @@ impl StreamingPayments {
         schedule::put_intent(&env, &intent);
 
         if refund > 0 {
+            #[cfg(test)]
+            cei_trace::record("transfer scheduled refund");
             TokenClient::new(&env, &intent.token).transfer(
                 &env.current_contract_address(),
                 stream::muxed(&intent.sender),
@@ -1097,6 +1120,8 @@ impl StreamingPayments {
             );
         }
 
+        #[cfg(test)]
+        cei_trace::record("event ScheduledIntentCancelled");
         ScheduledIntentCancelled {
             intent_id,
             sender: intent.sender.clone(),
@@ -1133,6 +1158,8 @@ impl StreamingPayments {
         schedule::put_intent(&env, &intent);
 
         if refund > 0 {
+            #[cfg(test)]
+            cei_trace::record("transfer scheduled refund");
             TokenClient::new(&env, &intent.token).transfer(
                 &env.current_contract_address(),
                 stream::muxed(&intent.sender),
@@ -1140,6 +1167,8 @@ impl StreamingPayments {
             );
         }
 
+        #[cfg(test)]
+        cei_trace::record("event ScheduledIntentExpired");
         ScheduledIntentExpired {
             intent_id,
             sender: intent.sender.clone(),
@@ -1266,6 +1295,8 @@ impl StreamingPayments {
             .ok_or(StreamError::MathOverflow)?;
         treasury::put_treasury(&env, &token, &t);
 
+        #[cfg(test)]
+        cei_trace::record("event FeeWithdrawn");
         FeeWithdrawn {
             token: token.clone(),
             governor: caller,
