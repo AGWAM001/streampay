@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address};
+use soroban_sdk::{contracttype, Address, Vec};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,6 +25,7 @@ pub struct GovernanceCaps {
 pub enum DataKey {
     RefillRule(u64),
     GovernanceCaps,
+    Agents(u64), // stream_id -> Vec<Address>
 }
 
 #[contracttype]
@@ -37,4 +38,7 @@ pub enum StreamPayError {
     BudgetExceeded = 204,
     StreamPaused = 205,
     GovernanceCapExceeded = 206,
+    TooManyAgents = 300,
+    AgentNotFound = 301,
+    InvalidAgentSignature = 302,
 }
