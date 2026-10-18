@@ -26,10 +26,13 @@ const surfaceContent = readFileSync(SURFACE_RS, 'utf8');
 // content, NOT from HEAD or the environment. The CI regeneration-diff gate
 // (`node tooling/generate-error-catalog.mjs && git diff --exit-code ...`)
 // requires that regenerating the same tree always reproduces byte-identical
-// output, so nothing volatile (git sha, timestamps) may appear in generated files.
+// output, so nothing volatile (git sha, timestamps) may appear in generated
+// files. Line endings are normalized first: a contributor on Windows (CRLF
+// working tree) and CI on Linux (LF) must compute the same fingerprint.
+const norm = (s) => s.replace(/\r\n/g, '\n');
 const schemaFingerprint = createHash('sha256')
-  .update(errorsContent)
-  .update(surfaceContent)
+  .update(norm(errorsContent))
+  .update(norm(surfaceContent))
   .digest('hex')
   .slice(0, 16);
 
