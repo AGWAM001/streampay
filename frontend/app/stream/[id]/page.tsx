@@ -20,10 +20,6 @@ import { useToast } from "@/components/toast";
 import { fmtUnits, validateWithdrawal } from "@/lib/withdrawal";
 import DiscoveryConsentModal from "@/components/DiscoveryConsentModal";
 
-function fmtUnits(v: bigint): string {
-  return v.toString();
-}
-
 export default function StreamDetail() {
   const toast = useToast();
   const params = useParams<{ id: string }>();

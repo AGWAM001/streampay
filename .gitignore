@@ -43,6 +43,10 @@ infra/ttl-sentinel/.ttl-sentinel.state.json.*.json
 # the dress rehearsal; uploaded as CI artifacts, never committed)
 /evidence/
 
+# Drill outputs (scripts/*.sh and key_rotation_drill.ts write logs/; uploaded
+# as CI artifacts, never committed)
+/logs/
+
 # Fuzzing (own workspace; corpus/artifacts stay local)
 fuzz/target/
 fuzz/corpus/

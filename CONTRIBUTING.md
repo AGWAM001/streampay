@@ -141,7 +141,7 @@ lint/typecheck/build when frontend files are touched) are the minimum gate.
 
 ## Good first issues
 
-See [`docs/GOOD_FIRST_ISSUES.md`](./GOOD_FIRST_ISSUES.md) — each ticket has
+See [`docs/GOOD_FIRST_ISSUES.md`](./docs/GOOD_FIRST_ISSUES.md) — each ticket has
 acceptance criteria and a difficulty label. Claim one by commenting "I'd like
 to take this" and open a draft PR early so reviewers can steer. Bounties for
 some issues are posted on GrantFox (install the GrantFox GitHub App on your

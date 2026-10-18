@@ -84,3 +84,9 @@ For a one-command deployed contract + demo stream, see
 - The stream list persists per-address cache in `localStorage` (scoped by
   network); on-chain indexes are the source for discovery, cache is only a
   convenience.
+- A bar at the top of every page names the network (`TESTNET` / `PUBLIC`) and
+  the streaming contract from `NEXT_PUBLIC_NETWORK` and
+  `NEXT_PUBLIC_STREAMING_CONTRACT_ID`, linking to the block explorer. When
+  Freighter is on a different network it raises a dismissible warning with the
+  fix, instead of the mismatch surfacing later as a signing error
+  (`lib/network.ts`, `components/NetworkBadge.tsx`).

@@ -6,6 +6,23 @@ This runbook carries an end-to-end worked example of onboarding a **50-employee 
 
 ---
 
+## Quick Reference: Alerts & Severities
+
+| Alert Name | Severity | Service | Soak Baseline (Issue #27) | Runbook Link |
+|---|---|---|---|---|
+| `IndexerEventLagHigh` | Warning (P2) | Indexer | P95 lag ≤ 8.2s (normal ~5s ledger) | §4 decision tree |
+| `IndexerEventLagCritical` | Critical (P1) | Indexer | P99 lag ≤ 12.4s (max transient 25s) | §4 decision tree |
+| `IndexerLedgerLagCritical` | Critical (P1) | Indexer | Steady-state lag ≤ 1 ledger | §4 decision tree |
+| `IndexerDBDepthGrowing` | Warning (P2) | Indexer | Queue drains < 50 items/batch | §4 decision tree |
+| `IndexerDBDepthCritical` | Critical (P1) | Indexer | Max burst depth observed = 120 | §4 decision tree |
+| `SorobanRPCErrorRateHigh` | Warning (P2) | RPC Client | Normal baseline error rate = 0.04% | §4 decision tree |
+| `SorobanRPCErrorRateCritical` | Critical (P1) | RPC Client | Rate limit / node outage threshold > 20% | §4 decision tree |
+| `ReconciliationDivergenceDetected` | **Critical (P0)** | Reconciler | **0 divergences** across 10,000 txs | §4 decision tree |
+| `ReconcilerJobStalled` | Critical (P1) | Reconciler | Scheduled run interval = 60s | §4 decision tree |
+| `IndexerOutboxDepthDiverging` | Critical (P1) | Indexer Outbox | 10k-intent backlog drains in ~3.5s | [#indexeroutboxdepthdiverging](#indexeroutboxdepthdiverging) |
+| `IndexerOutboxDeliveryLagHigh` | Warning (P2) | Indexer Outbox | Oldest pending intent < 5s at steady state | [#indexeroutboxdeliverylaghigh](#indexeroutboxdeliverylaghigh) |
+| `IndexerOutboxDeadLetterRateHigh` | Warning (P2) | Indexer Outbox | 0 dead letters for healthy endpoints | [#indexeroutboxdeadletterratehigh](#indexeroutboxdeadletterratehigh) |
+| `IndexerOutboxBackpressured` | Warning (P2) | Indexer Outbox | Never engages at soak ingestion rates | [#indexeroutboxbackpressured](#indexeroutboxbackpressured) |
 ## Table of Contents
 
 1. [Executive Overview & Operational Model](#1-executive-overview--operational-model)
@@ -64,15 +81,15 @@ Every payroll operation is subject to formal verification invariants:
 1. **Per-Stream Invariant**: `0 <= withdrawn <= streamed <= deposit` at every ledger sequence.
 2. **Conservation of Funds Invariant**: Contract token balance $\ge \sum (\text{deposit} - \text{withdrawn})$ across all active streams.
 3. **Deterministic CEI Ordering**: All payouts follow strict Checks-Effects-Interactions (CEI) to preclude reentrancy windows.
-4. **No Silent Panics**: All operational rejections emit explicit `StreamError` codes (1..46) defined in [`docs/ERRORS.md`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/ERRORS.md) and [`frontend/lib/errors.ts`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/frontend/lib/errors.ts).
+4. **No Silent Panics**: All operational rejections emit explicit `StreamError` codes (1..48) defined in [`docs/ERRORS.md`](errors.md) and [`frontend/lib/errors.ts`](../frontend/lib/errors.ts).
 
 ---
 
 ## 2. 50-Employee Payroll Migration Walkthrough
 
-This walkthrough demonstrates the exact operational procedure for onboarding 50 employees using the synthetic payroll dataset located at [`docs/runbook/payroll_50_employees.csv`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/runbook/payroll_50_employees.csv).
+This walkthrough demonstrates the exact operational procedure for onboarding 50 employees using the synthetic payroll dataset located at [`docs/runbook/payroll_50_employees.csv`](runbook/payroll_50_employees.csv).
 
-All operations are reproducible against Stellar Testnet using the headless [`tools/streampay-cli`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/tools/streampay-cli) or `stellar contract invoke`.
+All operations are reproducible against Stellar Testnet using the headless [`tools/streampay-cli`](../tools/streampay-cli) or `stellar contract invoke`.
 
 ### Step 1: Ingesting & Validating Payroll CSV
 
@@ -133,7 +150,7 @@ streampay --contract "$CONTRACT_ID" --signer env create \
   --cancelable
 ```
 
-The migration harness submits the batch throttled at 2 transactions per ledger close to avoid sequence number collisions. Output is recorded in [`docs/runbook/migration_manifest.json`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/runbook/migration_manifest.json) and [`docs/runbook/testnet_migration_execution.log`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/runbook/testnet_migration_execution.log).
+The migration harness submits the batch throttled at 2 transactions per ledger close to avoid sequence number collisions. Output is recorded in [`docs/runbook/migration_manifest.json`](runbook/migration_manifest.json) and [`docs/runbook/testnet_migration_execution.log`](runbook/testnet_migration_execution.log).
 
 ### Step 4: Real-Time Accrual & Verification
 
@@ -302,7 +319,7 @@ Soroban state entries require rent maintenance. If an entry reaches its TTL clif
 
 ## 5. Incident Escalation & Security Policy
 
-Escalation boundaries are strictly wired to [`SECURITY.md`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/SECURITY.md):
+Escalation boundaries are strictly wired to [`SECURITY.md`](../SECURITY.md):
 
 ```text
  ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -323,6 +340,67 @@ Escalation boundaries are strictly wired to [`SECURITY.md`](file:///home/abujula
              Direct maintainer escalation                 Standard sprint triage
 ```
 
+The script will:
+1. Boot mock indexer and reconciler endpoints exposing Prometheus `/metrics`.
+2. Inject each simulated fault:
+   - High event lag (`P95 > 30s`)
+   - Queue depth surge (`depth = 1200`)
+   - RPC error burst (`error_rate = 25%`)
+   - State divergence (`stream_balance divergence detected`)
+3. Validate alert trigger criteria and verify metrics exposition syntax.
+4. Reset faults and assert recovery.
+
+---
+
+## 5. Transactional Outbox Alerts
+
+These alerts cover the transactional outbox inside the production indexer
+(`GET /metrics` on the indexer port, spec in [docs/OUTBOX.md](./OUTBOX.md)).
+Delivery intents are never lost — an alarm here means consumers are receiving
+events late, duplicating, or dead-lettering, not that data is gone.
+
+### `IndexerOutboxDepthDiverging`
+
+- **Severity**: Critical (P1)
+- **Condition**: `streampay_outbox_divergence_alarm == 1` for > 1 minute — total outbox depth has grown strictly monotonically across every tick sample above `OUTBOX_ALARM_MIN_DEPTH`.
+- **User Impact**: Replay feeds (`GET /streams/:id/events?after=`) and push consumers fall progressively further behind chain truth. Nothing is lost (intents are durable), but staleness is unbounded until it is addressed.
+
+#### Diagnosis
+1. See which state is accumulating:
+   ```bash
+   curl -s http://localhost:8787/api/outbox/stats
+   ```
+2. Check per-consumer health and rate budgets:
+   ```bash
+   curl -s http://localhost:8787/api/outbox/consumers
+   curl -s http://localhost:8787/api/outbox/intents?state=dead
+   ```
+3. Confirm the dispatcher is alive (`streampay_outbox_dispatch_total` must advance).
+
+#### Remediation
+1. Disable the failing consumer channel so healthy ones drain:
+   `POST /api/outbox/consumers/:id/status {"status":"disabled"}`.
+2. Raise dispatcher throughput (`OUTBOX_BATCH_SIZE`, `OUTBOX_TICK_MS`) or scale the consumer.
+3. After endpoint recovery, replay dead letters: `POST /api/outbox/intents/:id/replay`.
+4. If ingestion itself outran drain durably, replay pull consumers from their cursors — the journal retains everything.
+
+### `IndexerOutboxDeliveryLagHigh`
+
+- **Severity**: Warning (P2)
+- **Condition**: Oldest pending intent older than 60s for > 3 minutes.
+- **Diagnosis / Remediation**: Same sequence as above; typically one slow endpoint or an over-throttled `rate_limit_per_sec`. Force a catch-up tick with `POST /api/outbox/flush`.
+
+### `IndexerOutboxDeadLetterRateHigh`
+
+- **Severity**: Warning (P2)
+- **Condition**: > 50 intents dead-lettered within 10 minutes.
+- **Diagnosis / Remediation**: Inspect `dead_reason` on the DLQ rows (`max_attempts` vs `reorg_retracted`). Reorg retractions are expected after a chain reorg coordinated by the reconciler — verify `streampay_outbox_retracted_total` matches the reconciler's divergence report before replaying anything. Consumer endpoint failures require fixing the endpoint first, then batch-replaying dead intents.
+
+### `IndexerOutboxBackpressured`
+
+- **Severity**: Warning (P2)
+- **Condition**: Any `rejected_backpressure` dispatch outcome within 5 minutes.
+- **Diagnosis / Remediation**: `OUTBOX_MAX_DEPTH` engaged intentionally to protect a degraded downstream. Confirm which consumer is degraded, clear it, and depth will drain at ~2,900 intents/sec. If the threshold is chronically low for your ingestion rate, raise `OUTBOX_MAX_DEPTH`.
 ### Absolute Rules
 1. **Never open a public issue** for any bug that could misplace funds or break contract accounting invariants.
 2. **Use GitHub Private Vulnerability Reporting** to reach core maintainers under confidential disclosure.
