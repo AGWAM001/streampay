@@ -79,7 +79,7 @@ jobs:
         if: matrix.target != 'campaign_wasm'
         run: scripts/fuzz/coverage.sh "fuzz/campaign/${{ matrix.target }}" ${{ matrix.target }} || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: fuzz-${{ matrix.target }}
@@ -139,7 +139,7 @@ jobs:
           for d in artifacts/fuzz-*/corpus/*/; do t=$(basename "$d"); mkdir -p "fuzz/corpus/$t"; cp "$d"* "fuzz/corpus/$t/" 2>/dev/null || true; done
           CAMPAIGN_REPORT=combined/REPORT.md scripts/fuzz/corpus-sync.sh push
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: fuzz-campaign-report
           path: |
