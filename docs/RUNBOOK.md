@@ -10,15 +10,15 @@ This runbook carries an end-to-end worked example of onboarding a **50-employee 
 
 | Alert Name | Severity | Service | Soak Baseline (Issue #27) | Runbook Link |
 |---|---|---|---|---|
-| `IndexerEventLagHigh` | Warning (P2) | Indexer | P95 lag ≤ 8.2s (normal ~5s ledger) | [#indexereventlaghigh](#indexereventlaghigh) |
-| `IndexerEventLagCritical` | Critical (P1) | Indexer | P99 lag ≤ 12.4s (max transient 25s) | [#indexereventlagcritical](#indexereventlagcritical) |
-| `IndexerLedgerLagCritical` | Critical (P1) | Indexer | Steady-state lag ≤ 1 ledger | [#indexerledgerlagcritical](#indexerledgerlagcritical) |
-| `IndexerDBDepthGrowing` | Warning (P2) | Indexer | Queue drains < 50 items/batch | [#indexerdbdepthgrowing](#indexerdbdepthgrowing) |
-| `IndexerDBDepthCritical` | Critical (P1) | Indexer | Max burst depth observed = 120 | [#indexerdbdepthcritical](#indexerdbdepthcritical) |
-| `SorobanRPCErrorRateHigh` | Warning (P2) | RPC Client | Normal baseline error rate = 0.04% | [#sorobanrpcerrorratehigh](#sorobanrpcerrorratehigh) |
-| `SorobanRPCErrorRateCritical` | Critical (P1) | RPC Client | Rate limit / node outage threshold > 20% | [#sorobanrpcerrorratecritical](#sorobanrpcerrorratecritical) |
-| `ReconciliationDivergenceDetected` | **Critical (P0)** | Reconciler | **0 divergences** across 10,000 txs | [#reconciliationdivergencedetected](#reconciliationdivergencedetected) |
-| `ReconcilerJobStalled` | Critical (P1) | Reconciler | Scheduled run interval = 60s | [#reconcilerjobstalled](#reconcilerjobstalled) |
+| `IndexerEventLagHigh` | Warning (P2) | Indexer | P95 lag ≤ 8.2s (normal ~5s ledger) | §4 decision tree |
+| `IndexerEventLagCritical` | Critical (P1) | Indexer | P99 lag ≤ 12.4s (max transient 25s) | §4 decision tree |
+| `IndexerLedgerLagCritical` | Critical (P1) | Indexer | Steady-state lag ≤ 1 ledger | §4 decision tree |
+| `IndexerDBDepthGrowing` | Warning (P2) | Indexer | Queue drains < 50 items/batch | §4 decision tree |
+| `IndexerDBDepthCritical` | Critical (P1) | Indexer | Max burst depth observed = 120 | §4 decision tree |
+| `SorobanRPCErrorRateHigh` | Warning (P2) | RPC Client | Normal baseline error rate = 0.04% | §4 decision tree |
+| `SorobanRPCErrorRateCritical` | Critical (P1) | RPC Client | Rate limit / node outage threshold > 20% | §4 decision tree |
+| `ReconciliationDivergenceDetected` | **Critical (P0)** | Reconciler | **0 divergences** across 10,000 txs | §4 decision tree |
+| `ReconcilerJobStalled` | Critical (P1) | Reconciler | Scheduled run interval = 60s | §4 decision tree |
 | `IndexerOutboxDepthDiverging` | Critical (P1) | Indexer Outbox | 10k-intent backlog drains in ~3.5s | [#indexeroutboxdepthdiverging](#indexeroutboxdepthdiverging) |
 | `IndexerOutboxDeliveryLagHigh` | Warning (P2) | Indexer Outbox | Oldest pending intent < 5s at steady state | [#indexeroutboxdeliverylaghigh](#indexeroutboxdeliverylaghigh) |
 | `IndexerOutboxDeadLetterRateHigh` | Warning (P2) | Indexer Outbox | 0 dead letters for healthy endpoints | [#indexeroutboxdeadletterratehigh](#indexeroutboxdeadletterratehigh) |
@@ -81,15 +81,15 @@ Every payroll operation is subject to formal verification invariants:
 1. **Per-Stream Invariant**: `0 <= withdrawn <= streamed <= deposit` at every ledger sequence.
 2. **Conservation of Funds Invariant**: Contract token balance $\ge \sum (\text{deposit} - \text{withdrawn})$ across all active streams.
 3. **Deterministic CEI Ordering**: All payouts follow strict Checks-Effects-Interactions (CEI) to preclude reentrancy windows.
-4. **No Silent Panics**: All operational rejections emit explicit `StreamError` codes (1..46) defined in [`docs/ERRORS.md`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/ERRORS.md) and [`frontend/lib/errors.ts`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/frontend/lib/errors.ts).
+4. **No Silent Panics**: All operational rejections emit explicit `StreamError` codes (1..48) defined in [`docs/ERRORS.md`](errors.md) and [`frontend/lib/errors.ts`](../frontend/lib/errors.ts).
 
 ---
 
 ## 2. 50-Employee Payroll Migration Walkthrough
 
-This walkthrough demonstrates the exact operational procedure for onboarding 50 employees using the synthetic payroll dataset located at [`docs/runbook/payroll_50_employees.csv`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/runbook/payroll_50_employees.csv).
+This walkthrough demonstrates the exact operational procedure for onboarding 50 employees using the synthetic payroll dataset located at [`docs/runbook/payroll_50_employees.csv`](runbook/payroll_50_employees.csv).
 
-All operations are reproducible against Stellar Testnet using the headless [`tools/streampay-cli`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/tools/streampay-cli) or `stellar contract invoke`.
+All operations are reproducible against Stellar Testnet using the headless [`tools/streampay-cli`](../tools/streampay-cli) or `stellar contract invoke`.
 
 ### Step 1: Ingesting & Validating Payroll CSV
 
@@ -150,7 +150,7 @@ streampay --contract "$CONTRACT_ID" --signer env create \
   --cancelable
 ```
 
-The migration harness submits the batch throttled at 2 transactions per ledger close to avoid sequence number collisions. Output is recorded in [`docs/runbook/migration_manifest.json`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/runbook/migration_manifest.json) and [`docs/runbook/testnet_migration_execution.log`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/docs/runbook/testnet_migration_execution.log).
+The migration harness submits the batch throttled at 2 transactions per ledger close to avoid sequence number collisions. Output is recorded in [`docs/runbook/migration_manifest.json`](runbook/migration_manifest.json) and [`docs/runbook/testnet_migration_execution.log`](runbook/testnet_migration_execution.log).
 
 ### Step 4: Real-Time Accrual & Verification
 
@@ -319,7 +319,7 @@ Soroban state entries require rent maintenance. If an entry reaches its TTL clif
 
 ## 5. Incident Escalation & Security Policy
 
-Escalation boundaries are strictly wired to [`SECURITY.md`](file:///home/abujulaybeeb/Documents/Drips/Drips%20pearl/streampay/SECURITY.md):
+Escalation boundaries are strictly wired to [`SECURITY.md`](../SECURITY.md):
 
 ```text
  ┌─────────────────────────────────────────────────────────────────────────────────┐
