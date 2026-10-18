@@ -60,7 +60,6 @@ export default function WebhooksSettingsPage() {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [dlqItems, setDlqItems] = useState<WebhookDLQItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   // Form states
   const [newUrl, setNewUrl] = useState("");
@@ -70,24 +69,17 @@ export default function WebhooksSettingsPage() {
   // New secret modal / banner
   const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      if (activeTab === "endpoints") {
-        const res = await fetch("/api/webhooks?type=endpoints");
-        if (res.ok) setEndpoints(await res.json());
-      } else if (activeTab === "deliveries") {
-        const res = await fetch("/api/webhooks?type=deliveries");
-        if (res.ok) setDeliveries(await res.json());
-      } else if (activeTab === "dlq") {
-        const res = await fetch("/api/webhooks?type=dlq");
-        if (res.ok) setDlqItems(await res.json());
-      }
-    } catch (e: unknown) {
-      toast.error(`Failed to load webhook data: ${String(e)}`);
-    } finally {
-      setLoading(false);
-    }
+  const loadData = useCallback(() => {
+    const type = activeTab;
+    fetch(`/api/webhooks?type=${type}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        if (type === "endpoints") setEndpoints(data);
+        else if (type === "deliveries") setDeliveries(data);
+        else setDlqItems(data);
+      })
+      .catch((e: unknown) => toast.error(`Failed to load webhook data: ${String(e)}`));
   }, [activeTab, toast]);
 
   useEffect(() => {
