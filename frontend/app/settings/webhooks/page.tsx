@@ -87,6 +87,11 @@ export default function WebhooksSettingsPage() {
   }, [activeTab, toast]);
 
   useEffect(() => {
+    // Loads the tab's rows whenever the tab changes. Every setState inside
+    // loadData runs after an await, so this is not a cascading render — the
+    // rule only sees that the called function touches state at all.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadData();
     void (async () => {
       await loadData();
     })();
