@@ -287,6 +287,8 @@ pub fn reserve_stream_ids(env: &Env, count: u32) -> Result<u64, StreamError> {
 
 /// Loads a stream, or returns [`StreamError::StreamNotFound`].
 pub fn get_stream(env: &Env, id: u64) -> Result<Stream, StreamError> {
+    #[cfg(test)]
+    crate::cei_trace::record(&std::format!("read persistent Stream({id})"));
     env.storage()
         .persistent()
         .get(&DataKey::Stream(id))
@@ -295,6 +297,8 @@ pub fn get_stream(env: &Env, id: u64) -> Result<Stream, StreamError> {
 
 /// Persists a stream and extends its storage TTL.
 pub fn put_stream(env: &Env, stream: &Stream) {
+    #[cfg(test)]
+    crate::cei_trace::record(&std::format!("write persistent Stream({})", stream.id));
     let key = DataKey::Stream(stream.id);
     env.storage().persistent().set(&key, stream);
     env.storage()
@@ -383,6 +387,8 @@ pub fn set_schema_version(env: &Env, version: u32) {
 
 /// Checks whether the contract is currently frozen.
 pub fn is_frozen(env: &Env) -> bool {
+    #[cfg(test)]
+    crate::cei_trace::record("read instance ContractFrozen");
     env.storage()
         .instance()
         .get(&DataKey::ContractFrozen)
@@ -391,6 +397,8 @@ pub fn is_frozen(env: &Env) -> bool {
 
 /// Updates the contract freeze state and extends instance storage TTL.
 pub fn set_frozen(env: &Env, frozen: bool) {
+    #[cfg(test)]
+    crate::cei_trace::record("write instance ContractFrozen");
     env.storage()
         .instance()
         .set(&DataKey::ContractFrozen, &frozen);
