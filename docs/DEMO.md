@@ -49,17 +49,48 @@ Before starting, ensure your system has the following tools installed:
    ```
 3. **cURL**:
    Required for communicating with Friendbot and Horizon REST endpoints.
-4. **Node.js** ($\ge$ 20, optional for frontend):
+4. **OpenSSL** ($\ge$ 1.1.1):
+   Required to verify the signed release attestation before deploying. Preinstalled
+   on most systems; `openssl version` to check.
+5. **Node.js** ($\ge$ 20, optional for frontend):
    Required only if running the Next.js web application.
 
 ---
 
 ## Option A: One-Command Quickstart
 
-To build the Wasm, fund identities, deploy the contract, create a custom demo asset, and open a live 1-hour stream in a single command:
+To build the Wasm, **prove it against a signed release attestation**, fund
+identities, deploy the contract, create a custom demo asset, and open a live
+1-hour stream in a single command:
 
 ```bash
 ./scripts/deploy_testnet.sh
+```
+
+### The deployment gate
+
+Nothing is deployed until the bytes have been proven — a public chain cannot
+un-deploy, so verification happens *before* the transaction, never after. The
+script runs
+[`scripts/verify_wasm.sh`](../scripts/verify_wasm.sh), which recomputes the
+Wasm digest, fetches the signed attestation for the release, verifies the
+Ed25519 signature against the public key pinned in your own checkout, and
+confirms the attestation names the bytes you hold. See
+[`ATTESTATION.md`](./ATTESTATION.md) for what that does and does not prove.
+
+If you are demoing **unreleased** work, no attestation describes it and the gate
+correctly refuses. Say so deliberately rather than silently:
+
+```bash
+# Deploy the published, provable artifact instead of your local build
+gh release download v0.5.0 --pattern 'streampay_contract.wasm' --dir /tmp
+CONTRACT_WASM=/tmp/streampay_contract.wasm ./scripts/deploy_testnet.sh
+
+# Verify against a specific release tag
+WASM_ATTESTATION_TAG=v0.5.0 ./scripts/deploy_testnet.sh
+
+# Deploy unproven local work to testnet, knowingly (recorded in the summary)
+SKIP_WASM_ATTESTATION=1 ./scripts/deploy_testnet.sh
 ```
 
 ### Expected Terminal Output:
@@ -72,6 +103,19 @@ To build the Wasm, fund identities, deploy the contract, create a custom demo as
 
 ==> Building contract Wasm
     Wasm binary ready at: target/wasm32v1-none/release/streampay_contract.wasm
+
+==> Verifying the Wasm against a signed release attestation
+    no WASM_ATTESTATION_TAG set — resolving the latest published release
+
+==> StreamPay Wasm attestation check
+    artifact : target/wasm32v1-none/release/streampay_contract.wasm
+    sha256   : 7f3c1e9b...  (184320 bytes)
+    attestation: release asset: Neziahtech/streampay@v0.5.0
+    signature  : valid (key attestations/signing-key.pub)
+    digest     : matches the attested wasm_sha256
+============================================================
+  ATTESTATION VERIFIED — this Wasm is the signed release build
+============================================================
 
 ==> Deploying or verifying contract on testnet
     Deploying new contract to testnet (governor: GBUQNYE74F2UKN3J5N2K...)
@@ -139,7 +183,7 @@ curl -sf "https://horizon-testnet.stellar.org/accounts/$(stellar keys address se
 
 ---
 
-### Step 2: Build & Deploy the Contract
+### Step 2: Build, Verify & Deploy the Contract
 
 Build the contract Wasm targeting `wasm32v1-none`:
 
@@ -147,6 +191,27 @@ Build the contract Wasm targeting `wasm32v1-none`:
 cd contracts/streaming-payments
 stellar contract build
 cd ../..
+```
+
+**Verify before you deploy.** A Soroban contract is immutable at its address and
+cannot be un-deployed, so the bytes have to be proven first, not reviewed after.
+This recomputes the digest, fetches the signed attestation, checks the Ed25519
+signature against the key pinned in your checkout, and confirms the attestation
+describes the Wasm you are holding:
+
+```bash
+scripts/verify_wasm.sh target/wasm32v1-none/release/streampay_contract.wasm \
+  --tag v0.5.0 --require-repro
+```
+
+Expect `ATTESTATION VERIFIED`, exit status `0`. **Do not deploy on any other
+result** — a `DIGEST MISMATCH` or a failed signature means the bytes you are
+about to put on chain are not the bytes that were reviewed and signed. If you
+are walking through this on unreleased local code, no attestation describes it;
+reproduce the build yourself instead of deploying blind:
+
+```bash
+scripts/reproducible_build.sh --ref v0.5.0
 ```
 
 Deploy the contract to testnet. The constructor binds the treasury governor at deploy time:
