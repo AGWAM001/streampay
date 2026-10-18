@@ -107,6 +107,13 @@ jobs:
       - name: Differential tests (against shared vector corpus)
         run: node --experimental-strip-types --test lib/oracle.test.ts
 
+      # Network/contract indicator logic (issue #33): the wallet-vs-app network
+      # comparison is exercised with a stubbed Freighter, so both wrong-network
+      # directions (mainnet wallet on a testnet dapp and vice versa) are
+      # covered without a browser extension.
+      - name: Network indicator tests
+        run: node --experimental-strip-types --test lib/network.test.ts
+
       # -----------------------------------------------------------------------
       # WCAG 2.1 AA accessibility gate (issue #98)
       #
