@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
     {
       status: 200,
       headers: {
+        // Nonce replay protection is only as durable as the in-memory store (prototype-grade).
         "X-Discovery-Durability": "prototype-in-memory",
       },
     }
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
     {
       status: 201,
       headers: {
+        // Nonce replay protection is only as durable as the in-memory store (prototype-grade).
         "X-Discovery-Durability": "prototype-in-memory",
       },
     }

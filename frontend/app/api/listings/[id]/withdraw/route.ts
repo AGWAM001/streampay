@@ -79,6 +79,7 @@ export async function POST(
     {
       status: 200,
       headers: {
+        // Nonce replay protection is only as durable as the in-memory store (prototype-grade).
         "X-Discovery-Durability": "prototype-in-memory",
       },
     }

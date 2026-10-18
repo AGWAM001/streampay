@@ -289,7 +289,7 @@ The directory service validates submissions by executing the following steps in 
 The reference discovery directory service in the frontend application (`frontend/lib/discovery/store.ts` and `frontend/lib/discovery/rateLimit.ts`) operates with **in-memory process-local storage** via `globalThis`:
 - **Directory Records & Proposals**: Stored in JavaScript `Map` collections.
 - **Rate Limit Buckets**: Stored in a process-local IP map (`ipBuckets`).
-- **API Visibility**: All discovery HTTP endpoints emit an `X-Discovery-Durability: prototype-in-memory` header to explicitly advertise this persistence level to API consumers.
+- **API Visibility & Nonce Replay Durability**: All discovery HTTP endpoints emit an `X-Discovery-Durability: prototype-in-memory` header to explicitly advertise this persistence level to API consumers. Note: nonce replay protection is only as durable as the in-memory store — consumed nonces die with the process, so nobody should read the replay defense as production-grade until backed by persistent storage.
 
 ### 8.2 Operational Caveats in Serverless & Distributed Environments
 
@@ -302,6 +302,8 @@ Deploying process-local in-memory stores in serverless or multi-instance environ
    Process-local rate limiting buckets reset upon container recycling, allowing clients to reset their request quota by routing through newly spawned serverless instances.
 4. **Consent Record Auditability**:
    Consent and withdrawal signatures stored solely in ephemeral memory are purged across process lifecycles, which undermines long-term non-repudiation and consent audit trails.
+5. **Nonce Replay Protection Durability**:
+   Nonce replay protection is only as durable as the in-memory store. The `usedNonces` set dies with the process and is not synchronized across serverless execution instances, so the replay defense is strictly prototype-grade until persisted (e.g., via the `discovery_nonces` table in `indexer/db/schema.sql`).
 
 ### 8.3 Production Architecture: Moving Storage Behind the Indexer Store
 

@@ -68,11 +68,18 @@ export interface IDiscoveryStore {
  *    queries and rate limits.
  * 3. Consent Audit Durability:
  *    Consent records that die with the process undermine the durable consent story.
+ * 4. Nonce Replay Defense Durability:
+ *    Nonce replay protection is only as durable as the in-memory store — the `usedNonces` set dies
+ *    with the process and does not sync across serverless instances, so nobody should read this
+ *    replay defense as production-grade.
+ *
+ * All discovery HTTP endpoints emit an `X-Discovery-Durability: prototype-in-memory` header
+ * alongside this notice: nonce replay protection is only as durable as the in-memory store.
  *
  * Production Migration Path:
  * - Back this `IDiscoveryStore` interface with the StreamPay indexer SQLite/Postgres store
- *   (see `indexer/src/store.ts` and `indexer/db/schema.sql` for `discovery_listings`
- *   and `discovery_consent_vault` tables).
+ *   (see `indexer/src/store.ts` and `indexer/db/schema.sql` for `discovery_listings`,
+ *   `discovery_consent_vault`, and `discovery_nonces` tables).
  * - Maintain strict physical and authorization separation between the public listings index
  *   and the private consent vault.
  */

@@ -42,6 +42,7 @@ export async function GET(
     headers: {
       "X-RateLimit-Remaining": String(rateLimit.remaining),
       "X-RateLimit-Reset": String(rateLimit.reset),
+      // Nonce replay protection is only as durable as the in-memory store (prototype-grade).
       "X-Discovery-Durability": "prototype-in-memory",
     },
   });
