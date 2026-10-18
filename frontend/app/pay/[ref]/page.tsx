@@ -7,10 +7,7 @@ import {
   readPaymentLinkAction,
   PaymentLinkResolution,
 } from "@/app/actions";
-import {
-  verifyRecipientBinding,
-  PaymentLinkData,
-} from "@/lib/payment-link";
+import { verifyRecipientBinding } from "@/lib/payment-link";
 import {
   claimStreamWithReceipt,
   ClaimReceipt,
@@ -18,7 +15,6 @@ import {
   describeError,
 } from "@/lib/stellar";
 import { computeAccruedAt } from "@/lib/accrual";
-import type { StreamView } from "@/lib/stream-types";
 
 function formatUnits(amountStroops: string | bigint): string {
   const n = Number(amountStroops) / 10_000_000;
