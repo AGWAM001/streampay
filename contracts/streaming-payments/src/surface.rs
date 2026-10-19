@@ -1,0 +1,684 @@
+//! Error-surface instrumentation.
+//!
+//! Every expected failure in the contract funnels through [`reject`]: a
+//! rejection site names a [`Branch`] — one `(entrypoint, condition)` validation
+//! decision — instead of returning a bare [`StreamError`]. The branch registry
+//! is the single source of truth for the mapping
+//! `(entrypoint, condition) -> error code`, so that:
+//!
+//! * the generated test matrix (`error_surface_test.rs`) can prove that every
+//!   *reachable* branch fires its declared code, and
+//! * `docs/ERRORS.md` is generated from the same table (see
+//!   `examples/error_surface_doc.rs`) and diffed in CI.
+//!
+//! Because the table is data, a hand-maintained list of "which test covers
+//! which code" never exists: the mapping is emitted from here.
+//!
+//! Instrumentation is test-only. In non-test builds [`reject`] compiles down to
+//! the error it returns (the `#[cfg(test)]` trace is the only overhead, and it
+//! disappears entirely in the Wasm build).
+
+use crate::errors::StreamError;
+
+/// Whether a rejection branch is expected to be reachable at runtime.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Reachability {
+    /// A probe in `error_surface_test.rs` triggers this branch, and the test
+    /// asserts the exact branch (not merely *an* error) fired.
+    Reachable,
+    /// A defensive guard whose precondition cannot occur for any stored stream,
+    /// because the contract's invariants rule it out. Documented, and reported
+    /// as unreachable by the coverage test rather than probed.
+    Defensive,
+}
+
+/// One validation decision in the contract.
+///
+/// A branch is a single `(entrypoint, condition)` pair that maps to exactly one
+/// [`StreamError`]. Branch-level (rather than code-level) granularity is what
+/// makes the matrix meaningful: several branches may intentionally share a code
+/// (e.g. every zero-amount rejection is [`StreamError::ZeroAmount`]).
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Branch {
+    // --------------------------------------------------------- create_stream
+    CreateDepositNonPositive,
+    CreateStartTimeInPast,
+    CreateInvalidTimeRange,
+    CreateDurationTooLong,
+    // -------------------------------------------------------------- withdraw
+    WithdrawAmountNonPositive,
+    WithdrawAmountExceedsAvailable,
+    // ---------------------------------------------------------- withdraw_max
+    WithdrawMaxNothingToWithdraw,
+    // --------------------------------------------------------- cancel_stream
+    CancelStreamNotCancellable,
+    CancelStreamNotAuthorized,
+    // --------------------------------------------------------------- top_up
+    TopUpAmountNonPositive,
+    TopUpDepositOverflow,
+    // ------------------------------------------------- shared storage/math
+    /// `stream.rs::get_stream` finds no stored entry.
+    StreamNotFound,
+    /// A terminal (cancelled/depleted) stream is mutated.
+    StreamNotActive,
+    /// `validate_capacity`: `deposit * duration` would exceed `u128`.
+    CapacityOverflow,
+    /// `streamed_at`: `deposit * elapsed` would exceed `u128`.
+    RateProductOverflow,
+    /// `available_amount`: `streamed - withdrawn` would underflow.
+    AvailableBalanceOverflow,
+    /// `cancel_amounts`: the pro-rata split would underflow.
+    CancelSplitOverflow,
+    /// `pay_out`: `withdrawn + amount` would overflow `i128`.
+    PayoutOverflow,
+    // ----------------------------------------------------------- treasury
+    /// `set_fee_bps`: the requested rate exceeds `MAX_FEE_BPS`.
+    SetFeeRateTooHigh,
+    /// `set_fee_bps` / `nominate_governor` / `withdraw_treasury`: the caller
+    /// is not the treasury governor.
+    GovernorNotAllowed,
+    /// `accept_governor`: no nomination is pending.
+    AcceptGovernorNoPending,
+    /// `accept_governor`: the caller is not the nominated address.
+    AcceptGovernorNotNominee,
+    /// `withdraw_treasury`: amount is zero or negative.
+    WithdrawTreasuryAmountNonPositive,
+    /// `withdraw_treasury`: amount exceeds fees collected minus fees already
+    /// withdrawn.
+    WithdrawTreasuryExceedsBalance,
+    // ------------------------------------------------------- sponsor registry
+    /// `register_sponsor`: a budget cap (period or per-beneficiary) is <= 0.
+    RegisterLimitNonPositive,
+    // ---------------------------------------------------- sponsored_withdraw
+    SponsoredWithdrawAmountNonPositive,
+    SponsoredWithdrawAmountExceedsAvailable,
+    /// No sponsor budget is registered under the caller-supplied address.
+    SponsorNotFound,
+    /// The sponsor's registered budget is paused.
+    SponsorInactive,
+    /// The beneficiary never enrolled an ed25519 consent key.
+    BeneficiaryNotEnrolled,
+    /// The relayed claim was submitted after its signed `deadline`.
+    ClaimExpired,
+    /// The claim's nonce was already spent for this (sponsor, beneficiary).
+    ClaimNonceReplay,
+    /// The claim would push the sponsor's current-period spend over its cap.
+    SponsorBudgetPeriodExceeded,
+    /// The claim would push this beneficiary's window spend over its cap.
+    SponsorBudgetBeneficiaryExceeded,
+    // --------------------------------------------------- scheduled intents
+    /// No stored intent exists for the supplied id.
+    IntentNotFound,
+    /// An operation requiring a pending intent found a terminal intent.
+    IntentNotPending,
+    /// `execute_scheduled`: the next occurrence is not due yet.
+    IntentNotYetExecutable,
+    /// `execute_scheduled` / `cancel_scheduled`: the intent expired.
+    IntentExpired,
+    /// `cancel_scheduled`: the execution window has opened.
+    IntentNotCancellable,
+    /// A schedule parameter is inconsistent or outside its supported bounds.
+    ScheduleInvalidParameters,
+    /// A stored intent no longer matches its authorization commitment.
+    IntentParamsMismatch,
+    /// `reclaim_expired`: the intent has not expired yet.
+    IntentNotExpired,
+    // --------------------------------------------------- token interactions
+    /// `create_stream`: the token refused the pull of `deposit_amount + fee`
+    /// (missing balance/allowance, a non-transferable asset, a non-SEP-41
+    /// callee). Nothing is persisted, so no stream id is consumed.
+    CreateDepositTransferFailed,
+    /// `top_up`: the token refused the pull of the added funds; `deposit` is
+    /// left unchanged.
+    TopUpTransferFailed,
+    /// `withdraw` / `withdraw_max` / the recipient leg of `cancel_stream`: the
+    /// token refused the payout to the stream recipient.
+    RecipientPayoutFailed,
+    /// `cancel_stream`: the token refused the refund of unaccrued funds to the
+    /// sender; the whole cancellation rolls back.
+    SenderRefundFailed,
+    /// `withdraw_treasury`: the token refused the payout of collected fees.
+    TreasuryPayoutFailed,
+    // ------------------------------------------------------------ policy
+    /// `create_stream`: asset is not on the policy allowlist.
+    PolicyAssetNotAllowed,
+    /// `policy_execute_asset`: timelock delay has not elapsed.
+    PolicyTimelockNotElapsed,
+    /// `policy_execute_asset`: no change queued for the asset.
+    PolicyNoQueuedChange,
+    /// policy admin entrypoints called before initialization.
+    PolicyNotInitialized,
+    /// `policy_accept_handoff` / `policy_cancel_handoff`: no handoff pending.
+    PolicyNoPendingHandoff,
+    // ---------------------------------------------------- create_streams_batch
+    /// `create_streams_batch`: entries is empty.
+    CreateBatchEmpty,
+    /// `create_streams_batch`: entries length exceeds MAX_BATCH.
+    CreateBatchTooLarge,
+    // ------------------------------------------------ upgrade & freeze
+    /// The contract is currently frozen for maintenance or upgrade.
+    ContractFrozen,
+    /// Storage migration was invoked while the contract is not frozen.
+    MigrationNotFrozen,
+    /// `execute_upgrade`: no upgrade proposal is pending.
+    ExecuteUpgradeNoPending,
+    /// `cancel_upgrade`: no upgrade proposal is pending.
+    CancelUpgradeNoPending,
+    /// `execute_upgrade`: the timelock delay has not yet expired.
+    TimelockNotExpired,
+    /// `propose_upgrade`: the proposed delay is shorter than MIN_UPGRADE_DELAY_SECONDS.
+    UpgradeDelayTooShort,
+    /// `migrate_storage`: the schema has already been migrated to the target version.
+    AlreadyMigrated,
+    // ------------------------------------------------ stream policy floors
+    PolicyRateBelowFloor,
+    PolicyRateAboveCeiling,
+    PolicyDurationBelowFloor,
+    PolicyDurationAboveCeiling,
+    PolicyDepositBelowFloor,
+    // ------------------------------------------------------------- oracle
+    InvalidOracleThreshold,
+    OraclePublishersNotConfigured,
+    OracleReportTooOld,
+    NotOraclePublisher,
+}
+
+impl Branch {
+    /// Every branch, in declaration order. The matrix test walks this list and
+    /// the coverage test requires each [`StreamError`] variant to be produced by
+    /// one of these (or retired).
+    pub const ALL: [Branch; 70] = [
+        Branch::CreateDepositNonPositive,
+        Branch::CreateStartTimeInPast,
+        Branch::CreateInvalidTimeRange,
+        Branch::CreateDurationTooLong,
+        Branch::WithdrawAmountNonPositive,
+        Branch::WithdrawAmountExceedsAvailable,
+        Branch::WithdrawMaxNothingToWithdraw,
+        Branch::CancelStreamNotCancellable,
+        Branch::CancelStreamNotAuthorized,
+        Branch::TopUpAmountNonPositive,
+        Branch::TopUpDepositOverflow,
+        Branch::StreamNotFound,
+        Branch::StreamNotActive,
+        Branch::CapacityOverflow,
+        Branch::RateProductOverflow,
+        Branch::AvailableBalanceOverflow,
+        Branch::CancelSplitOverflow,
+        Branch::PayoutOverflow,
+        Branch::SetFeeRateTooHigh,
+        Branch::GovernorNotAllowed,
+        Branch::AcceptGovernorNoPending,
+        Branch::AcceptGovernorNotNominee,
+        Branch::WithdrawTreasuryAmountNonPositive,
+        Branch::WithdrawTreasuryExceedsBalance,
+        Branch::RegisterLimitNonPositive,
+        Branch::SponsoredWithdrawAmountNonPositive,
+        Branch::SponsoredWithdrawAmountExceedsAvailable,
+        Branch::SponsorNotFound,
+        Branch::SponsorInactive,
+        Branch::BeneficiaryNotEnrolled,
+        Branch::ClaimExpired,
+        Branch::ClaimNonceReplay,
+        Branch::SponsorBudgetPeriodExceeded,
+        Branch::SponsorBudgetBeneficiaryExceeded,
+        Branch::IntentNotFound,
+        Branch::IntentNotPending,
+        Branch::IntentNotYetExecutable,
+        Branch::IntentExpired,
+        Branch::IntentNotCancellable,
+        Branch::ScheduleInvalidParameters,
+        Branch::IntentParamsMismatch,
+        Branch::IntentNotExpired,
+        Branch::CreateDepositTransferFailed,
+        Branch::TopUpTransferFailed,
+        Branch::RecipientPayoutFailed,
+        Branch::SenderRefundFailed,
+        Branch::TreasuryPayoutFailed,
+        Branch::PolicyAssetNotAllowed,
+        Branch::PolicyTimelockNotElapsed,
+        Branch::PolicyNoQueuedChange,
+        Branch::PolicyNotInitialized,
+        Branch::PolicyNoPendingHandoff,
+        Branch::CreateBatchEmpty,
+        Branch::CreateBatchTooLarge,
+        Branch::ContractFrozen,
+        Branch::MigrationNotFrozen,
+        Branch::ExecuteUpgradeNoPending,
+        Branch::CancelUpgradeNoPending,
+        Branch::TimelockNotExpired,
+        Branch::UpgradeDelayTooShort,
+        Branch::AlreadyMigrated,
+        Branch::PolicyRateBelowFloor,
+        Branch::PolicyRateAboveCeiling,
+        Branch::PolicyDurationBelowFloor,
+        Branch::PolicyDurationAboveCeiling,
+        Branch::PolicyDepositBelowFloor,
+        Branch::InvalidOracleThreshold,
+        Branch::OraclePublishersNotConfigured,
+        Branch::OracleReportTooOld,
+        Branch::NotOraclePublisher,
+    ];
+
+    /// The entrypoint(s) through which this branch can fire. Shared helpers
+    /// (storage lookups, accrual math) can be reached from several entrypoints;
+    /// the matrix lists them all.
+    pub const fn entrypoints(self) -> &'static [&'static str] {
+        match self {
+            Branch::CreateDepositNonPositive
+            | Branch::CreateStartTimeInPast
+            | Branch::CreateInvalidTimeRange
+            | Branch::CreateDurationTooLong => &["create_stream", "create_streams"],
+            Branch::CreateBatchEmpty | Branch::CreateBatchTooLarge => &["create_streams_batch"],
+            Branch::WithdrawAmountNonPositive | Branch::WithdrawAmountExceedsAvailable => {
+                &["withdraw"]
+            }
+            Branch::WithdrawMaxNothingToWithdraw => &["withdraw_max"],
+            Branch::CancelStreamNotCancellable | Branch::CancelStreamNotAuthorized => {
+                &["cancel_stream"]
+            }
+            Branch::TopUpAmountNonPositive | Branch::TopUpDepositOverflow => &["top_up"],
+            Branch::StreamNotFound => &[
+                "get_stream",
+                "available",
+                "withdraw",
+                "withdraw_max",
+                "cancel_stream",
+                "top_up",
+                "sponsored_withdraw",
+            ],
+            Branch::StreamNotActive => &[
+                "withdraw",
+                "withdraw_max",
+                "cancel_stream",
+                "top_up",
+                "sponsored_withdraw",
+            ],
+            Branch::CapacityOverflow => &["create_stream", "top_up"],
+            Branch::RateProductOverflow => &[
+                "streamed_at",
+                "available",
+                "withdraw",
+                "withdraw_max",
+                "cancel_stream",
+                "sponsored_withdraw",
+            ],
+            Branch::AvailableBalanceOverflow => &["available", "withdraw", "withdraw_max"],
+            Branch::CancelSplitOverflow => &["cancel_stream"],
+            Branch::SetFeeRateTooHigh => &["set_fee_bps"],
+            Branch::GovernorNotAllowed => &[
+                "set_fee_bps",
+                "nominate_governor",
+                "withdraw_treasury",
+                "set_frozen",
+                "propose_upgrade",
+                "cancel_upgrade",
+                "execute_upgrade",
+                "migrate_storage",
+                "set_stream_policy",
+            ],
+            Branch::AcceptGovernorNoPending | Branch::AcceptGovernorNotNominee => {
+                &["accept_governor"]
+            }
+            Branch::WithdrawTreasuryAmountNonPositive | Branch::WithdrawTreasuryExceedsBalance => {
+                &["withdraw_treasury"]
+            }
+            Branch::PayoutOverflow => &["withdraw", "withdraw_max", "sponsored_withdraw"],
+            // ----------------------------------------------------- sponsor module
+            Branch::RegisterLimitNonPositive => &["register_sponsor"],
+            Branch::SponsoredWithdrawAmountNonPositive
+            | Branch::SponsoredWithdrawAmountExceedsAvailable
+            | Branch::SponsorNotFound
+            | Branch::SponsorInactive
+            | Branch::BeneficiaryNotEnrolled
+            | Branch::ClaimExpired
+            | Branch::ClaimNonceReplay
+            | Branch::SponsorBudgetPeriodExceeded
+            | Branch::SponsorBudgetBeneficiaryExceeded => &["sponsored_withdraw"],
+            Branch::IntentNotFound => &[
+                "get_intent",
+                "execute_scheduled",
+                "cancel_scheduled",
+                "reclaim_expired",
+            ],
+            Branch::IntentNotPending => {
+                &["execute_scheduled", "cancel_scheduled", "reclaim_expired"]
+            }
+            Branch::IntentNotYetExecutable
+            | Branch::IntentExpired
+            | Branch::IntentParamsMismatch => &["execute_scheduled"],
+            Branch::IntentNotCancellable => &["cancel_scheduled"],
+            Branch::ScheduleInvalidParameters => &["schedule_stream"],
+            Branch::IntentNotExpired => &["reclaim_expired"],
+            Branch::CreateDepositTransferFailed => &["create_stream", "create_streams"],
+            Branch::TopUpTransferFailed => &["top_up"],
+            Branch::RecipientPayoutFailed => &["withdraw", "withdraw_max", "cancel_stream"],
+            Branch::SenderRefundFailed => &["cancel_stream"],
+            Branch::TreasuryPayoutFailed => &["withdraw_treasury"],
+            Branch::PolicyAssetNotAllowed => &["create_stream", "create_streams"],
+            Branch::PolicyTimelockNotElapsed | Branch::PolicyNoQueuedChange => {
+                &["policy_execute_asset"]
+            }
+            Branch::PolicyNotInitialized => &[
+                "policy_execute_asset",
+                "policy_propose_asset",
+                "policy_propose_handoff",
+                "policy_accept_handoff",
+                "policy_cancel_handoff",
+                "policy_set_timelock_delay",
+            ],
+            Branch::PolicyNoPendingHandoff => &["policy_accept_handoff", "policy_cancel_handoff"],
+            Branch::ContractFrozen => &[
+                "create_stream",
+                "create_streams",
+                "withdraw",
+                "withdraw_max",
+                "cancel_stream",
+                "top_up",
+            ],
+            Branch::MigrationNotFrozen | Branch::AlreadyMigrated => &["migrate_storage"],
+            Branch::ExecuteUpgradeNoPending | Branch::TimelockNotExpired => &["execute_upgrade"],
+            Branch::CancelUpgradeNoPending => &["cancel_upgrade"],
+            Branch::UpgradeDelayTooShort => &["propose_upgrade"],
+            Branch::PolicyDepositBelowFloor
+            | Branch::PolicyRateBelowFloor
+            | Branch::PolicyRateAboveCeiling => &["create_stream", "create_streams", "top_up"],
+            Branch::PolicyDurationBelowFloor | Branch::PolicyDurationAboveCeiling => {
+                &["create_stream", "create_streams"]
+            }
+            Branch::InvalidOracleThreshold => &["set_oracle_config"],
+            Branch::OraclePublishersNotConfigured
+            | Branch::OracleReportTooOld
+            | Branch::NotOraclePublisher => &["submit_oracle_time"],
+        }
+    }
+
+    /// The error code this branch returns. Exhaustive by construction: adding a
+    /// branch without a code is a compile error, which is what makes "no branch
+    /// without a code" a property of the type system rather than a convention.
+    pub const fn error(self) -> StreamError {
+        match self {
+            Branch::CreateDepositNonPositive => StreamError::ZeroAmount,
+            Branch::CreateStartTimeInPast => StreamError::StartTimeInPast,
+            Branch::CreateInvalidTimeRange => StreamError::InvalidTimeRange,
+            Branch::CreateDurationTooLong => StreamError::DurationTooLong,
+            Branch::WithdrawAmountNonPositive => StreamError::ZeroAmount,
+            Branch::WithdrawAmountExceedsAvailable => StreamError::AmountExceedsAvailable,
+            Branch::WithdrawMaxNothingToWithdraw => StreamError::NothingToWithdraw,
+            Branch::CancelStreamNotCancellable => StreamError::StreamNotCancellable,
+            Branch::CancelStreamNotAuthorized => StreamError::NotAuthorized,
+            Branch::TopUpAmountNonPositive => StreamError::ZeroAmount,
+            Branch::TopUpDepositOverflow => StreamError::MathOverflow,
+            Branch::StreamNotFound => StreamError::StreamNotFound,
+            Branch::StreamNotActive => StreamError::StreamNotActive,
+            Branch::CapacityOverflow => StreamError::MathOverflow,
+            Branch::RateProductOverflow => StreamError::MathOverflow,
+            Branch::AvailableBalanceOverflow => StreamError::MathOverflow,
+            Branch::CancelSplitOverflow => StreamError::MathOverflow,
+            Branch::PayoutOverflow => StreamError::MathOverflow,
+            Branch::SetFeeRateTooHigh => StreamError::FeeRateTooHigh,
+            Branch::GovernorNotAllowed | Branch::AcceptGovernorNotNominee => {
+                StreamError::NotGovernor
+            }
+            Branch::AcceptGovernorNoPending => StreamError::NoPendingGovernor,
+            Branch::WithdrawTreasuryAmountNonPositive => StreamError::ZeroAmount,
+            Branch::WithdrawTreasuryExceedsBalance => StreamError::InsufficientTreasuryBalance,
+            Branch::RegisterLimitNonPositive => StreamError::ZeroAmount,
+            Branch::SponsoredWithdrawAmountNonPositive => StreamError::ZeroAmount,
+            Branch::SponsoredWithdrawAmountExceedsAvailable => StreamError::AmountExceedsAvailable,
+            Branch::SponsorNotFound => StreamError::SponsorNotFound,
+            Branch::SponsorInactive => StreamError::SponsorInactive,
+            Branch::BeneficiaryNotEnrolled => StreamError::BeneficiaryNotEnrolled,
+            Branch::ClaimExpired => StreamError::ClaimExpired,
+            Branch::ClaimNonceReplay => StreamError::ClaimNonceReplay,
+            Branch::SponsorBudgetPeriodExceeded => StreamError::SponsorBudgetExceeded,
+            Branch::SponsorBudgetBeneficiaryExceeded => StreamError::BeneficiaryBudgetExceeded,
+            Branch::IntentNotFound => StreamError::IntentNotFound,
+            Branch::IntentNotPending => StreamError::IntentNotPending,
+            Branch::IntentNotYetExecutable => StreamError::IntentNotYetExecutable,
+            Branch::IntentExpired => StreamError::IntentExpired,
+            Branch::IntentNotCancellable => StreamError::IntentNotCancellable,
+            Branch::ScheduleInvalidParameters => StreamError::InvalidScheduleParameters,
+            Branch::IntentParamsMismatch => StreamError::IntentParamsMismatch,
+            Branch::IntentNotExpired => StreamError::IntentNotExpired,
+            Branch::CreateDepositTransferFailed => StreamError::DepositTransferFailed,
+            Branch::TopUpTransferFailed => StreamError::TopUpTransferFailed,
+            Branch::RecipientPayoutFailed => StreamError::RecipientPayoutFailed,
+            Branch::SenderRefundFailed => StreamError::SenderRefundFailed,
+            Branch::TreasuryPayoutFailed => StreamError::TreasuryPayoutFailed,
+            Branch::PolicyAssetNotAllowed => StreamError::PolicyAssetNotAllowed,
+            Branch::PolicyTimelockNotElapsed => StreamError::PolicyTimelockNotElapsed,
+            Branch::PolicyNoQueuedChange => StreamError::PolicyNoQueuedChange,
+            Branch::PolicyNotInitialized => StreamError::PolicyNotInitialized,
+            Branch::PolicyNoPendingHandoff => StreamError::PolicyNoPendingHandoff,
+            Branch::CreateBatchEmpty => StreamError::BatchEmpty,
+            Branch::CreateBatchTooLarge => StreamError::BatchTooLarge,
+            Branch::ContractFrozen => StreamError::ContractFrozen,
+            Branch::MigrationNotFrozen => StreamError::ContractNotFrozen,
+            Branch::ExecuteUpgradeNoPending | Branch::CancelUpgradeNoPending => {
+                StreamError::NoPendingUpgrade
+            }
+            Branch::TimelockNotExpired => StreamError::TimelockNotExpired,
+            Branch::UpgradeDelayTooShort => StreamError::UpgradeDelayTooShort,
+            Branch::AlreadyMigrated => StreamError::AlreadyMigrated,
+            Branch::PolicyRateBelowFloor => StreamError::PolicyRateBelowFloor,
+            Branch::PolicyRateAboveCeiling => StreamError::PolicyRateAboveCeiling,
+            Branch::PolicyDurationBelowFloor => StreamError::PolicyDurationBelowFloor,
+            Branch::PolicyDurationAboveCeiling => StreamError::PolicyDurationAboveCeiling,
+            Branch::PolicyDepositBelowFloor => StreamError::PolicyDepositBelowFloor,
+            Branch::InvalidOracleThreshold => StreamError::InvalidOracleThreshold,
+            Branch::OraclePublishersNotConfigured => StreamError::OraclePublishersNotConfigured,
+            Branch::OracleReportTooOld => StreamError::OracleReportTooOld,
+            Branch::NotOraclePublisher => StreamError::NotOraclePublisher,
+        }
+    }
+
+    /// Human-readable condition, used to generate `docs/ERRORS.md`.
+    pub const fn condition(self) -> &'static str {
+        match self {
+            Branch::CreateDepositNonPositive => "deposit_amount is zero or negative",
+            Branch::CreateStartTimeInPast => "start_time is before the current ledger timestamp",
+            Branch::CreateInvalidTimeRange => {
+                "end_time is not strictly after start_time (zero or negative duration)"
+            }
+            Branch::CreateDurationTooLong => "duration exceeds MAX_DURATION_SECONDS (100 years)",
+            Branch::WithdrawAmountNonPositive => "withdraw amount is zero or negative",
+            Branch::WithdrawAmountExceedsAvailable => {
+                "amount exceeds the accrued-but-unwithdrawn balance"
+            }
+            Branch::WithdrawMaxNothingToWithdraw => {
+                "nothing has accrued yet, or everything accrued was already withdrawn"
+            }
+            Branch::CancelStreamNotCancellable => {
+                "the recipient calls cancel_stream on a stream created non-cancelable"
+            }
+            Branch::CancelStreamNotAuthorized => {
+                "the caller is neither the sender nor the recipient"
+            }
+            Branch::TopUpAmountNonPositive => "top-up amount is zero or negative",
+            Branch::TopUpDepositOverflow => "deposit + amount would overflow i128",
+            Branch::StreamNotFound => "no stream is stored under the id",
+            Branch::StreamNotActive => "the stream status is Cancelled or Depleted",
+            Branch::CapacityOverflow => "deposit * duration would overflow u128",
+            Branch::RateProductOverflow => "deposit * elapsed would overflow u128",
+            Branch::AvailableBalanceOverflow => {
+                "withdrawn exceeds streamed (an invariant-violating stored stream)"
+            }
+            Branch::CancelSplitOverflow => "the cancel pro-rata split would underflow",
+            Branch::PayoutOverflow => "withdrawn + amount would overflow i128",
+            Branch::SetFeeRateTooHigh => "new_fee_bps exceeds MAX_FEE_BPS (the protocol cap)",
+            Branch::GovernorNotAllowed => "the caller is not the treasury governor",
+            Branch::AcceptGovernorNoPending => "accept_governor with no nomination pending",
+            Branch::AcceptGovernorNotNominee => "the caller is not the nominated governor",
+            Branch::WithdrawTreasuryAmountNonPositive => {
+                "treasury withdrawal amount is zero or negative"
+            }
+            Branch::WithdrawTreasuryExceedsBalance => {
+                "amount exceeds fees collected minus fees already withdrawn"
+            }
+            Branch::RegisterLimitNonPositive => {
+                "a sponsor budget cap (per-period or per-beneficiary) is zero or negative"
+            }
+            Branch::SponsoredWithdrawAmountNonPositive => {
+                "a sponsored claim requests a zero or negative payout"
+            }
+            Branch::SponsoredWithdrawAmountExceedsAvailable => {
+                "a sponsored claim exceeds the stream's accrued-but-unwithdrawn balance"
+            }
+            Branch::SponsorNotFound => "no sponsor budget is registered for the address",
+            Branch::SponsorInactive => "the sponsor's budget is paused (inactive)",
+            Branch::BeneficiaryNotEnrolled => {
+                "the beneficiary has not enrolled an ed25519 consent key"
+            }
+            Branch::ClaimExpired => "the relayed claim was submitted after its deadline",
+            Branch::ClaimNonceReplay => "the claim's nonce was already spent for this pair",
+            Branch::SponsorBudgetPeriodExceeded => {
+                "the claim would exceed the sponsor's per-period budget cap"
+            }
+            Branch::SponsorBudgetBeneficiaryExceeded => {
+                "the claim would exceed the per-beneficiary budget cap"
+            }
+            Branch::IntentNotFound => "no scheduled intent is stored under the id",
+            Branch::IntentNotPending => "the intent is already executed, cancelled, or expired",
+            Branch::IntentNotYetExecutable => "the next occurrence has not reached execute_after",
+            Branch::IntentExpired => "the intent has reached expires_at",
+            Branch::IntentNotCancellable => "the execution window opened before cancellation",
+            Branch::ScheduleInvalidParameters => {
+                "schedule parameters are inconsistent or out of bounds"
+            }
+            Branch::IntentParamsMismatch => {
+                "stored parameters do not match the authorization commitment"
+            }
+            Branch::IntentNotExpired => "the intent has not reached expires_at",
+            Branch::CreateDepositTransferFailed => {
+                "the token refuses the deposit (+fee) pull (allowance, balance, or a non-compliant token)"
+            }
+            Branch::TopUpTransferFailed => {
+                "the token refuses the pull of the added funds"
+            }
+            Branch::RecipientPayoutFailed => {
+                "the token refuses a payout to the recipient"
+            }
+            Branch::SenderRefundFailed => "the token refuses the refund to the sender",
+            Branch::TreasuryPayoutFailed => {
+                "the token refuses the payout of collected protocol fees"
+            }
+            Branch::PolicyAssetNotAllowed => {
+                "the asset is not permitted by the policy module allowlist"
+            }
+            Branch::PolicyTimelockNotElapsed => {
+                "the timelock delay has not elapsed for this queued policy change"
+            }
+            Branch::PolicyNoQueuedChange => "no policy change is queued for the specified asset",
+            Branch::PolicyNotInitialized => "the policy module has not been initialized",
+            Branch::PolicyNoPendingHandoff => "no admin handoff proposal is pending",
+            Branch::CreateBatchEmpty => "entries is empty",
+            Branch::CreateBatchTooLarge => "entries length exceeds MAX_BATCH",
+            Branch::ContractFrozen => "the contract is frozen for maintenance or upgrade",
+            Branch::MigrationNotFrozen => "storage migration requires the contract to be frozen",
+            Branch::ExecuteUpgradeNoPending => "execute_upgrade called with no upgrade pending",
+            Branch::CancelUpgradeNoPending => "cancel_upgrade called with no upgrade pending",
+            Branch::TimelockNotExpired => "upgrade timelock delay has not yet expired",
+            Branch::UpgradeDelayTooShort => {
+                "proposed upgrade delay is shorter than MIN_UPGRADE_DELAY_SECONDS"
+            }
+            Branch::AlreadyMigrated => {
+                "storage has already been migrated to the target schema version"
+            }
+            Branch::PolicyRateBelowFloor => "stream rate is below the governance policy floor",
+            Branch::PolicyRateAboveCeiling => "stream rate exceeds the governance policy ceiling",
+            Branch::PolicyDurationBelowFloor => {
+                "stream duration is below the governance policy floor"
+            }
+            Branch::PolicyDurationAboveCeiling => {
+                "stream duration exceeds the governance policy ceiling"
+            }
+            Branch::PolicyDepositBelowFloor => {
+                "stream deposit is below the governance policy floor"
+            }
+            Branch::InvalidOracleThreshold => {
+                "oracle threshold is invalid (e.g. zero or exceeds publisher count)"
+            }
+            Branch::OraclePublishersNotConfigured => "oracle publishers are not configured",
+            Branch::OracleReportTooOld => "oracle report timestamp is too far in the past or future",
+            Branch::NotOraclePublisher => "the caller is not an authorized oracle publisher",
+        }
+    }
+
+    /// Reachability classification; drives whether the matrix test probes it.
+    pub const fn reachability(self) -> Reachability {
+        match self {
+            // Invariant-protected guards. For every stored stream
+            // `0 <= withdrawn <= streamed <= deposit <= i128::MAX`, so none of
+            // these checked operations can cross an i128 boundary:
+            //   * `pay_out`: `withdrawn + amount <= streamed <= i128::MAX`.
+            //   * `available_amount`: `streamed - withdrawn` may go negative for
+            //     a corrupt entry but never below `i128::MIN` (it equals
+            //     `-withdrawn`, and `withdrawn <= i128::MAX`).
+            //   * `cancel_amounts`: same bound on both subtractions.
+            Branch::PayoutOverflow
+            | Branch::AvailableBalanceOverflow
+            | Branch::CancelSplitOverflow => Reachability::Defensive,
+            _ => Reachability::Reachable,
+        }
+    }
+}
+
+/// Error codes that are intentionally unreachable.
+///
+/// Retired under the append-only policy: the numeric slot is reserved forever
+/// (never reused) but no entrypoint can produce the variant. The coverage test
+/// treats exactly these as exempt; any *other* code with zero branches fails CI.
+///
+/// * `NotStreamSender` (2) / `NotStreamRecipient` (3) — reserved role checks
+///   from the original draft. The contract uses `NotAuthorized` (12) and
+///   branches on sender/recipient identity directly, so these were never wired
+///   in. Kept for wire compatibility.
+pub const RETIRED_CODES: &[StreamError] = &[
+    StreamError::NotStreamSender,
+    StreamError::NotStreamRecipient,
+];
+
+/// Records a rejection branch and returns the error it maps to.
+///
+/// Used at every validation site instead of returning [`StreamError`] literals,
+/// so the branch (and therefore the documented mapping) is exercised by the
+/// code path itself.
+#[inline]
+pub fn reject(branch: Branch) -> StreamError {
+    #[cfg(test)]
+    trace::record(branch);
+    branch.error()
+}
+
+/// Test-only branch trace.
+///
+/// The trace is thread-local: `cargo test` runs each test on its own thread and
+/// the contract executes synchronously on the caller's thread, so the matrix
+/// test observes exactly the branches it triggers — never a concurrent test's.
+#[cfg(test)]
+pub mod trace {
+    use super::Branch;
+    use std::cell::RefCell;
+    use std::thread_local;
+    use std::vec::Vec;
+
+    thread_local! {
+        static HITS: RefCell<Vec<Branch>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Note that `branch` fired on this thread.
+    pub fn record(branch: Branch) {
+        HITS.with(|hits| hits.borrow_mut().push(branch));
+    }
+
+    /// Take the branches recorded since the last drain, leaving the trace empty.
+    pub fn drain() -> Vec<Branch> {
+        HITS.with(|hits| core::mem::take(&mut *hits.borrow_mut()))
+    }
+
+    /// Forget every recorded branch.
+    pub fn clear() {
+        HITS.with(|hits| hits.borrow_mut().clear());
+    }
+}
