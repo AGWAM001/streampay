@@ -7,10 +7,7 @@ import {
   readPaymentLinkAction,
   PaymentLinkResolution,
 } from "@/app/actions";
-import {
-  verifyRecipientBinding,
-  PaymentLinkData,
-} from "@/lib/payment-link";
+import { verifyRecipientBinding } from "@/lib/payment-link";
 import {
   claimStreamWithReceipt,
   ClaimReceipt,
@@ -18,7 +15,7 @@ import {
   describeError,
 } from "@/lib/stellar";
 import { computeAccruedAt } from "@/lib/accrual";
-import type { StreamView } from "@/lib/stream-types";
+import { checkWalletNetwork } from "@/lib/network";
 
 function formatUnits(amountStroops: string | bigint): string {
   const n = Number(amountStroops) / 10_000_000;
@@ -118,6 +115,7 @@ export default function PaymentLinkPage({
         return;
       }
       setAddress(addr);
+      await checkWalletNetwork();
     } catch (e: unknown) {
       setClaimError(String(e));
     }

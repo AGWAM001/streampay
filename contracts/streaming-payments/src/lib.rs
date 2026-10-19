@@ -17,6 +17,12 @@
 //! - [`StreamingPayments::cancel_stream`] — sender (or recipient, if the
 //!   stream is `cancelable`) closes the stream with a pro-rata split
 //! - [`StreamingPayments::top_up`] — add funds to a running stream
+//! - [`StreamingPayments::sponsored_withdraw`] — an operator relays a
+//!   recipient's claim and a sponsor absorbs the gas, guarded by a budget
+//!   ledger and nonce replay protection (see the `sponsor` module docs)
+//! - [`StreamingPayments::register_sponsor`] /
+//!   [`StreamingPayments::enroll_beneficiary`] /
+//!   [`StreamingPayments::rotate_operator_key`] — sponsorship setup
 //! - [`StreamingPayments::get_stream`] / [`StreamingPayments::available`] —
 //!   read-only views
 //! - [`StreamingPayments::recipient_streams`] /
@@ -62,6 +68,9 @@ mod policy;
 mod schedule;
 #[cfg(test)]
 mod schedule_test;
+pub(crate) mod sponsor;
+#[cfg(test)]
+mod sponsor_test;
 mod stream;
 pub mod surface;
 #[cfg(test)]
@@ -80,20 +89,22 @@ use surface::Branch;
 
 pub use errors::StreamError;
 pub use events::{
-    ContractFrozenStateChanged, ContractUpgraded, FeeCharged, FeeWithdrawn, PolicyAssetExecuted,
-    PolicyAssetQueued, PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed,
-    PolicyInitialized, ScheduledIntentCancelled, ScheduledIntentExpired, ScheduledStreamExecuted,
-    StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet, StreamScheduled,
-    StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
+    BeneficiaryEnrolled, ContractFrozenStateChanged, ContractUpgraded, FeeCharged, FeeWithdrawn,
+    OperatorKeyRotated, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
+    PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized, ScheduledIntentCancelled,
+    ScheduledIntentExpired, ScheduledStreamExecuted, SponsorActiveSet, SponsorClaim,
+    SponsorRegistered, StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet,
+    StreamScheduled, StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
 pub use policy::{validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
+pub use sponsor::{PeriodSpend, SponsorConfig};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
 pub use stream::{
-    streamed_at, MigrationStatus, PendingUpgrade, Stream, StreamStatus, INITIAL_SCHEMA_VERSION,
-    MAX_DURATION_SECONDS, MAX_MIGRATION_BATCH_SIZE, MAX_PAGE_SIZE, MIN_UPGRADE_DELAY_SECONDS,
-    TARGET_SCHEMA_VERSION,
+    streamed_at, BatchEntry, MigrationStatus, PendingUpgrade, Stream, StreamStatus,
+    INITIAL_SCHEMA_VERSION, MAX_BATCH, MAX_DURATION_SECONDS, MAX_MIGRATION_BATCH_SIZE,
+    MAX_PAGE_SIZE, MIN_BATCH, MIN_UPGRADE_DELAY_SECONDS, TARGET_SCHEMA_VERSION,
 };
 pub use treasury::{fee_amount, FeeScan, Treasury, TreasuryStatus, BPS_DENOMINATOR, MAX_FEE_BPS};
 
@@ -543,6 +554,112 @@ impl StreamingPayments {
         .publish(&env);
 
         Ok(ids)
+    }
+
+    /// Creates a batch of payment streams in a single transaction.
+    ///
+    /// Semantics are all-or-nothing per entry but best-effort across the batch:
+    /// each entry validates its parameters and attempts its own deposit pull.
+    /// Failures are reported per-entry in the returned vector without aborting
+    /// or rolling back successfully created sibling streams.
+    ///
+    /// The entire batch call reverts if `entries` is empty ([`StreamError::BatchEmpty`])
+    /// or exceeds [`MAX_BATCH`] ([`StreamError::BatchTooLarge`]).
+    pub fn create_streams_batch(
+        env: Env,
+        entries: Vec<BatchEntry>,
+    ) -> Result<Vec<Result<u64, StreamError>>, StreamError> {
+        let count = entries.len();
+        if count < stream::MIN_BATCH {
+            return Err(surface::reject(Branch::CreateBatchEmpty));
+        }
+        if count > stream::MAX_BATCH {
+            return Err(surface::reject(Branch::CreateBatchTooLarge));
+        }
+
+        let mut results = Vec::new(&env);
+        let mut authorized_senders = Vec::new(&env);
+        for entry in entries.iter() {
+            if !authorized_senders.contains(&entry.sender) {
+                entry.sender.require_auth();
+                authorized_senders.push_back(entry.sender.clone());
+            }
+            let res = Self::create_single_batch_entry(&env, &entry);
+            results.push_back(res);
+        }
+
+        Ok(results)
+    }
+
+    fn create_single_batch_entry(env: &Env, entry: &BatchEntry) -> Result<u64, StreamError> {
+        Self::validate_stream_creation(
+            env.ledger().timestamp(),
+            entry.deposit,
+            entry.start_time,
+            entry.end_time,
+        )?;
+
+        let fee_bps = treasury::current_fee_bps(env);
+        let fee = treasury::fee_amount(entry.deposit, fee_bps)?;
+        let pull_amount = entry
+            .deposit
+            .checked_add(fee)
+            .ok_or(StreamError::MathOverflow)?;
+
+        let pull_res = TokenClient::new(env, &entry.token).try_transfer_from(
+            &env.current_contract_address(),
+            &entry.sender,
+            &env.current_contract_address(),
+            &pull_amount,
+        );
+        match pull_res {
+            Ok(Ok(())) => {}
+            _ => return Err(StreamError::AmountExceedsAvailable),
+        }
+
+        let id = stream::next_stream_id(env);
+        let s = Stream {
+            id,
+            sender: entry.sender.clone(),
+            recipient: entry.recipient.clone(),
+            token: entry.token.clone(),
+            deposit: entry.deposit,
+            withdrawn: 0,
+            start_time: entry.start_time,
+            end_time: entry.end_time,
+            cancelable: entry.cancelable,
+            status: StreamStatus::Active,
+        };
+        stream::put_stream(env, &s);
+        stream::index_stream(env, &s);
+        if fee > 0 {
+            treasury::apply_fee(env, &entry.token, id, fee)?;
+        }
+
+        StreamCreated {
+            stream_id: id,
+            sender: entry.sender.clone(),
+            recipient: entry.recipient.clone(),
+            token: entry.token.clone(),
+            deposit: entry.deposit,
+            start_time: entry.start_time,
+            end_time: entry.end_time,
+            cancelable: entry.cancelable,
+        }
+        .publish(env);
+
+        if fee > 0 {
+            FeeCharged {
+                stream_id: id,
+                token: s.token.clone(),
+                payer: s.sender.clone(),
+                amount: fee,
+                fee_bps,
+            }
+            .publish(env);
+        }
+
+        Ok(id)
     }
 
     /// Withdraws up to `amount` of the accrued-but-unwithdrawn balance and
@@ -1371,6 +1488,112 @@ impl StreamingPayments {
         next.saturating_sub(1)
     }
 
+    // ------------------------------------------------------- sponsorship ------
+    // Thin delegators onto the `sponsor` module, which holds the budget ledger,
+    // the replay/nonce bookkeeping, and the ed25519 inner-authorization checks.
+
+    /// Registers (or reconfigures) a sponsor budget and its authorized operator
+    /// (relayer) key. See [`sponsor`].
+    #[allow(clippy::too_many_arguments)] // mirrors sponsor::register_sponsor's surface
+    pub fn register_sponsor(
+        env: Env,
+        sponsor: Address,
+        token: Address,
+        per_period_limit: i128,
+        per_beneficiary_limit: i128,
+        window_seconds: u64,
+        operator_key: soroban_sdk::BytesN<32>,
+    ) -> Result<(), StreamError> {
+        sponsor::register_sponsor(
+            env,
+            sponsor,
+            token,
+            per_period_limit,
+            per_beneficiary_limit,
+            window_seconds,
+            operator_key,
+        )
+    }
+
+    /// Pauses or resumes a sponsor's budget.
+    pub fn set_sponsor_active(env: Env, sponsor: Address, active: bool) -> Result<(), StreamError> {
+        sponsor::set_sponsor_active(env, sponsor, active)
+    }
+
+    /// Rotates a sponsor's authorized operator (relayer) key.
+    pub fn rotate_operator_key(
+        env: Env,
+        sponsor: Address,
+        new_operator_key: soroban_sdk::BytesN<32>,
+    ) -> Result<(), StreamError> {
+        sponsor::rotate_operator_key(env, sponsor, new_operator_key)
+    }
+
+    /// Binds (or rotates) a beneficiary's ed25519 consent key.
+    pub fn enroll_beneficiary(
+        env: Env,
+        beneficiary: Address,
+        public_key: soroban_sdk::BytesN<32>,
+    ) -> Result<(), StreamError> {
+        sponsor::enroll_beneficiary(env, beneficiary, public_key)
+    }
+
+    /// Relays a beneficiary's withdrawal with a sponsor absorbing the gas. See
+    /// [`sponsor`] for the inner-authorization and budget semantics.
+    #[allow(clippy::too_many_arguments)] // the full relay surface is the intended client API
+    pub fn sponsored_withdraw(
+        env: Env,
+        sponsor: Address,
+        beneficiary: Address,
+        stream_id: u64,
+        amount: i128,
+        nonce: u64,
+        deadline: u64,
+        operator_sig: soroban_sdk::BytesN<64>,
+        beneficiary_sig: soroban_sdk::BytesN<64>,
+    ) -> Result<(), StreamError> {
+        sponsor::sponsored_withdraw(
+            env,
+            sponsor,
+            beneficiary,
+            stream_id,
+            amount,
+            nonce,
+            deadline,
+            operator_sig,
+            beneficiary_sig,
+        )
+    }
+
+    /// Reads a sponsor's budget configuration, if any.
+    pub fn get_sponsor(env: Env, sponsor: Address) -> Option<sponsor::SponsorConfig> {
+        sponsor::get_config(&env, &sponsor)
+    }
+
+    /// Reads a beneficiary's enrolled consent key, if any.
+    pub fn get_beneficiary_public_key(
+        env: Env,
+        beneficiary: Address,
+    ) -> Option<soroban_sdk::BytesN<32>> {
+        sponsor::get_beneficiary_key(&env, &beneficiary)
+    }
+
+    /// The sponsor's current-window spend.
+    pub fn sponsor_period_spend(env: Env, sponsor: Address) -> sponsor::PeriodSpend {
+        sponsor::get_period(&env, &sponsor::SponsorKey::SponsorPeriod(sponsor))
+    }
+
+    /// A beneficiary's spend within a sponsor's current window.
+    pub fn beneficiary_spend(
+        env: Env,
+        sponsor: Address,
+        beneficiary: Address,
+    ) -> sponsor::PeriodSpend {
+        sponsor::get_period(
+            &env,
+            &sponsor::SponsorKey::BeneficiarySpend(sponsor, beneficiary),
+        )
+    }
     // ------------------------------------------------------------- policy --
     //
     // The optional asset allowlist and governance layer: restricts which assets
