@@ -10,6 +10,18 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- Frontend (opt-in) **fee-aware claim scheduling**: a recipient can queue a
+  signed `withdraw_max` intent and have the client submit it when the Soroban
+  inclusion-fee percentile drops under a budget, with a deadline fallback so a
+  deferred claim is never abandoned. New `frontend/lib/` modules
+  (`fee-stats.ts`, `fee-observer.ts`, `claim-scheduler.ts`, `claim-runtime.ts`,
+  `pending-queue.ts`, `use-claim-scheduler.ts`), a settings/queue panel on
+  `/stream/[id]`, and `docs/FEE_AWARE_CLAIMS.md` (constraints + decisions
+  tables). `pending-queue.ts` is the shared signed-intent queue that the PWA
+  offline queue (#48) must reuse.
+- Frontend unit + simulation tests (vitest): the claim-scheduler decision
+  ladder and a replay of a recorded fee series, committed as snapshot decision
+  tables; wired into the frontend CI job.
 - `indexer/` TypeScript service that decodes StreamPay Soroban events into a
   cursor-backed SQLite projection and exposes stream-by-id and address stream
   REST endpoints, with local setup/API documentation.
@@ -100,8 +112,37 @@ interface: they are only ever appended to, never renumbered or reused.
   registered in `src/surface.rs`, probed for its declared `StreamError`, and
   checked for coverage — CI fails on any error code with zero reachable
   branches or any branch without a code.
-- Generated [`docs/ERRORS.md`](./docs/ERRORS.md) (entrypoint × branch → code
+- Generated [`docs/ERROR_SURFACE.md`](./docs/ERROR_SURFACE.md) (entrypoint × branch → code
   table) with a CI step that regenerates it and diffs the committed artifact.
+- **Gas sponsorship** (`sponsor.rs`, issue #57): sponsors pay transaction
+  costs for recipients claiming accrued funds. Soroban has no mempool
+  relayer, so authorization is carried *inside* the call: any account
+  submits `sponsored_withdraw` and pays the network fee, while consent is
+  two ed25519 signatures (sponsor operator key + enrolled beneficiary key)
+  over the SHA-256 digest of a canonical XDR message (domain tag
+  `StreamPay/sponsored-withdraw/v1`, contract, sponsor, beneficiary, token,
+  stream id, amount, nonce, deadline). Per-sponsor period caps,
+  per-beneficiary caps with rolling windows, one-shot nonces, sponsor
+  pause/resume and instant operator-key rotation; an invalid signature
+  traps before any nonce or budget state is consumed.
+- Sponsor entrypoints: `register_sponsor`, `set_sponsor_active`,
+  `rotate_operator_key`, `enroll_beneficiary`, `sponsored_withdraw`, plus
+  open reads `get_sponsor`, `get_beneficiary_public_key`,
+  `sponsor_period_spend`, `beneficiary_spend`. New `StreamError` variants
+  (appended): `SponsorNotFound` (21), `SponsorInactive` (22),
+  `BeneficiaryNotEnrolled` (23), `ClaimExpired` (24), `ClaimNonceReplay`
+  (25), `SponsorBudgetExceeded` (26), `BeneficiaryBudgetExceeded` (27);
+  18–20 remain reserved for the dispute-flow PR.
+- Frontend "Claim for free" path (`frontend/lib/sponsor.ts` + stream detail
+  page): builds and signs the exact intent the contract verifies, posts it
+  to the sponsor relay, and discloses who pays and how much budget remains;
+  falls back to a self-paid claim when no sponsor covers the stream's
+  token. JS ↔ Rust wire parity is pinned by frozen vectors on both sides
+  (`canonical_relay_message_has_a_frozen_wire_form` / `lib/sponsor.test.ts`).
+- Sponsorship docs: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §13
+  (mechanism, message layout, check order, relay contract, rejected
+  alternatives) and [`docs/THREAT_MODEL.md`](./docs/THREAT_MODEL.md) §12
+  (budget-drain griefing, signature interception, replay).
 - Distinct `StreamError` codes for token-transfer failures, appended after
   the scheduled-intent codes (18–25): `DepositTransferFailed` (26),
   `TopUpTransferFailed` (27), `RecipientPayoutFailed` (28),
@@ -118,7 +159,7 @@ interface: they are only ever appended to, never renumbered or reused.
   (`CreateDepositTransferFailed`, `TopUpTransferFailed`,
   `RecipientPayoutFailed`, `SenderRefundFailed`, `TreasuryPayoutFailed`), so
   the generated error-surface matrix probes every one of them and
-  `docs/ERRORS.md` documents them like every other branch.
+  `docs/ERROR_SURFACE.md` documents them like every other branch.
 - Non-native asset tests, end to end: full lifecycle
   (create → top-up → withdraw → withdraw_max → cancel) against a registered
   Stellar Asset Contract with supply conservation, allowance/balance pull
@@ -167,6 +208,21 @@ interface: they are only ever appended to, never renumbered or reused.
 - Retired `StreamError::NotStreamSender` (2) and `NotStreamRecipient` (3) as
   unreachable under the append-only policy: the numeric codes are kept and
   reserved, never reused or renumbered.
+- **Generated-artifact gates:** the three "committed output matches its source"
+  CI checks now all call `scripts/check_generated.sh`, which regenerates and
+  then fails on drift *including newly created untracked files*. The
+  differential-vector step previously regenerated the corpus without diffing
+  it, so a stale committed corpus passed. Locally: `npm run generated:check`.
+- `docs/ERRORS.md` → `docs/ERROR_SURFACE.md`. It differed from the generated
+  `docs/errors.md` by case alone, which is invisible on macOS/Windows
+  filesystems and made renames and checkouts ambiguous. No on-chain surface
+  changed; the error catalog regenerated accordingly (content-derived
+  `schema_fingerprint` moved with the doc-comment references).
+- `.gitattributes` pins `.rs/.md/.ts/.tsx/.mjs/.json` to LF so generated
+  artifacts and their sources are byte-stable on a `core.autocrlf=true`
+  checkout (CRLF in committed blobs has already broken the catalog's content
+  hash once — `a3af379`), and `scripts/check_line_endings.sh` + a CI step fail
+  on any blob committed with CRLF, naming the files and the fix.
 
 ### Fixed
 - Create-form failures decode to `StreamError` names like every other path

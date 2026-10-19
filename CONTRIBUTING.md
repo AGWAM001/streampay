@@ -56,6 +56,7 @@ cd fuzz && cargo +nightly fuzz run streamed_at -- -max_total_time=60 && cd ..
 cd frontend && npm install
 npm run lint
 npm run typecheck
+npm test        # unit tests + recorded fee-series simulation (vitest)
 npm run build
 ```
 
@@ -116,7 +117,79 @@ lint/typecheck/build when frontend files are touched) are the minimum gate.
   changes — it's the source of truth for design decisions, including
   rejected alternatives, the append-only public-interface rules (§13), and
   the Soroban-specific traps to avoid rediscovering the hard way (§14).
-- Error codes and events are documented in tables; keep the tables in sync.
+- Error codes and events are documented in tables; keep the tables in sync —
+  see **Generated files & CI gates** below for the exact commands.
+
+## Generated files & CI gates
+
+Several files in this repo are **generated**: CI regenerates them from their
+sources and fails the build on any diff. They are never edited by hand — change
+the source, then regenerate.
+
+| Generated file | Generated from | Gate (CI job) |
+|---|---|---|
+| `docs/ERROR_SURFACE.md` | `contracts/streaming-payments/src/errors.rs` + `surface.rs`, via the `error_surface_doc` cargo example | "Error-surface table is up to date" (Contract) |
+| `docs/errors.md`, `docs/errors/<code>.md`, `frontend/lib/errors.ts` | the same error surface, via `tooling/generate-error-catalog.mjs` | "Error catalog is up to date" (Perf budgets) |
+| `tests/vectors/accrual_vectors.json` | the Rust reference model, via `scripts/generate-vectors.mjs` | "Differential vectors are up to date" (Frontend) |
+
+All three gates call the same script —
+[`scripts/check_generated.sh`](./scripts/check_generated.sh) — so you can run
+every one of them locally, before pushing:
+
+```bash
+npm run generated:check        # all three areas
+npm run generated:surface      # or one area: surface | catalog | vectors
+```
+
+The script regenerates in place and then fails on any diff, so a failing run has
+already written the correct files for you; read what it printed, then:
+
+```bash
+git add <the paths it lists>
+git commit
+```
+
+Three things to know:
+
+- Run it **after** merging `main` into your branch, so you regenerate from the
+  complete error surface. The catalog files carry a content-derived
+  `schema_fingerprint` stamp (not a git SHA), so a clean regeneration on the
+  same tree always matches CI.
+- If you add a **new** error code, a new page appears under `docs/errors/`.
+  `git diff` cannot see untracked files, so `git add docs/errors/` — otherwise
+  the gate fails with "produced files that are not committed yet".
+- `docs/ERROR_SURFACE.md` used to be `docs/ERRORS.md`. That name differed from
+  `docs/errors.md` by case alone, which is invisible on macOS/Windows
+  filesystems and made checkouts and renames ambiguous. The rule now: a
+  generated artifact's filename must not collide with another's when the
+  filesystem ignores case.
+
+### Other mechanical gates, in one place
+
+`cargo fmt` and the frontend toolchain account for most other first-push
+failures, so the full pre-flight is:
+
+```bash
+npm run lint:fix          # cargo fmt --all, then commit what it changed
+npm run eol:check         # committed CRLF: the usual cause of a whole-file fmt diff
+cargo clippy --all-targets -- -D warnings
+npm run generated:check
+cd frontend && npm run lint && npx tsc --noEmit && npm test && npm run build
+```
+
+`npm run matrix` chains most of this from the repo root. If every command above
+passes on your branch after merging `main`, CI passes too: the gates are the
+same commands, not CI-only logic.
+
+If `cargo fmt --all -- --check` fails with a diff covering **every line** of a
+file, that file was committed with CRLF (Windows editors and `core.autocrlf=true`
+do this; `.gitattributes` pins `.rs` to LF so it cannot recur). One command
+normalizes the whole tree without losing your work:
+
+```bash
+git add --renormalize .
+git commit -m "chore: normalize line endings to LF"
+```
 
 ## Branch & PR process
 
@@ -130,7 +203,7 @@ lint/typecheck/build when frontend files are touched) are the minimum gate.
    - [ ] `cargo fmt --all -- --check`
    - [ ] `cargo clippy --all-targets -- -D warnings`
    - [ ] `cargo test -p streampay-contract`
-   - [ ] `cd frontend && npm run lint && npm run typecheck && npm run build` (if frontend touched)
+   - [ ] `cd frontend && npm run lint && npm run typecheck && npm test && npm run build` (if frontend touched)
    - [ ] Tests for new behavior; ARCHITECTURE.md updated for design changes
    - [ ] CHANGELOG.md gets an entry under **Unreleased**
 5. **Reviews**: one maintainer approval for docs/frontend, two for changes to
@@ -151,7 +224,7 @@ Significant architectural choices, invariants, or storage/tooling changes are do
 
 ## Good first issues
 
-See [`docs/GOOD_FIRST_ISSUES.md`](./GOOD_FIRST_ISSUES.md) — each ticket has
+See [`docs/GOOD_FIRST_ISSUES.md`](./docs/GOOD_FIRST_ISSUES.md) — each ticket has
 acceptance criteria and a difficulty label. Claim one by commenting "I'd like
 to take this" and open a draft PR early so reviewers can steer. Bounties for
 some issues are posted on GrantFox (install the GrantFox GitHub App on your
