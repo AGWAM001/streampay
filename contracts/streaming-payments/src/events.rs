@@ -355,3 +355,31 @@ pub struct StreamPolicySet {
     pub old_policy: Option<crate::policy::StreamPolicy>,
     pub new_policy: crate::policy::StreamPolicy,
 }
+
+/// Emitted when the oracle configuration is updated by governance.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleConfigUpdated {
+    pub threshold: u32,
+    pub max_stale_seconds: u64,
+}
+
+/// Emitted when an authorized oracle publisher reports a reference timestamp.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleTimeReported {
+    #[topic]
+    pub publisher: Address,
+    pub reported_time: u64,
+    pub ledger_time: u64,
+}
+
+/// Emitted when oracle time resolution falls back to native ledger time due to
+/// stale feed, insufficient reports, or unconfigured registry.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleStaleFallback {
+    #[topic]
+    pub stream_id: u64,
+    pub ledger_time: u64,
+}

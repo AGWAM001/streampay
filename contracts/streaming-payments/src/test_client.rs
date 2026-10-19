@@ -30,6 +30,18 @@ pub trait StreamingPaymentsApi {
         end_time: u64,
         cancelable: bool,
     ) -> Result<u64, StreamError>;
+    #[allow(clippy::too_many_arguments)]
+    fn create_stream_with_oracle(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+        use_oracle: bool,
+    ) -> Result<u64, StreamError>;
     fn create_streams(
         env: Env,
         sender: Address,
@@ -169,4 +181,15 @@ pub trait StreamingPaymentsApi {
         count: u32,
     ) -> Result<MigrationStatus, StreamError>;
     fn migration_progress(env: Env) -> MigrationStatus;
+    fn set_oracle_config(
+        env: Env,
+        caller: Address,
+        publishers: Vec<Address>,
+        threshold: u32,
+        max_stale_seconds: u64,
+    ) -> Result<(), StreamError>;
+    fn submit_oracle_time(env: Env, publisher: Address, timestamp: u64) -> Result<(), StreamError>;
+    fn resolve_time(env: Env, stream_id: u64, use_oracle: bool) -> crate::ResolvedTime;
+    fn oracle_config(env: Env) -> Option<crate::OracleConfig>;
+    fn oracle_report(env: Env, publisher: Address) -> Option<crate::OracleReport>;
 }
