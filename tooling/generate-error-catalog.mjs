@@ -325,6 +325,30 @@ const ERROR_METADATA = {
     retryable: true,
     testRef: 'contracts/streaming-payments/src/error_surface_test.rs::policy_deposit_below_floor',
   },
+  56: {
+    remediation: 'Oracle threshold is invalid. Threshold must be between 1 and the publisher count.',
+    toastClass: 'error',
+    retryable: true,
+    testRef: 'contracts/streaming-payments/src/error_surface_test.rs::invalid_oracle_threshold',
+  },
+  57: {
+    remediation: 'Oracle publishers are not configured. Governor must set oracle config first.',
+    toastClass: 'error',
+    retryable: false,
+    testRef: 'contracts/streaming-payments/src/error_surface_test.rs::oracle_publishers_not_configured',
+  },
+  58: {
+    remediation: 'Oracle report timestamp is too far in the past or future. Submit a fresh report.',
+    toastClass: 'error',
+    retryable: true,
+    testRef: 'contracts/streaming-payments/src/error_surface_test.rs::oracle_report_too_old',
+  },
+  59: {
+    remediation: 'Caller is not an authorized oracle publisher.',
+    toastClass: 'error',
+    retryable: false,
+    testRef: 'contracts/streaming-payments/src/error_surface_test.rs::not_oracle_publisher',
+  },
 };
 
 // Ensure directories exist

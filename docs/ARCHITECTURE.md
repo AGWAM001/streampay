@@ -936,3 +936,18 @@ At 25 streams, total emitted event data reaches approximately 15.5 KB. Batches
 with 26 or more streams exceed the 16,384-byte ceiling and trigger an immediate
 host abort (`Error(Budget, ExceededLimit)`: `contract events size bytes > 16384`).
 Thus, `MAX_BATCH = 25` represents the maximum safe on-chain batch size on Stellar.
+
+## 16. Oracle Reference Clock & Staleness Bounds
+
+StreamPay supports an optional external oracle reference clock (`create_stream_with_oracle(..., use_oracle: true)`), allowing payment streams to settle against high-precision off-chain time feeds or cross-ledger header clocks rather than Soroban ledger timestamps.
+
+### Trust & Threat Model
+
+- **Opt-In Per Stream**: Ledger time remains the default clock. Oracle resolution is strictly opt-in per stream (`use_oracle: bool`), preventing unexpected feed dependency for standard streams.
+- **Governor-Managed Publisher Registry**: The protocol governor configures authorized publishers and threshold requirements (`set_oracle_config`).
+- **M-of-N Quorum Protection**: An M-of-N quorum scheme (e.g. 2-of-3) prevents any single compromised or rogue publisher from shifting reference time. Quorum aggregation uses the median of valid publisher reports, which eliminates outliers.
+- **Staleness Bounds (`max_stale_seconds`)**: Each publisher submission records `(reported_time, ledger_time)`. A report is deemed valid if and only if `current_ledger_time <= report.ledger_time + max_stale_seconds`. Older reports are automatically discarded. Future timestamps exceeding `current_ledger_time + max_stale_seconds` are rejected on submission (`StreamError::OracleReportTooOld`).
+- **Fail-Safe Fallback to Native Ledger Time**: If quorum cannot be reached (e.g. stale feed, insufficient reports, or unconfigured registry), the resolver safely falls back to native ledger timestamp `env.ledger().timestamp()` and emits an `OracleStaleFallback` event. Streams never freeze, locks never occur, and funds remain fully withdrawable.
+- **Active Stream Invariance Under Config / Threshold Changes**: Modifying publisher sets or raising quorum threshold mid-stream cannot brick existing streams: any shortfall in quorum simply triggers the automatic fallback to ledger time.
+- **Accrual Pure Function & CEI Invariance**: Time resolution is executed as an effect step strictly prior to state mutation. The accrual math (`streamed_at`, `available_amount_at`, `cancel_amounts_at`) remains a pure function parameterized by `now: u64`.
+

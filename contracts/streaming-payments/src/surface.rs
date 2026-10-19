@@ -176,13 +176,18 @@ pub enum Branch {
     PolicyDurationBelowFloor,
     PolicyDurationAboveCeiling,
     PolicyDepositBelowFloor,
+    // ------------------------------------------------------------- oracle
+    InvalidOracleThreshold,
+    OraclePublishersNotConfigured,
+    OracleReportTooOld,
+    NotOraclePublisher,
 }
 
 impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 66] = [
+    pub const ALL: [Branch; 70] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -249,6 +254,10 @@ impl Branch {
         Branch::PolicyDurationBelowFloor,
         Branch::PolicyDurationAboveCeiling,
         Branch::PolicyDepositBelowFloor,
+        Branch::InvalidOracleThreshold,
+        Branch::OraclePublishersNotConfigured,
+        Branch::OracleReportTooOld,
+        Branch::NotOraclePublisher,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -377,6 +386,10 @@ impl Branch {
             Branch::PolicyDurationBelowFloor | Branch::PolicyDurationAboveCeiling => {
                 &["create_stream", "create_streams"]
             }
+            Branch::InvalidOracleThreshold => &["set_oracle_config"],
+            Branch::OraclePublishersNotConfigured
+            | Branch::OracleReportTooOld
+            | Branch::NotOraclePublisher => &["submit_oracle_time"],
         }
     }
 
@@ -453,6 +466,10 @@ impl Branch {
             Branch::PolicyDurationBelowFloor => StreamError::PolicyDurationBelowFloor,
             Branch::PolicyDurationAboveCeiling => StreamError::PolicyDurationAboveCeiling,
             Branch::PolicyDepositBelowFloor => StreamError::PolicyDepositBelowFloor,
+            Branch::InvalidOracleThreshold => StreamError::InvalidOracleThreshold,
+            Branch::OraclePublishersNotConfigured => StreamError::OraclePublishersNotConfigured,
+            Branch::OracleReportTooOld => StreamError::OracleReportTooOld,
+            Branch::NotOraclePublisher => StreamError::NotOraclePublisher,
         }
     }
 
@@ -579,6 +596,12 @@ impl Branch {
             Branch::PolicyDepositBelowFloor => {
                 "stream deposit is below the governance policy floor"
             }
+            Branch::InvalidOracleThreshold => {
+                "oracle threshold is invalid (e.g. zero or exceeds publisher count)"
+            }
+            Branch::OraclePublishersNotConfigured => "oracle publishers are not configured",
+            Branch::OracleReportTooOld => "oracle report timestamp is too far in the past or future",
+            Branch::NotOraclePublisher => "the caller is not an authorized oracle publisher",
         }
     }
 

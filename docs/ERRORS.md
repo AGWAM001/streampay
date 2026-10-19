@@ -63,6 +63,10 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 53 | `ClaimNonceReplay` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim's nonce was already spent for this pair |
 | 54 | `SponsorBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the sponsor's per-period budget cap |
 | 55 | `BeneficiaryBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the per-beneficiary budget cap |
+| 56 | `InvalidOracleThreshold` | reachable (1 branch(es)) | `set_oracle_config` | oracle threshold is invalid (e.g. zero or exceeds publisher count) |
+| 57 | `OraclePublishersNotConfigured` | reachable (1 branch(es)) | `submit_oracle_time` | oracle publishers are not configured |
+| 58 | `OracleReportTooOld` | reachable (1 branch(es)) | `submit_oracle_time` | oracle report timestamp is too far in the past or future |
+| 59 | `NotOraclePublisher` | reachable (1 branch(es)) | `submit_oracle_time` | the caller is not an authorized oracle publisher |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -134,6 +138,10 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `PolicyDurationBelowFloor` | `create_stream`, `create_streams` | `PolicyDurationBelowFloor` | 44 | stream duration is below the governance policy floor | reachable |
 | `PolicyDurationAboveCeiling` | `create_stream`, `create_streams` | `PolicyDurationAboveCeiling` | 45 | stream duration exceeds the governance policy ceiling | reachable |
 | `PolicyDepositBelowFloor` | `create_stream`, `create_streams`, `top_up` | `PolicyDepositBelowFloor` | 46 | stream deposit is below the governance policy floor | reachable |
+| `InvalidOracleThreshold` | `set_oracle_config` | `InvalidOracleThreshold` | 56 | oracle threshold is invalid (e.g. zero or exceeds publisher count) | reachable |
+| `OraclePublishersNotConfigured` | `submit_oracle_time` | `OraclePublishersNotConfigured` | 57 | oracle publishers are not configured | reachable |
+| `OracleReportTooOld` | `submit_oracle_time` | `OracleReportTooOld` | 58 | oracle report timestamp is too far in the past or future | reachable |
+| `NotOraclePublisher` | `submit_oracle_time` | `NotOraclePublisher` | 59 | the caller is not an authorized oracle publisher | reachable |
 
 ## Retired codes
 

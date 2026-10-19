@@ -64,6 +64,7 @@ mod differential_test;
 mod error_surface_test;
 mod errors;
 mod events;
+mod oracle;
 mod policy;
 mod schedule;
 #[cfg(test)]
@@ -90,12 +91,14 @@ use surface::Branch;
 pub use errors::StreamError;
 pub use events::{
     BeneficiaryEnrolled, ContractFrozenStateChanged, ContractUpgraded, FeeCharged, FeeWithdrawn,
-    OperatorKeyRotated, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
-    PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized, ScheduledIntentCancelled,
-    ScheduledIntentExpired, ScheduledStreamExecuted, SponsorActiveSet, SponsorClaim,
-    SponsorRegistered, StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet,
-    StreamScheduled, StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
+    OperatorKeyRotated, OracleConfigUpdated, OracleStaleFallback, OracleTimeReported,
+    PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted, PolicyHandoffCancelled,
+    PolicyHandoffProposed, PolicyInitialized, ScheduledIntentCancelled, ScheduledIntentExpired,
+    ScheduledStreamExecuted, SponsorActiveSet, SponsorClaim, SponsorRegistered, StorageMigrated,
+    StreamCancelled, StreamCreated, StreamPolicySet, StreamScheduled, StreamToppedUp,
+    StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
+pub use oracle::{OracleConfig, OracleReport, ResolvedTime, DEFAULT_MAX_STALE_SECONDS};
 pub use policy::{validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
 pub use sponsor::{PeriodSpend, SponsorConfig};
@@ -258,6 +261,32 @@ impl StreamingPayments {
         end_time: u64,
         cancelable: bool,
     ) -> Result<u64, StreamError> {
+        Self::create_stream_with_oracle(
+            env,
+            sender,
+            recipient,
+            token,
+            deposit_amount,
+            start_time,
+            end_time,
+            cancelable,
+            false,
+        )
+    }
+
+    /// Creates a payment stream with optional oracle reference time source.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_stream_with_oracle(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+        use_oracle: bool,
+    ) -> Result<u64, StreamError> {
         Self::require_not_frozen(&env)?;
         sender.require_auth();
 
@@ -305,6 +334,7 @@ impl StreamingPayments {
             end_time,
             cancelable,
             status: StreamStatus::Active,
+            use_oracle,
         };
         stream::put_stream(&env, &s);
         stream::index_stream(&env, &s);
@@ -391,6 +421,7 @@ impl StreamingPayments {
             end_time,
             cancelable,
             status: StreamStatus::Active,
+            use_oracle: false,
         };
         stream::put_stream(env, &stream);
         stream::index_stream(env, &stream);
@@ -530,6 +561,7 @@ impl StreamingPayments {
                 end_time: input.end_time,
                 cancelable: input.cancelable,
                 status: StreamStatus::Active,
+                use_oracle: false,
             };
             stream::put_stream(&env, &created);
             stream::index_stream(&env, &created);
@@ -629,6 +661,7 @@ impl StreamingPayments {
             end_time: entry.end_time,
             cancelable: entry.cancelable,
             status: StreamStatus::Active,
+            use_oracle: false,
         };
         stream::put_stream(env, &s);
         stream::index_stream(env, &s);
@@ -704,7 +737,8 @@ impl StreamingPayments {
         }
         let mut s = Self::authorize_withdrawal(&env, stream_id)?;
 
-        let available = stream::available_amount(&env, &s)?;
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        let available = stream::available_amount_at(&s, resolved.timestamp)?;
         if amount > available {
             return Err(surface::reject(Branch::WithdrawAmountExceedsAvailable));
         }
@@ -727,7 +761,8 @@ impl StreamingPayments {
         Self::require_not_frozen(&env)?;
         let mut s = Self::authorize_withdrawal(&env, stream_id)?;
 
-        let amount = stream::available_amount(&env, &s)?;
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        let amount = stream::available_amount_at(&s, resolved.timestamp)?;
         if amount <= 0 {
             return Err(surface::reject(Branch::WithdrawMaxNothingToWithdraw));
         }
@@ -829,7 +864,8 @@ impl StreamingPayments {
             }
         }
 
-        let (recipient_amount, sender_amount) = stream::cancel_amounts(&env, &s)?;
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        let (recipient_amount, sender_amount) = stream::cancel_amounts_at(&s, resolved.timestamp)?;
 
         // Effects first (CEI): finalise state before moving tokens.
         s.status = StreamStatus::Cancelled;
@@ -954,7 +990,8 @@ impl StreamingPayments {
     /// full remainder at or after `end_time`.
     pub fn available(env: Env, stream_id: u64) -> Result<i128, StreamError> {
         let s = stream::get_stream(&env, stream_id)?;
-        stream::available_amount(&env, &s)
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        stream::available_amount_at(&s, resolved.timestamp)
     }
 
     /// A page of stream ids where `recipient` is the recipient, in creation
@@ -1913,5 +1950,46 @@ impl StreamingPayments {
             total_streams: total,
             is_complete,
         }
+    }
+
+    // ----------------------------------------------------------- oracle ----
+
+    /// Configures the oracle publisher set, threshold, and staleness bound.
+    /// Authorized by the treasury governor.
+    pub fn set_oracle_config(
+        env: Env,
+        caller: Address,
+        publishers: Vec<Address>,
+        threshold: u32,
+        max_stale_seconds: u64,
+    ) -> Result<(), StreamError> {
+        Self::require_not_frozen(&env)?;
+        treasury::require_governor(&env, &caller)?;
+        oracle::set_oracle_config(&env, publishers, threshold, max_stale_seconds)
+    }
+
+    /// Records an authorized external time feed report.
+    pub fn submit_oracle_time(
+        env: Env,
+        publisher: Address,
+        timestamp: u64,
+    ) -> Result<(), StreamError> {
+        Self::require_not_frozen(&env)?;
+        oracle::submit_oracle_time(&env, publisher, timestamp)
+    }
+
+    /// Resolves reference timestamp for a given stream id and oracle flag.
+    pub fn resolve_time(env: Env, stream_id: u64, use_oracle: bool) -> ResolvedTime {
+        oracle::resolve_stream_time(&env, stream_id, use_oracle)
+    }
+
+    /// Reads current oracle configuration.
+    pub fn oracle_config(env: Env) -> Option<OracleConfig> {
+        oracle::get_oracle_config(&env)
+    }
+
+    /// Reads latest report from a publisher.
+    pub fn oracle_report(env: Env, publisher: Address) -> Option<OracleReport> {
+        oracle::get_oracle_report(&env, publisher)
     }
 }

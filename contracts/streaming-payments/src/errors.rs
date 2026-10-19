@@ -168,6 +168,14 @@ pub enum StreamError {
     BatchEmpty = 47,
     /// Batch creation was requested with more entries than MAX_BATCH.
     BatchTooLarge = 48,
+    /// Oracle threshold is invalid (e.g., zero or exceeds publisher count).
+    InvalidOracleThreshold = 56,
+    /// Oracle publishers are not configured.
+    OraclePublishersNotConfigured = 57,
+    /// Oracle report timestamp is too far in the past or future.
+    OracleReportTooOld = 58,
+    /// The caller is not an authorized oracle publisher.
+    NotOraclePublisher = 59,
 }
 
 impl StreamError {
@@ -230,6 +238,10 @@ impl StreamError {
         StreamError::ClaimNonceReplay,
         StreamError::SponsorBudgetExceeded,
         StreamError::BeneficiaryBudgetExceeded,
+        StreamError::InvalidOracleThreshold,
+        StreamError::OraclePublishersNotConfigured,
+        StreamError::OracleReportTooOld,
+        StreamError::NotOraclePublisher,
     ];
 
     /// The stable numeric value carried across the contract boundary
