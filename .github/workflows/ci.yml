@@ -51,6 +51,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Format check
+        id: fmt
         # rustfmt emits LF: a file committed with CRLF fails here as a diff of
         # every line, which reads like a formatting complaint about the whole
         # file when the real problem is carriage returns in the commit. Point at
@@ -70,7 +71,7 @@ jobs:
           fi
 
       - name: Upload formatting patch
-        if: failure()
+        if: failure() && steps.fmt.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: fmt-fix-${{ github.event.pull_request.number || github.run_id }}
@@ -222,10 +223,21 @@ jobs:
         run: npm run build
 
       - name: Dependency audit
+        id: audit
         # Production deps only: dev-tooling advisories (e.g. braces in the
         # eslint chain) never ship to users and currently have no fix.
         # High-severity prod advisories fail the build.
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Explain a dependency-audit failure
+        if: failure() && steps.audit.outcome == 'failure'
+        # npm audit failures are frequently *not* the contributor's fault: a
+        # fresh advisory in a transitive production dependency turns every open
+        # PR red at once (this repo paid for that in d282de1). Say how to tell
+        # the two cases apart so nobody "fixes" it by force-downgrading a
+        # package they did not come to change.
+        run: |
+          echo "::error::npm audit rejected a production dependency. Check whether the flagged package came from YOUR diff (git diff main -- frontend/package.json frontend/package-lock.json). If it did, upgrade it. If it did not, main already carries the advisory: merge main, run 'npm audit fix' (never '--force'), and if the advisory has no upstream fix say so in the PR body and ask a maintainer to add an overrides pin or an audit allow-list entry in a separate PR."
 
   ttl-sentinel:
     name: TTL sentinel — typecheck / tests
@@ -318,7 +330,15 @@ jobs:
       # cargo-deny's advisories check covers the same RustSec database as
       # cargo-audit, so one gate owns the ignore policy (see deny.toml).
       - name: cargo-deny (advisories, licenses, bans, sources)
+        id: deny
         uses: EmbarkStudios/cargo-deny-action@v2
+
+      # Scoped to this step's own outcome: failure() is true for any later step
+      # in a job that already failed, which would print the wrong diagnosis.
+      - name: Explain a cargo-deny failure
+        if: failure() && steps.deny.outcome == 'failure'
+        run: |
+          echo "::error::cargo-deny rejected the dependency graph — it prints the exact rule above (advisory / license / ban / source). If a crate you added pulls in an advisory, bump it. If the advisory is transitive and has no upstream fix, it belongs in deny.toml's ignore list with a comment naming the RUSTSEC id and why (see RUSTSEC-2024-0436 there) — and that is a change a maintainer reviews on its own, not something to bury in a feature PR. Reproduce locally: cargo install cargo-deny && cargo deny check."
 
   docs:
     name: Docs — internal link lint

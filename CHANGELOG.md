@@ -242,6 +242,11 @@ interface: they are only ever appended to, never renumbered or reused.
   - The devcontainer Wasm step explains that it runs no fmt, clippy or test steps, so
     its failure is the *compile* signal even when the Contract job stopped at a
     formatting complaint.
+  - `cargo-deny` and the frontend `npm audit` steps each gained a follow-up step
+    that fires only on their own outcome (`steps.<id>.outcome`) and says how to
+    tell "a dependency you added" from "an advisory main already carries" —
+    the second case has turned every open PR red before (`d282de1`) and invites a
+    force-downgrade of a package the contributor never came to change.
 - `npm run codes:check` and `npm run links:check` were added and are chained into
   `npm run matrix`, so the CI gate list and the local pre-flight are the same
   commands (CONTRIBUTING and the PR template name them).
