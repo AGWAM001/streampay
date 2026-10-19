@@ -12,7 +12,20 @@
 
 ## Checklist (CI runs all of these)
 
-- [ ] `cargo fmt --all -- --check`
+Run this **after** merging `main` into your branch — every item is a CI gate with
+the same command, so a clean local run means a clean CI run.
+
+- [ ] Branch is up to date with `main` (a conflicted PR gets **no** CI run at all)
+- [ ] `npm run lint:fix` — then commit what changed (`cargo fmt --all -- --check` is the gate)
 - [ ] `cargo clippy --all-targets -- -D warnings`
 - [ ] `cargo test -p streampay-contract`
-- [ ] `cd frontend && npm run typecheck && npm run build` (if frontend touched)
+- [ ] `npm run generated:check` — regenerates `docs/ERROR_SURFACE.md`, the error
+      catalog (`docs/errors.md`, `docs/errors/<code>.md`, `frontend/lib/errors.ts`)
+      and `tests/vectors/accrual_vectors.json`, then fails on drift. A failing run
+      has already written the right files: `git add` what it prints.
+- [ ] `npm run eol:check` — CRLF committed in a text file (whole-file `cargo fmt`
+      diffs and shifted content hashes); fix with `git add --renormalize .`
+- [ ] `cd frontend && npm run lint && npm run typecheck && npm test && npm run build` (if frontend touched)
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md#generated-files--ci-gates) for what each
+generated file comes from and which job enforces it.
