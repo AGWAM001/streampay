@@ -10,7 +10,7 @@
 
 use soroban_sdk::{contractclient, Address, Env, Vec};
 
-use crate::{Stream, StreamError};
+use crate::{PendingOwnership, Stream, StreamError};
 
 /// Interface of the StreamPay streaming-payments contract.
 #[contractclient(name = "StreamingPaymentsClient")]
@@ -31,6 +31,23 @@ pub trait StreamingPaymentsApi {
     fn withdraw_max(env: Env, stream_id: u64) -> Result<i128, StreamError>;
     fn cancel_stream(env: Env, caller: Address, stream_id: u64) -> Result<(), StreamError>;
     fn top_up(env: Env, stream_id: u64, amount: i128) -> Result<(), StreamError>;
+    fn propose_ownership_transfer(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+        new_owner: Address,
+    ) -> Result<(), StreamError>;
+    fn accept_ownership_transfer(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+    ) -> Result<(), StreamError>;
+    fn cancel_ownership_transfer(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+    ) -> Result<(), StreamError>;
+    fn pending_ownership_transfer(env: Env, stream_id: u64) -> Option<PendingOwnership>;
     fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError>;
     fn available(env: Env, stream_id: u64) -> Result<i128, StreamError>;
     fn recipient_streams(env: Env, recipient: Address, offset: u32, limit: u32) -> Vec<u64>;

@@ -41,4 +41,15 @@ pub enum StreamError {
     NotAuthorized = 12,
     /// `withdraw_max` found nothing accrued-but-unwithdrawn to pay out.
     NothingToWithdraw = 13,
+    /// No two-step ownership proposal exists for this stream.
+    NoPendingOwnership = 14,
+    /// The pending ownership proposal's acceptance window has elapsed; the
+    /// target must be proposed again by the current role holder.
+    OwnershipProposalExpired = 15,
+    /// The proposed new owner is already the current holder of that role (or
+    /// is otherwise not a valid transfer target).
+    InvalidTransferTarget = 16,
+    /// An unexpired ownership proposal already exists for this stream; cancel
+    /// or accept it before proposing another.
+    OwnershipProposalPending = 17,
 }

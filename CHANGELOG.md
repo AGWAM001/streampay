@@ -9,6 +9,30 @@ interface: they are only ever appended to, never renumbered or reused.
 
 ## [Unreleased]
 
+### Added
+- Two-step stream ownership transfer: `propose_ownership_transfer`,
+  `accept_ownership_transfer`, `cancel_ownership_transfer`, and the
+  `pending_ownership_transfer` read view. Either the sender (payer) or the
+  recipient (claimant) can hand their role to a new address; the target must
+  accept within a seven-day window. Accounting fields and token balances are
+  untouched — only future claim/refund destinations move.
+- `PendingOwnership` storage key (`DataKey::PendingOwnership(id)`), one
+  proposal per stream, with dedicated TTL maintenance.
+- Append-only `OwnershipProposed` / `OwnershipAccepted` events
+  (`stream_id` topic).
+- New `StreamError` codes, appended: `NoPendingOwnership` (14),
+  `OwnershipProposalExpired` (15), `InvalidTransferTarget` (16), and
+  `OwnershipProposalPending` (17).
+- `docs/ARCHITECTURE.md` §6: transfer state machine, index-consistency
+  rationale, and the accounting-invariance proof sketch for mid-stream
+  transfers.
+
+### Changed
+- `recipient_streams` / `sender_streams` now append the id to the new
+  holder's index on acceptance; the previous holder keeps its historical
+  entry. Indexes remain advisory — callers must verify the current role via
+  `get_stream`.
+
 ## [0.3.0] - 2026-10-04
 
 ### Changed
