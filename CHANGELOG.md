@@ -231,7 +231,10 @@ interface: they are only ever appended to, never renumbered or reused.
     code in use and the next free one. The collision two contributor PRs hit when
     both append "the next free code" is `E0081` four minutes into a build; here it
     is a one-line message in seconds — and on a PR event the merge ref already
-    contains both sides.
+    contains both sides. It then checks the `surface.rs` registry the same way the
+    contract's matrix test does: a code no `Branch` maps to (and that is not in
+    `RETIRED_CODES`) and a `Branch::…` name used without being declared — the two
+    shapes of the otherwise-unexplained red `Devcontainer — wasm build` check.
   - `scripts/check_docs_links.mjs` emits each broken link/anchor as a workflow
     annotation that names the closest existing paths (`did you mean
     ./ERROR_SURFACE.md?`) and flags case-only matches, which resolve on

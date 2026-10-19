@@ -20,7 +20,8 @@ the same command, so a clean local run means a clean CI run.
 - [ ] `cargo clippy --all-targets -- -D warnings`
 - [ ] `cargo test -p streampay-contract`
 - [ ] `npm run codes:check` — prints the highest error code in use and the next
-      free one; a code duplicated with another merged PR is `E0081` in CI
+      free one, and checks `surface.rs` wiring: a code duplicated with another
+      merged PR is `E0081` in CI, a code no `Branch` returns is a wasm-build failure
 - [ ] `npm run generated:check` — regenerates `docs/ERROR_SURFACE.md`, the error
       catalog (`docs/errors.md`, `docs/errors/<code>.md`, `frontend/lib/errors.ts`)
       and `tests/vectors/accrual_vectors.json`, then fails on drift. A failing run

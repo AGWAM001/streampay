@@ -30,8 +30,10 @@ jobs:
       # out the merge ref, so both sides of that collision are already in the
       # same file — reported here as file/line within seconds, instead of as an
       # `E0081: discriminant value assigned to multiple variants` minutes later in
-      # two jobs at once.
-      - name: Error-code registry is collision-free
+      # two jobs at once. The same script also verifies the `surface.rs` registry
+      # (every code mapped by a declared Branch or retired), which is the shape of
+      # most "the contract does not compile" reds in the devcontainer job.
+      - name: Error codes and registry wiring are consistent
         run: bash scripts/check_error_codes.sh
 
       - name: Install Rust toolchain
