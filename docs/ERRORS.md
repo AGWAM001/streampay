@@ -13,32 +13,18 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 3 | `NotStreamRecipient` | **retired** (unreachable) | — | Reserved role check from the original draft. Recipient-only actions require the recipient's authorization (`require_auth`) and use `NotAuthorized` (#12) for business-rule rejections, so this variant is never returned. Retained for wire compatibility. |
 | 4 | `StreamNotCancellable` | reachable (1 branch(es)) | `cancel_stream` | the recipient calls cancel_stream on a stream created non-cancelable |
 | 5 | `StreamNotActive` | reachable (1 branch(es)) | `cancel_stream`, `sponsored_withdraw`, `top_up`, `withdraw`, `withdraw_max` | the stream status is Cancelled or Depleted |
-| 6 | `StartTimeInPast` | reachable (1 branch(es)) | `create_stream` | start_time is before the current ledger timestamp |
-| 7 | `InvalidTimeRange` | reachable (1 branch(es)) | `create_stream` | end_time is not strictly after start_time (zero or negative duration) |
-| 8 | `DurationTooLong` | reachable (1 branch(es)) | `create_stream` | duration exceeds MAX_DURATION_SECONDS (100 years) |
-| 9 | `ZeroAmount` | reachable (6 branch(es)) | `create_stream`, `register_sponsor`, `sponsored_withdraw`, `top_up`, `withdraw`, `withdraw_treasury` | deposit_amount is zero or negative; withdraw amount is zero or negative; top-up amount is zero or negative; treasury withdrawal amount is zero or negative; a sponsor budget cap (per-period or per-beneficiary) is zero or negative; a sponsored claim requests a zero or negative payout |
-| 10 | `AmountExceedsAvailable` | reachable (2 branch(es)) | `sponsored_withdraw`, `withdraw` | amount exceeds the accrued-but-unwithdrawn balance; a sponsored claim exceeds the stream's accrued-but-unwithdrawn balance |
-| 11 | `MathOverflow` | reachable (6 branch(es)) | `available`, `cancel_stream`, `create_stream`, `sponsored_withdraw`, `streamed_at`, `top_up`, `withdraw`, `withdraw_max` | deposit + amount would overflow i128; deposit * duration would overflow u128; deposit * elapsed would overflow u128; withdrawn exceeds streamed (an invariant-violating stored stream); the cancel pro-rata split would underflow; withdrawn + amount would overflow i128 |
-| 5 | `StreamNotActive` | reachable (1 branch(es)) | `cancel_stream`, `top_up`, `withdraw`, `withdraw_max` | the stream status is Cancelled or Depleted |
 | 6 | `StartTimeInPast` | reachable (1 branch(es)) | `create_stream`, `create_streams` | start_time is before the current ledger timestamp |
 | 7 | `InvalidTimeRange` | reachable (1 branch(es)) | `create_stream`, `create_streams` | end_time is not strictly after start_time (zero or negative duration) |
 | 8 | `DurationTooLong` | reachable (1 branch(es)) | `create_stream`, `create_streams` | duration exceeds MAX_DURATION_SECONDS (100 years) |
-| 9 | `ZeroAmount` | reachable (4 branch(es)) | `create_stream`, `create_streams`, `top_up`, `withdraw`, `withdraw_treasury` | deposit_amount is zero or negative; withdraw amount is zero or negative; top-up amount is zero or negative; treasury withdrawal amount is zero or negative |
-| 10 | `AmountExceedsAvailable` | reachable (1 branch(es)) | `withdraw` | amount exceeds the accrued-but-unwithdrawn balance |
-| 11 | `MathOverflow` | reachable (6 branch(es)) | `available`, `cancel_stream`, `create_stream`, `create_streams`, `streamed_at`, `top_up`, `withdraw`, `withdraw_max` | deposit + amount would overflow i128; deposit * duration would overflow u128; deposit * elapsed would overflow u128; withdrawn exceeds streamed (an invariant-violating stored stream); the cancel pro-rata split would underflow; withdrawn + amount would overflow i128 |
+| 9 | `ZeroAmount` | reachable (6 branch(es)) | `create_stream`, `create_streams`, `register_sponsor`, `sponsored_withdraw`, `top_up`, `withdraw`, `withdraw_treasury` | deposit_amount is zero or negative; withdraw amount is zero or negative; top-up amount is zero or negative; treasury withdrawal amount is zero or negative; a sponsor budget cap (per-period or per-beneficiary) is zero or negative; a sponsored claim requests a zero or negative payout |
+| 10 | `AmountExceedsAvailable` | reachable (2 branch(es)) | `sponsored_withdraw`, `withdraw` | amount exceeds the accrued-but-unwithdrawn balance; a sponsored claim exceeds the stream's accrued-but-unwithdrawn balance |
+| 11 | `MathOverflow` | reachable (6 branch(es)) | `available`, `cancel_stream`, `create_stream`, `sponsored_withdraw`, `streamed_at`, `top_up`, `withdraw`, `withdraw_max` | deposit + amount would overflow i128; deposit * duration would overflow u128; deposit * elapsed would overflow u128; withdrawn exceeds streamed (an invariant-violating stored stream); the cancel pro-rata split would underflow; withdrawn + amount would overflow i128 |
 | 12 | `NotAuthorized` | reachable (1 branch(es)) | `cancel_stream` | the caller is neither the sender nor the recipient |
 | 13 | `NothingToWithdraw` | reachable (1 branch(es)) | `withdraw_max` | nothing has accrued yet, or everything accrued was already withdrawn |
 | 14 | `FeeRateTooHigh` | reachable (1 branch(es)) | `set_fee_bps` | new_fee_bps exceeds MAX_FEE_BPS (the protocol cap) |
 | 15 | `NotGovernor` | reachable (2 branch(es)) | `accept_governor`, `cancel_upgrade`, `execute_upgrade`, `migrate_storage`, `nominate_governor`, `propose_upgrade`, `set_fee_bps`, `set_frozen`, `set_stream_policy`, `withdraw_treasury` | the caller is not the treasury governor; the caller is not the nominated governor |
 | 16 | `NoPendingGovernor` | reachable (1 branch(es)) | `accept_governor` | accept_governor with no nomination pending |
 | 17 | `InsufficientTreasuryBalance` | reachable (1 branch(es)) | `withdraw_treasury` | amount exceeds fees collected minus fees already withdrawn |
-| 21 | `SponsorNotFound` | reachable (1 branch(es)) | `sponsored_withdraw` | no sponsor budget is registered for the address |
-| 22 | `SponsorInactive` | reachable (1 branch(es)) | `sponsored_withdraw` | the sponsor's budget is paused (inactive) |
-| 23 | `BeneficiaryNotEnrolled` | reachable (1 branch(es)) | `sponsored_withdraw` | the beneficiary has not enrolled an ed25519 consent key |
-| 24 | `ClaimExpired` | reachable (1 branch(es)) | `sponsored_withdraw` | the relayed claim was submitted after its deadline |
-| 25 | `ClaimNonceReplay` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim's nonce was already spent for this pair |
-| 26 | `SponsorBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the sponsor's per-period budget cap |
-| 27 | `BeneficiaryBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the per-beneficiary budget cap |
 | 18 | `IntentNotFound` | reachable (1 branch(es)) | `cancel_scheduled`, `execute_scheduled`, `get_intent`, `reclaim_expired` | no scheduled intent is stored under the id |
 | 19 | `IntentNotPending` | reachable (1 branch(es)) | `cancel_scheduled`, `execute_scheduled`, `reclaim_expired` | the intent is already executed, cancelled, or expired |
 | 20 | `IntentNotYetExecutable` | reachable (1 branch(es)) | `execute_scheduled` | the next occurrence has not reached execute_after |
@@ -68,6 +54,13 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 44 | `PolicyDurationBelowFloor` | reachable (1 branch(es)) | `create_stream`, `create_streams` | stream duration is below the governance policy floor |
 | 45 | `PolicyDurationAboveCeiling` | reachable (1 branch(es)) | `create_stream`, `create_streams` | stream duration exceeds the governance policy ceiling |
 | 46 | `PolicyDepositBelowFloor` | reachable (1 branch(es)) | `create_stream`, `create_streams`, `top_up` | stream deposit is below the governance policy floor |
+| 47 | `SponsorNotFound` | reachable (1 branch(es)) | `sponsored_withdraw` | no sponsor budget is registered for the address |
+| 48 | `SponsorInactive` | reachable (1 branch(es)) | `sponsored_withdraw` | the sponsor's budget is paused (inactive) |
+| 49 | `BeneficiaryNotEnrolled` | reachable (1 branch(es)) | `sponsored_withdraw` | the beneficiary has not enrolled an ed25519 consent key |
+| 50 | `ClaimExpired` | reachable (1 branch(es)) | `sponsored_withdraw` | the relayed claim was submitted after its deadline |
+| 51 | `ClaimNonceReplay` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim's nonce was already spent for this pair |
+| 52 | `SponsorBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the sponsor's per-period budget cap |
+| 53 | `BeneficiaryBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the per-beneficiary budget cap |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -88,10 +81,6 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `StreamNotActive` | `withdraw`, `withdraw_max`, `cancel_stream`, `top_up`, `sponsored_withdraw` | `StreamNotActive` | 5 | the stream status is Cancelled or Depleted | reachable |
 | `CapacityOverflow` | `create_stream`, `top_up` | `MathOverflow` | 11 | deposit * duration would overflow u128 | reachable |
 | `RateProductOverflow` | `streamed_at`, `available`, `withdraw`, `withdraw_max`, `cancel_stream`, `sponsored_withdraw` | `MathOverflow` | 11 | deposit * elapsed would overflow u128 | reachable |
-| `StreamNotFound` | `get_stream`, `available`, `withdraw`, `withdraw_max`, `cancel_stream`, `top_up` | `StreamNotFound` | 1 | no stream is stored under the id | reachable |
-| `StreamNotActive` | `withdraw`, `withdraw_max`, `cancel_stream`, `top_up` | `StreamNotActive` | 5 | the stream status is Cancelled or Depleted | reachable |
-| `CapacityOverflow` | `create_stream`, `create_streams`, `top_up` | `MathOverflow` | 11 | deposit * duration would overflow u128 | reachable |
-| `RateProductOverflow` | `streamed_at`, `available`, `withdraw`, `withdraw_max`, `cancel_stream` | `MathOverflow` | 11 | deposit * elapsed would overflow u128 | reachable |
 | `AvailableBalanceOverflow` | `available`, `withdraw`, `withdraw_max` | `MathOverflow` | 11 | withdrawn exceeds streamed (an invariant-violating stored stream) | defensive (unreachable) |
 | `CancelSplitOverflow` | `cancel_stream` | `MathOverflow` | 11 | the cancel pro-rata split would underflow | defensive (unreachable) |
 | `PayoutOverflow` | `withdraw`, `withdraw_max`, `sponsored_withdraw` | `MathOverflow` | 11 | withdrawn + amount would overflow i128 | defensive (unreachable) |
@@ -104,13 +93,13 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `RegisterLimitNonPositive` | `register_sponsor` | `ZeroAmount` | 9 | a sponsor budget cap (per-period or per-beneficiary) is zero or negative | reachable |
 | `SponsoredWithdrawAmountNonPositive` | `sponsored_withdraw` | `ZeroAmount` | 9 | a sponsored claim requests a zero or negative payout | reachable |
 | `SponsoredWithdrawAmountExceedsAvailable` | `sponsored_withdraw` | `AmountExceedsAvailable` | 10 | a sponsored claim exceeds the stream's accrued-but-unwithdrawn balance | reachable |
-| `SponsorNotFound` | `sponsored_withdraw` | `SponsorNotFound` | 21 | no sponsor budget is registered for the address | reachable |
-| `SponsorInactive` | `sponsored_withdraw` | `SponsorInactive` | 22 | the sponsor's budget is paused (inactive) | reachable |
-| `BeneficiaryNotEnrolled` | `sponsored_withdraw` | `BeneficiaryNotEnrolled` | 23 | the beneficiary has not enrolled an ed25519 consent key | reachable |
-| `ClaimExpired` | `sponsored_withdraw` | `ClaimExpired` | 24 | the relayed claim was submitted after its deadline | reachable |
-| `ClaimNonceReplay` | `sponsored_withdraw` | `ClaimNonceReplay` | 25 | the claim's nonce was already spent for this pair | reachable |
-| `SponsorBudgetPeriodExceeded` | `sponsored_withdraw` | `SponsorBudgetExceeded` | 26 | the claim would exceed the sponsor's per-period budget cap | reachable |
-| `SponsorBudgetBeneficiaryExceeded` | `sponsored_withdraw` | `BeneficiaryBudgetExceeded` | 27 | the claim would exceed the per-beneficiary budget cap | reachable |
+| `SponsorNotFound` | `sponsored_withdraw` | `SponsorNotFound` | 47 | no sponsor budget is registered for the address | reachable |
+| `SponsorInactive` | `sponsored_withdraw` | `SponsorInactive` | 48 | the sponsor's budget is paused (inactive) | reachable |
+| `BeneficiaryNotEnrolled` | `sponsored_withdraw` | `BeneficiaryNotEnrolled` | 49 | the beneficiary has not enrolled an ed25519 consent key | reachable |
+| `ClaimExpired` | `sponsored_withdraw` | `ClaimExpired` | 50 | the relayed claim was submitted after its deadline | reachable |
+| `ClaimNonceReplay` | `sponsored_withdraw` | `ClaimNonceReplay` | 51 | the claim's nonce was already spent for this pair | reachable |
+| `SponsorBudgetPeriodExceeded` | `sponsored_withdraw` | `SponsorBudgetExceeded` | 52 | the claim would exceed the sponsor's per-period budget cap | reachable |
+| `SponsorBudgetBeneficiaryExceeded` | `sponsored_withdraw` | `BeneficiaryBudgetExceeded` | 53 | the claim would exceed the per-beneficiary budget cap | reachable |
 | `IntentNotFound` | `get_intent`, `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotFound` | 18 | no scheduled intent is stored under the id | reachable |
 | `IntentNotPending` | `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotPending` | 19 | the intent is already executed, cancelled, or expired | reachable |
 | `IntentNotYetExecutable` | `execute_scheduled` | `IntentNotYetExecutable` | 20 | the next occurrence has not reached execute_after | reachable |

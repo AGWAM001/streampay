@@ -70,25 +70,6 @@ pub enum StreamError {
     /// A treasury withdrawal exceeds the fees collected minus fees already
     /// withdrawn for that token.
     InsufficientTreasuryBalance = 17,
-    // 18–20 are reserved for the dispute-flow error codes (open PR #138);
-    // wire codes are append-only, so the sponsorship block starts at 21.
-    /// No sponsor budget is registered for the provided sponsor address.
-    SponsorNotFound = 21,
-    /// The sponsor's budget exists but is currently paused (inactive).
-    SponsorInactive = 22,
-    /// The beneficiary has no registered ed25519 consent key; they must
-    /// enroll once before a claim can be sponsored on their behalf.
-    BeneficiaryNotEnrolled = 23,
-    /// A sponsored claim was relayed after its signed `deadline`.
-    ClaimExpired = 24,
-    /// The claim's nonce was already spent by this sponsor for this
-    /// beneficiary — a replay of a previously sponsored call.
-    ClaimNonceReplay = 25,
-    /// Paying this claim would exceed the sponsor's per-period budget cap.
-    SponsorBudgetExceeded = 26,
-    /// Paying this claim would exceed the per-beneficiary cap within the
-    /// sponsor's current budget window.
-    BeneficiaryBudgetExceeded = 27,
     /// No scheduled intent exists with the provided id.
     IntentNotFound = 18,
     /// The scheduled intent is not pending (already executed, cancelled, or
@@ -166,6 +147,23 @@ pub enum StreamError {
     PolicyDurationAboveCeiling = 45,
     /// Stream deposit is below the governance policy floor.
     PolicyDepositBelowFloor = 46,
+    /// No sponsor budget is registered for the provided sponsor address.
+    SponsorNotFound = 47,
+    /// The sponsor's budget exists but is currently paused (inactive).
+    SponsorInactive = 48,
+    /// The beneficiary has no registered ed25519 consent key; they must
+    /// enroll once before a claim can be sponsored on their behalf.
+    BeneficiaryNotEnrolled = 49,
+    /// A sponsored claim was relayed after its signed `deadline`.
+    ClaimExpired = 50,
+    /// The claim's nonce was already spent by this sponsor for this
+    /// beneficiary — a replay of a previously sponsored call.
+    ClaimNonceReplay = 51,
+    /// Paying this claim would exceed the sponsor's per-period budget cap.
+    SponsorBudgetExceeded = 52,
+    /// Paying this claim would exceed the per-beneficiary cap within the
+    /// sponsor's current budget window.
+    BeneficiaryBudgetExceeded = 53,
 }
 
 impl StreamError {
@@ -190,13 +188,6 @@ impl StreamError {
         StreamError::NotGovernor,
         StreamError::NoPendingGovernor,
         StreamError::InsufficientTreasuryBalance,
-        StreamError::SponsorNotFound,
-        StreamError::SponsorInactive,
-        StreamError::BeneficiaryNotEnrolled,
-        StreamError::ClaimExpired,
-        StreamError::ClaimNonceReplay,
-        StreamError::SponsorBudgetExceeded,
-        StreamError::BeneficiaryBudgetExceeded,
         StreamError::IntentNotFound,
         StreamError::IntentNotPending,
         StreamError::IntentNotYetExecutable,
@@ -226,6 +217,13 @@ impl StreamError {
         StreamError::PolicyDurationBelowFloor,
         StreamError::PolicyDurationAboveCeiling,
         StreamError::PolicyDepositBelowFloor,
+        StreamError::SponsorNotFound,
+        StreamError::SponsorInactive,
+        StreamError::BeneficiaryNotEnrolled,
+        StreamError::ClaimExpired,
+        StreamError::ClaimNonceReplay,
+        StreamError::SponsorBudgetExceeded,
+        StreamError::BeneficiaryBudgetExceeded,
     ];
 
     /// The stable numeric value carried across the contract boundary

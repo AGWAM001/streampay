@@ -43,6 +43,11 @@ interface WebhookDLQItem {
   replayed_at?: string;
 }
 
+type WebhookTabData =
+  | { tab: "endpoints"; data: WebhookEndpoint[] }
+  | { tab: "deliveries"; data: WebhookDelivery[] }
+  | { tab: "dlq"; data: WebhookDLQItem[] };
+
 const ALL_EVENT_TYPES = [
   "stream_created",
   "withdrawn",
@@ -60,7 +65,6 @@ export default function WebhooksSettingsPage() {
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [dlqItems, setDlqItems] = useState<WebhookDLQItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   // Form states
   const [newUrl, setNewUrl] = useState("");
@@ -70,29 +74,45 @@ export default function WebhooksSettingsPage() {
   // New secret modal / banner
   const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (): Promise<WebhookTabData | null> => {
     try {
       if (activeTab === "endpoints") {
         const res = await fetch("/api/webhooks?type=endpoints");
-        if (res.ok) setEndpoints(await res.json());
+        if (res.ok) return { tab: "endpoints", data: await res.json() };
       } else if (activeTab === "deliveries") {
         const res = await fetch("/api/webhooks?type=deliveries");
-        if (res.ok) setDeliveries(await res.json());
+        if (res.ok) return { tab: "deliveries", data: await res.json() };
       } else if (activeTab === "dlq") {
         const res = await fetch("/api/webhooks?type=dlq");
-        if (res.ok) setDlqItems(await res.json());
+        if (res.ok) return { tab: "dlq", data: await res.json() };
       }
+      return null;
     } catch (e: unknown) {
       toast.error(`Failed to load webhook data: ${String(e)}`);
-    } finally {
-      setLoading(false);
+      return null;
     }
   }, [activeTab, toast]);
 
+  const applyData = useCallback((result: WebhookTabData | null) => {
+    if (!result) return;
+    if (result.tab === "endpoints") setEndpoints(result.data);
+    else if (result.tab === "deliveries") setDeliveries(result.data);
+    else setDlqItems(result.data);
+  }, []);
+
+  const refreshData = useCallback(() => {
+    void loadData().then(applyData);
+  }, [applyData, loadData]);
+
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    let active = true;
+    void loadData().then((result) => {
+      if (active) applyData(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, [applyData, loadData]);
 
   async function handleRegisterEndpoint(e: React.FormEvent) {
     e.preventDefault();
@@ -119,7 +139,7 @@ export default function WebhooksSettingsPage() {
       toast.success("Webhook endpoint registered successfully!");
       setRevealedSecret({ id: data.id, secret: data.secret });
       setNewUrl("");
-      void loadData();
+      refreshData();
     } catch (err: unknown) {
       toast.error(`Registration error: ${String(err)}`);
     } finally {
@@ -146,7 +166,7 @@ export default function WebhooksSettingsPage() {
 
       toast.success("Signing secret rotated successfully!");
       setRevealedSecret({ id, secret: data.secret });
-      void loadData();
+      refreshData();
     } catch (err: unknown) {
       toast.error(`Rotation error: ${String(err)}`);
     }
@@ -166,7 +186,7 @@ export default function WebhooksSettingsPage() {
         return;
       }
       toast.success("Webhook endpoint deleted");
-      void loadData();
+      refreshData();
     } catch (err: unknown) {
       toast.error(`Delete error: ${String(err)}`);
     }
@@ -186,7 +206,7 @@ export default function WebhooksSettingsPage() {
       } else {
         toast.error(`Test ping failed: ${data.error || `HTTP ${data.statusCode}`}`);
       }
-      void loadData();
+      refreshData();
     } catch (err: unknown) {
       toast.error(`Test fire error: ${String(err)}`);
     }
@@ -204,7 +224,7 @@ export default function WebhooksSettingsPage() {
         return;
       }
       toast.success("Event re-enqueued for fresh delivery!");
-      void loadData();
+      refreshData();
     } catch (err: unknown) {
       toast.error(`Replay error: ${String(err)}`);
     }
@@ -230,7 +250,7 @@ export default function WebhooksSettingsPage() {
           </div>
           <button
             type="button"
-            onClick={() => void loadData()}
+            onClick={refreshData}
             className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-xl text-xs font-medium text-neutral-300 transition"
           >
             ↻ Refresh

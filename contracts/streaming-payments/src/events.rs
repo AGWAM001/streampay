@@ -3,8 +3,6 @@
 //! Per-stream events are keyed by `stream_id`; `StreamsCreated` is keyed by
 //! sender and carries the batch ids. Non-topic fields are event data.
 
-use soroban_sdk::{contractevent, Address, BytesN};
-use soroban_sdk::{contractevent, Address, Vec};
 use soroban_sdk::{contractevent, Address, BytesN, Vec};
 
 /// Emitted when a new stream is created and its deposit pulled in.
@@ -246,6 +244,8 @@ pub struct SponsorClaim {
     pub beneficiary: Address,
     pub amount: i128,
     pub nonce: u64,
+}
+
 /// Emitted when the policy module is initialized with its initial admin.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]

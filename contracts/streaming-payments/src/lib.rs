@@ -61,13 +61,13 @@ mod differential_test;
 mod error_surface_test;
 mod errors;
 mod events;
-pub(crate) mod sponsor;
-#[cfg(test)]
-mod sponsor_test;
 mod policy;
 mod schedule;
 #[cfg(test)]
 mod schedule_test;
+pub(crate) mod sponsor;
+#[cfg(test)]
+mod sponsor_test;
 mod stream;
 pub mod surface;
 #[cfg(test)]
@@ -86,27 +86,16 @@ use surface::Branch;
 
 pub use errors::StreamError;
 pub use events::{
-    BeneficiaryEnrolled, FeeCharged, FeeWithdrawn, OperatorKeyRotated, SponsorActiveSet,
-    SponsorClaim, SponsorRegistered, StreamCancelled, StreamCreated, StreamToppedUp, Withdrawn,
-};
-pub use sponsor::{PeriodSpend, SponsorConfig};
-    FeeCharged, FeeWithdrawn, ScheduledIntentCancelled, ScheduledIntentExpired,
-    ScheduledStreamExecuted, StreamCancelled, StreamCreated, StreamScheduled, StreamToppedUp,
-    StreamsCreated, Withdrawn,
-    FeeCharged, FeeWithdrawn, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
+    BeneficiaryEnrolled, ContractFrozenStateChanged, ContractUpgraded, FeeCharged, FeeWithdrawn,
+    OperatorKeyRotated, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
     PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized, ScheduledIntentCancelled,
-    ScheduledIntentExpired, ScheduledStreamExecuted, StreamCancelled, StreamCreated,
-    StreamScheduled, StreamToppedUp, StreamsCreated, Withdrawn,
-    ContractFrozenStateChanged, ContractUpgraded, FeeCharged, FeeWithdrawn, PolicyAssetExecuted,
-    PolicyAssetQueued, PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed,
-    PolicyInitialized, ScheduledIntentCancelled, ScheduledIntentExpired, ScheduledStreamExecuted,
-    StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet, StreamScheduled,
-    StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
+    ScheduledIntentExpired, ScheduledStreamExecuted, SponsorActiveSet, SponsorClaim,
+    SponsorRegistered, StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet,
+    StreamScheduled, StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
-pub use policy::{
-    validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy,
-};
+pub use policy::{validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
+pub use sponsor::{PeriodSpend, SponsorConfig};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
 pub use stream::{
@@ -1464,6 +1453,8 @@ impl StreamingPayments {
             &env,
             &sponsor::SponsorKey::BeneficiarySpend(sponsor, beneficiary),
         )
+    }
+
     // ------------------------------------------------------------- policy --
     //
     // The optional asset allowlist and governance layer: restricts which assets

@@ -159,14 +159,6 @@ const STREAM_ERRORS: Record<number, string> = {
   15: "NotGovernor",
   16: "NoPendingGovernor",
   17: "InsufficientTreasuryBalance",
-  // 18-20 are reserved for the dispute-flow codes; wire codes are append-only.
-  21: "SponsorNotFound",
-  22: "SponsorInactive",
-  23: "BeneficiaryNotEnrolled",
-  24: "ClaimExpired",
-  25: "ClaimNonceReplay",
-  26: "SponsorBudgetExceeded",
-  27: "BeneficiaryBudgetExceeded",
   18: "IntentNotFound",
   19: "IntentNotPending",
   20: "IntentNotYetExecutable",
@@ -180,6 +172,29 @@ const STREAM_ERRORS: Record<number, string> = {
   28: "RecipientPayoutFailed",
   29: "SenderRefundFailed",
   30: "TreasuryPayoutFailed",
+  31: "PolicyAssetNotAllowed",
+  32: "PolicyTimelockNotElapsed",
+  33: "PolicyNoQueuedChange",
+  34: "PolicyNotInitialized",
+  35: "PolicyNoPendingHandoff",
+  36: "ContractFrozen",
+  37: "ContractNotFrozen",
+  38: "NoPendingUpgrade",
+  39: "TimelockNotExpired",
+  40: "UpgradeDelayTooShort",
+  41: "AlreadyMigrated",
+  42: "PolicyRateBelowFloor",
+  43: "PolicyRateAboveCeiling",
+  44: "PolicyDurationBelowFloor",
+  45: "PolicyDurationAboveCeiling",
+  46: "PolicyDepositBelowFloor",
+  47: "SponsorNotFound",
+  48: "SponsorInactive",
+  49: "BeneficiaryNotEnrolled",
+  50: "ClaimExpired",
+  51: "ClaimNonceReplay",
+  52: "SponsorBudgetExceeded",
+  53: "BeneficiaryBudgetExceeded",
 };
 
 /** Rewrites raw simulation/tx error text into a readable StreamError name. */
@@ -570,12 +585,12 @@ function toHex(v: unknown): string {
 
 /** Reads a sponsor's budget, or null when the address is not a sponsor. */
 export async function readSponsor(sponsor: string): Promise<SponsorView | null> {
-  const cfgVal = await simulateRead("get_sponsor", [scAddr(sponsor)]);
+  const cfgVal = await simulateRead(CONTRACT_ID, "get_sponsor", [scAddr(sponsor)]);
   if (!cfgVal) return null;
   const cfg = scValToNative(cfgVal) as Record<string, unknown> | null;
   if (!cfg) return null; // Option::None
 
-  const spendVal = await simulateRead("sponsor_period_spend", [
+  const spendVal = await simulateRead(CONTRACT_ID, "sponsor_period_spend", [
     scAddr(sponsor),
   ]);
   const spend = spendVal
@@ -598,7 +613,7 @@ export async function readSponsor(sponsor: string): Promise<SponsorView | null> 
 export async function readBeneficiaryKey(
   beneficiary: string
 ): Promise<string | null> {
-  const retval = await simulateRead("get_beneficiary_public_key", [
+  const retval = await simulateRead(CONTRACT_ID, "get_beneficiary_public_key", [
     scAddr(beneficiary),
   ]);
   if (!retval) return null;
@@ -711,4 +726,3 @@ export async function fetchAddressStreamsPage(
 
   return paginateStreamsByCursor(streams, options, asOfTimestamp);
 }
-

@@ -10,11 +10,9 @@
 
 use soroban_sdk::{contractclient, Address, BytesN, Env, Vec};
 
-use crate::{FeeScan, PeriodSpend, SponsorConfig, Stream, StreamError, TreasuryStatus};
-use crate::{FeeScan, ScheduledIntent, Stream, StreamError, StreamInput, TreasuryStatus};
 use crate::{
-    FeeScan, MigrationStatus, PendingUpgrade, ScheduledIntent, Stream, StreamError, StreamInput,
-    StreamPolicy, TreasuryStatus,
+    FeeScan, MigrationStatus, PendingUpgrade, PeriodSpend, ScheduledIntent, SponsorConfig, Stream,
+    StreamError, StreamInput, StreamPolicy, TreasuryStatus,
 };
 
 /// Interface of the StreamPay streaming-payments contract.

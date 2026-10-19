@@ -177,10 +177,7 @@ impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 34] = [
-    pub const ALL: [Branch; 37] = [
-    pub const ALL: [Branch; 42] = [
-    pub const ALL: [Branch; 54] = [
+    pub const ALL: [Branch; 64] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -281,8 +278,6 @@ impl Branch {
                 "sponsored_withdraw",
             ],
             Branch::CapacityOverflow => &["create_stream", "top_up"],
-            Branch::StreamNotActive => &["withdraw", "withdraw_max", "cancel_stream", "top_up"],
-            Branch::CapacityOverflow => &["create_stream", "create_streams", "top_up"],
             Branch::RateProductOverflow => &[
                 "streamed_at",
                 "available",
@@ -371,8 +366,9 @@ impl Branch {
             Branch::PolicyDepositBelowFloor
             | Branch::PolicyRateBelowFloor
             | Branch::PolicyRateAboveCeiling => &["create_stream", "create_streams", "top_up"],
-            Branch::PolicyDurationBelowFloor
-            | Branch::PolicyDurationAboveCeiling => &["create_stream", "create_streams"],
+            Branch::PolicyDurationBelowFloor | Branch::PolicyDurationAboveCeiling => {
+                &["create_stream", "create_streams"]
+            }
         }
     }
 
@@ -514,6 +510,7 @@ impl Branch {
             }
             Branch::SponsorBudgetBeneficiaryExceeded => {
                 "the claim would exceed the per-beneficiary budget cap"
+            }
             Branch::IntentNotFound => "no scheduled intent is stored under the id",
             Branch::IntentNotPending => "the intent is already executed, cancelled, or expired",
             Branch::IntentNotYetExecutable => "the next occurrence has not reached execute_after",

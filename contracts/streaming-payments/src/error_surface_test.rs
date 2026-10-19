@@ -20,7 +20,6 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN};
 
 use crate::sponsor;
-use crate::stream::streamed_at;
 use crate::stream::{streamed_at, DataKey};
 use crate::surface::{trace, Branch, Reachability, RETIRED_CODES};
 use crate::test::{Fixture, RefusingFixture};
@@ -408,6 +407,7 @@ fn probe(branch: Branch) -> Option<StreamError> {
             Some(rejected!(sponsored_claim(&f, &sponsor, id, 100, 1, {
                 f.env.ledger().timestamp() + DAY
             })))
+        }
         // ------------------------------------------------ scheduled intents
         Branch::IntentNotFound => {
             let f = Fixture::setup_quiet();
@@ -949,7 +949,7 @@ fn stream_error_variant_list_is_exhaustive() {
             | StreamError::ClaimExpired
             | StreamError::ClaimNonceReplay
             | StreamError::SponsorBudgetExceeded
-            | StreamError::BeneficiaryBudgetExceeded => StreamError::ALL.contains(&e),
+            | StreamError::BeneficiaryBudgetExceeded
             | StreamError::IntentNotFound
             | StreamError::IntentNotPending
             | StreamError::IntentNotYetExecutable

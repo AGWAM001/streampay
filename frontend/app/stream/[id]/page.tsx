@@ -147,7 +147,6 @@ export default function StreamDetail() {
     })();
   }, [address, loadSponsorship]);
 
-  if (error && !stream) {
   if (loadError && !stream) {
     return (
       <main className="wrap">
@@ -282,6 +281,8 @@ export default function StreamDetail() {
       <h1>
         {stream.status === "Active" ? "⚡ Streaming" : `⏹ ${stream.status}`}
       </h1>
+      {status && <p className="success">{status}</p>}
+      {error && <p className="err">{error}</p>}
 
       <section className="card">
         <div className="row">
