@@ -83,6 +83,17 @@ export function sanitizeAttributes(
   for (const [key, value] of Object.entries(attributes)) {
     if (value === undefined || value === null) continue;
 
+    // Financial data protection: omit financial amounts from exported telemetry attributes
+    if (
+      key.toLowerCase() === "amount" ||
+      key.toLowerCase().endsWith(".amount") ||
+      key.toLowerCase().includes("balance") ||
+      key.toLowerCase().includes("deposit") ||
+      key.toLowerCase().includes("withdrawn")
+    ) {
+      continue;
+    }
+
     // Check for address fields
     if (
       key.toLowerCase().includes("address") ||

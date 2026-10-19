@@ -56,12 +56,6 @@ export default function WebhooksSettingsPage() {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<"endpoints" | "deliveries" | "dlq">("endpoints");
 
-  const handleTabChange = (tab: "endpoints" | "deliveries" | "dlq") => {
-    if (tab === activeTab) return;
-    setLoading(true);
-    setActiveTab(tab);
-  };
-
   // Data states
   const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
@@ -239,11 +233,10 @@ export default function WebhooksSettingsPage() {
           </div>
           <button
             type="button"
-            disabled={loading}
             onClick={() => void loadData()}
-            className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 disabled:opacity-50 rounded-xl text-xs font-medium text-neutral-300 transition"
+            className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-xl text-xs font-medium text-neutral-300 transition"
           >
-            {loading ? "Refreshing…" : "↻ Refresh"}
+            ↻ Refresh
           </button>
         </div>
 
@@ -285,7 +278,7 @@ export default function WebhooksSettingsPage() {
         <div className="flex gap-2 border-b border-neutral-800 pb-2">
           <button
             type="button"
-            onClick={() => handleTabChange("endpoints")}
+            onClick={() => setActiveTab("endpoints")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "endpoints"
                 ? "bg-neutral-800 text-white"
@@ -296,7 +289,7 @@ export default function WebhooksSettingsPage() {
           </button>
           <button
             type="button"
-            onClick={() => handleTabChange("deliveries")}
+            onClick={() => setActiveTab("deliveries")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "deliveries"
                 ? "bg-neutral-800 text-white"
@@ -307,7 +300,7 @@ export default function WebhooksSettingsPage() {
           </button>
           <button
             type="button"
-            onClick={() => handleTabChange("dlq")}
+            onClick={() => setActiveTab("dlq")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "dlq"
                 ? "bg-neutral-800 text-white"

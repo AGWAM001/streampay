@@ -6,36 +6,38 @@ This document details the OpenTelemetry (OTel) distributed tracing instrumentati
 
 ## 1. End-to-End Claim Lifecycle Architecture
 
-When a user initiates an on-chain action such as **Claim** (`withdraw_max` / `withdraw`), the trace traverses synchronous network boundaries and asynchronous blockchain ledger seams:
+When a user initiates an on-chain action such as **Claim** (`withdraw_max` / `withdraw`), the trace traverses client-side transaction submission, cross-process correlation registration, blockchain consensus seams, indexer event ingestion, and downstream push notifications:
 
 ```
-[BROWSER UI]
+[BROWSER UI / CLIENT]
    │  User clicks "Claim" on stream #42
    │  Span: browser.claim_click (Trace A)
-   │  W3C Propagation: traceparent: 00-{TraceA}-{Span1}-01
+   │  Child Span: soroban.rpc.call (Trace A)
+   │     Simulates contract invocation, signs with Freighter, submits to Horizon/RPC
+   │     Receives confirmed on-chain transaction hash: `soroban.tx_hash`
+   │  Correlation Call: POST /api/traces/correlate
+   │     Transmits: { txHash, traceContext: Trace A, streamId } to Indexer process
    ▼
-[NEXT.JS SERVER ROUTE] (POST /api/claim)
-   │  Span: POST /api/claim (Child of browser.claim_click, Trace A)
-   │  Validates stream & coordinates claim preparation
-   ▼
-[SOROBAN RPC]
-   │  Span: soroban.rpc.call (Child of POST /api/claim, Trace A)
-   │  Simulates / submits transaction; captures public tx_hash
-   │  Registers correlation: tx_hash ──> Trace A Context
+[STREAMPLAY INDEXER PROCESS]
+   │  Stores correlation in memory-bounded `TraceCorrelationRegistry` (TTL: 1 hour, max 10,000 entries)
+   │  Exposes /api/traces/correlate for cross-process trace context handoff
    ▼
 ══════════════════════════════════════════════════════════════════════════════
  ⛓️  THE HARD ASYNC SEAM: Blockchain Consensus & Ledger Delay (~5-10 seconds)
 ══════════════════════════════════════════════════════════════════════════════
    │
-   │  Contract emits event: `withdrawn` (stream_id, recipient, amount, tx_hash)
+   │  Soroban emits contract event: `withdrawn` (stream_id, recipient, amount, tx_hash)
    ▼
-[STREAMPLAY INDEXER]
-   │  Span: indexer.ingest_event (Trace B - New process trace!)
-   │  🔗 SPAN LINK: Points to Trace A (POST /api/claim)
+[STREAMPLAY INDEXER INGESTION]
+   │  Polls `getEvents` from Soroban RPC, decodes event and extracts `txHash`
+   │  Looks up `TraceCorrelationRegistry.get(txHash)`
+   │  Span: indexer.ingest_event (Trace B - New independent process trace!)
+   │  🔗 SPAN LINK: Points to Trace A (browser.claim_click / soroban.rpc.call)
    │     Attributes: link.relationship = "ledger_event_continuation"
    │                 soroban.tx_hash = "0x..."
    │                 ledger.sequence = 10505
    ├──> Child Span: indexer.db_write (SQLite state persistence)
+   │       Persists event with `tx_hash`, `trace_id`, and `span_id`
    └──> Child Span: push.dispatch (Trace B)
             ▼
 [PUSH NOTIFICATIONS]
@@ -138,12 +140,28 @@ To protect user wallet confidentiality and prevent telemetry sinks from acting a
 3. **Webhook Destinations**: Masked to origin only (`https://api.merchant.com/***`). Paths, query tokens, and auth headers are stripped.
 4. **Emails & Chat IDs**: Masked to domain (`***@streampay.org`) and chat suffix (`chat_***4321`).
 5. **Transaction Hashes & Stream IDs**: Permitted in full (immutable public on-chain identifiers).
+6. **Financial Amounts & Balances**: Strictly prohibited and omitted (`amount`, `deposit`, `withdrawn`, `balance` are stripped by `sanitizeAttributes` and never exported in traces).
 
 See [`docs/PRIVACY.md`](./PRIVACY.md) for the complete specification.
 
 ---
 
-## 5. Compose Bundle Deployment
+## 5. Telemetry SDK Architecture & Concurrency Isolation
+
+StreamPay implements a lightweight, zero-dependency OpenTelemetry wire-compatible telemetry engine in `indexer` and `frontend`:
+
+- **Zero Heavyweight `@opentelemetry/*` Node Dependencies**: Next.js client bundle budgets and strict npm audit policies prohibit multi-megabyte Node-specific OTel SDK packages. Our telemetry exports standard OTLP/HTTP JSON (v1) wire payloads and parses/injects W3C TraceContext headers (`traceparent`) with 100% specification compatibility.
+- **AsyncLocalStorage Isolation**: Trace context propagation uses Node.js `AsyncLocalStorage` to eliminate concurrent request cross-contamination, replacing global mutable tracer state.
+- **OTLP SpanKind Mapping**: Fully compliant with the OpenTelemetry protobuf specification:
+  - `INTERNAL = 1`
+  - `SERVER = 2`
+  - `CLIENT = 3`
+  - `PRODUCER = 4`
+  - `CONSUMER = 5`
+
+---
+
+## 6. Compose Bundle Deployment
 
 The complete observability stack with OpenTelemetry Collector and Jaeger is containerized under `infra/observability/docker-compose.yml`:
 
@@ -167,7 +185,7 @@ docker compose up -d
 
 ---
 
-## 6. Running the Trace Verification Demo
+## 7. Running the Trace Verification Demo
 
 To simulate an end-to-end claim trace and print the visual graph:
 

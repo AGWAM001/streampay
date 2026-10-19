@@ -367,7 +367,7 @@ export class OtlpHttpSpanExporter implements SpanExporter {
     }
   }
 
-  private spanKindToOtlp(kind: SpanKind): number {
+  spanKindToOtlp(kind: SpanKind): number {
     switch (kind) {
       case "INTERNAL": return 1;
       case "SERVER": return 2;
@@ -387,6 +387,17 @@ export class OtlpHttpSpanExporter implements SpanExporter {
   }
 }
 
+export function spanKindToOtlp(kind: SpanKind): number {
+  switch (kind) {
+    case "INTERNAL": return 1;
+    case "SERVER": return 2;
+    case "CLIENT": return 3;
+    case "PRODUCER": return 4;
+    case "CONSUMER": return 5;
+    default: return 1;
+  }
+}
+
 export interface TracerOptions {
   serviceName: string;
   exporters?: SpanExporter[];
@@ -398,6 +409,10 @@ export class Tracer {
   public readonly resource: Record<string, string>;
   private readonly exporters: SpanExporter[] = [];
   private activeSpan: Span | null = null;
+  private asyncLocalStorage?: {
+    getStore: () => Span | undefined;
+    run: <R>(store: Span, callback: () => R) => R;
+  };
 
   constructor(options: TracerOptions) {
     this.serviceName = options.serviceName;
@@ -409,10 +424,25 @@ export class Tracer {
     if (options.exporters && options.exporters.length > 0) {
       this.exporters.push(...options.exporters);
     }
+    if (typeof process !== "undefined" && process.versions?.node) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const asyncHooks = require("node:async_hooks");
+        if (asyncHooks?.AsyncLocalStorage) {
+          this.asyncLocalStorage = new asyncHooks.AsyncLocalStorage();
+        }
+      } catch {
+        // Browser/bundler fallback
+      }
+    }
   }
 
   addExporter(exporter: SpanExporter): void {
     this.exporters.push(exporter);
+  }
+
+  getActiveSpan(): Span | undefined {
+    return this.asyncLocalStorage ? this.asyncLocalStorage.getStore() : (this.activeSpan ?? undefined);
   }
 
   startSpan(
@@ -433,9 +463,12 @@ export class Tracer {
     } else if (options.parent) {
       parentCtx = options.parent;
       parentSpanId = options.parent.spanId;
-    } else if (this.activeSpan) {
-      parentCtx = this.activeSpan.context;
-      parentSpanId = this.activeSpan.context.spanId;
+    } else {
+      const active = this.getActiveSpan();
+      if (active) {
+        parentCtx = active.context;
+        parentSpanId = active.context.spanId;
+      }
     }
 
     const traceId = parentCtx ? parentCtx.traceId : generateTraceId();
@@ -465,6 +498,21 @@ export class Tracer {
     } = {}
   ): Promise<T> {
     const span = this.startSpan(name, options);
+    if (this.asyncLocalStorage) {
+      return this.asyncLocalStorage.run(span, async () => {
+        try {
+          const result = await fn(span);
+          if (span.status.code === "UNSET") span.setStatus("OK");
+          return result;
+        } catch (err) {
+          span.recordException(err);
+          throw err;
+        } finally {
+          span.end();
+        }
+      });
+    }
+
     const previous = this.activeSpan;
     this.activeSpan = span;
     try {
@@ -501,7 +549,7 @@ export class Tracer {
  * allowing the asynchronous Indexer to extract the original trace context when the event is
  * ingested from Soroban RPC and attach a SpanLink!
  */
-class TraceCorrelationRegistry {
+export class TraceCorrelationRegistry {
   private correlations = new Map<string, { context: SpanContext; timestamp: number; streamId?: string }>();
 
   register(
@@ -544,9 +592,43 @@ class TraceCorrelationRegistry {
     const entry = this.correlations.get(`stream:${streamId}`);
     return entry ? entry.context : null;
   }
+
+  clear(): void {
+    this.correlations.clear();
+  }
 }
 
 export const traceCorrelationRegistry = new TraceCorrelationRegistry();
+
+/**
+ * Registers trace correlation locally and propagates to the Indexer service,
+ * so that when the Indexer ingests the real on-chain transaction, it attaches a SpanLink.
+ */
+export function registerTraceCorrelation(
+  txHash: string,
+  context: SpanContext,
+  streamId?: string
+): void {
+  traceCorrelationRegistry.register(txHash, context, streamId);
+
+  const indexerUrl =
+    (typeof process !== "undefined" && (process.env?.NEXT_PUBLIC_INDEXER_URL || process.env?.INDEXER_URL)) ||
+    "http://localhost:8787";
+
+  if (typeof fetch !== "undefined") {
+    fetch(`${indexerUrl}/api/traces/correlate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        txHash,
+        traceContext: context,
+        streamId,
+      }),
+    }).catch(() => {
+      // Non-blocking telemetry
+    });
+  }
+}
 
 // Shared default frontend tracer
 export const globalFrontendTracer = new Tracer({

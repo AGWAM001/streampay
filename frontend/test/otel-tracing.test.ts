@@ -103,13 +103,15 @@ describe("OpenTelemetry Distributed Tracing & Async Seams", () => {
       assert.ok(sanitized.includes("[REDACTED_SECRET_KEY]"));
     });
 
-    it("automatically sanitizes span attributes dictionary", () => {
+    it("strictly omits financial amounts from span attributes according to PRIVACY.md", () => {
       const rawAttrs = {
         "recipient.address": "GBMOCK1234567890123456789012345678901234567890123456789012",
         "webhook.url": "https://service.org/push/token123",
         "user.email": "bob@org.io",
         "stream.id": "42",
         "amount": 5000000,
+        "deposit": 10000000,
+        "balance": 2500000,
       };
 
       const sanitized = sanitizeAttributes(rawAttrs);
@@ -117,16 +119,19 @@ describe("OpenTelemetry Distributed Tracing & Async Seams", () => {
       assert.equal(sanitized["webhook.url"], "https://service.org/***");
       assert.equal(sanitized["user.email"], "***@org.io");
       assert.equal(sanitized["stream.id"], "42");
-      assert.equal(sanitized["amount"], 5000000);
+      assert.equal(sanitized["amount"], undefined, "Financial amount must not be exported in traces");
+      assert.equal(sanitized["deposit"], undefined, "Financial deposit must not be exported in traces");
+      assert.equal(sanitized["balance"], undefined, "Financial balance must not be exported in traces");
     });
   });
 
   describe("3. End-to-End Claim Flow with Event Seam Span Link", () => {
-    it("traces browser claim -> server route -> RPC call -> event ingest (span-linked) -> push", async () => {
+    it("traces browser claim -> on-chain submit -> event ingest (span-linked) -> push dispatch", async () => {
       const recipientAddress = "GDJ6TEST1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12";
       const streamId = "101";
+      const txHash = "0x4f8c2b7e1234567890abcdef1234567890abcdef1234567890abcdef12345678";
 
-      // ─── STEP 1: BROWSER CLAIM CLICK ──────────────────────────────────────
+      // ─── STEP 1: BROWSER CLAIM CLICK & ON-CHAIN SUBMISSION ────────────────
       const browserSpan = tracer.startSpan("browser.claim_click", {
         kind: "CLIENT",
         attributes: {
@@ -136,29 +141,9 @@ describe("OpenTelemetry Distributed Tracing & Async Seams", () => {
         },
       });
 
-      // Propagate W3C context to server route
-      const httpHeaders: Record<string, string> = {};
-      W3CTraceContextPropagator.inject(browserSpan.context, httpHeaders);
-
-      // ─── STEP 2: SERVER ROUTE (/api/claim) ────────────────────────────────
-      const extractedContext = W3CTraceContextPropagator.extract(httpHeaders);
-      assert.ok(extractedContext);
-      assert.equal(extractedContext.traceId, browserSpan.context.traceId);
-
-      const serverSpan = tracer.startSpan("POST /api/claim", {
-        parent: extractedContext,
-        kind: "SERVER",
-        attributes: {
-          "http.method": "POST",
-          "http.route": "/api/claim",
-          "stream.id": streamId,
-          "claim.recipient": recipientAddress,
-        },
-      });
-
-      // ─── STEP 3: SOROBAN RPC CALL ─────────────────────────────────────────
+      // Child span for Soroban RPC transaction simulation & submission
       const rpcSpan = tracer.startSpan("soroban.rpc.call", {
-        parent: serverSpan,
+        parent: browserSpan,
         kind: "CLIENT",
         attributes: {
           "rpc.system": "soroban",
@@ -169,23 +154,18 @@ describe("OpenTelemetry Distributed Tracing & Async Seams", () => {
         },
       });
 
-      const txHash = "0x4f8c2b7e1234567890abcdef1234567890abcdef1234567890abcdef12345678";
       rpcSpan.setAttribute("soroban.tx_hash", txHash);
       rpcSpan.setStatus("OK");
       rpcSpan.end();
-
-      serverSpan.setAttribute("soroban.tx_hash", txHash);
-      serverSpan.setStatus("OK");
-      serverSpan.end();
 
       browserSpan.setAttribute("soroban.tx_hash", txHash);
       browserSpan.setStatus("OK");
       browserSpan.end();
 
       // Register trace correlation for the asynchronous event seam
-      traceCorrelationRegistry.register(txHash, serverSpan.context, streamId);
+      traceCorrelationRegistry.register(txHash, browserSpan.context, streamId);
 
-      // ─── STEP 4: HARD ASYNC SEAM (LEDGER DELAY & SPAN LINK) ───────────────
+      // ─── STEP 2: HARD ASYNC SEAM (LEDGER DELAY & SPAN LINK) ───────────────
       // After consensus delay, indexer ingests the contract event
       const linkedContext = traceCorrelationRegistry.get(txHash);
       assert.ok(linkedContext, "Indexer must find originating trace context from correlation registry");
@@ -227,7 +207,7 @@ describe("OpenTelemetry Distributed Tracing & Async Seams", () => {
       dbSpan.setStatus("OK");
       dbSpan.end();
 
-      // ─── STEP 5: PUSH NOTIFICATION DISPATCH ───────────────────────────────
+      // ─── STEP 3: PUSH NOTIFICATION DISPATCH ───────────────────────────────
       const pushSpan = tracer.startSpan("push.dispatch", {
         parent: indexerSpan,
         kind: "PRODUCER",
@@ -264,40 +244,37 @@ describe("OpenTelemetry Distributed Tracing & Async Seams", () => {
 
       // ─── VERIFICATIONS ───────────────────────────────────────────────────
       const spans = memoryExporter.getFinishedSpans();
-      assert.equal(spans.length, 7);
+      assert.equal(spans.length, 6);
 
       const sBrowser = spans.find((s) => s.name === "browser.claim_click");
-      const sServer = spans.find((s) => s.name === "POST /api/claim");
       const sRpc = spans.find((s) => s.name === "soroban.rpc.call");
       const sIndexer = spans.find((s) => s.name === "indexer.ingest_event");
       const sDb = spans.find((s) => s.name === "indexer.db_write");
       const sPush = spans.find((s) => s.name === "push.dispatch");
       const sWebhook = spans.find((s) => s.name === "push.deliver_webhook");
 
-      assert.ok(sBrowser && sServer && sRpc && sIndexer && sDb && sPush && sWebhook);
+      assert.ok(sBrowser && sRpc && sIndexer && sDb && sPush && sWebhook);
 
       // Verify Parent-Child Hierarchy for synchronous request:
-      assert.equal(sServer.context.traceId, sBrowser.context.traceId);
-      assert.equal(sServer.parentSpanId, sBrowser.context.spanId);
       assert.equal(sRpc.context.traceId, sBrowser.context.traceId);
-      assert.equal(sRpc.parentSpanId, sServer.context.spanId);
+      assert.equal(sRpc.parentSpanId, sBrowser.context.spanId);
 
       // Verify Asynchronous Seam (SpanLink instead of parent-child):
       assert.notEqual(
         sIndexer.parentSpanId,
-        sServer.context.spanId,
-        "Indexer span MUST NOT be a direct child of the synchronous server span"
+        sBrowser.context.spanId,
+        "Indexer span MUST NOT be a direct child of the synchronous browser span"
       );
       assert.equal(sIndexer.links.length, 1, "Indexer span must contain exactly one SpanLink");
       assert.equal(
         sIndexer.links[0].context.traceId,
-        sServer.context.traceId,
+        sBrowser.context.traceId,
         "SpanLink must point to originating traceId"
       );
       assert.equal(
         sIndexer.links[0].context.spanId,
-        sServer.context.spanId,
-        "SpanLink must point to originating server spanId"
+        browserSpan.context.spanId,
+        "SpanLink must point to originating browser spanId"
       );
       assert.equal(
         sIndexer.links[0].attributes?.["link.relationship"],

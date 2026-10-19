@@ -10,6 +10,7 @@
  * 4. Privacy Line Enforcement: Stellar addresses truncated to 8-character prefixes.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { sanitizeAttributes, sanitizeError } from "./privacy.js";
 
 export type SpanKind = "INTERNAL" | "SERVER" | "CLIENT" | "PRODUCER" | "CONSUMER";
@@ -235,6 +236,23 @@ export class InMemorySpanExporter implements SpanExporter {
   }
 }
 
+export function spanKindToOtlp(kind: SpanKind): number {
+  switch (kind) {
+    case "INTERNAL":
+      return 1;
+    case "SERVER":
+      return 2;
+    case "CLIENT":
+      return 3;
+    case "PRODUCER":
+      return 4;
+    case "CONSUMER":
+      return 5;
+    default:
+      return 1;
+  }
+}
+
 export class OtlpHttpSpanExporter implements SpanExporter {
   private endpoint: string;
 
@@ -263,7 +281,7 @@ export class OtlpHttpSpanExporter implements SpanExporter {
                 spanId: s.context.spanId,
                 parentSpanId: s.parentSpanId || "",
                 name: s.name,
-                kind: s.kind === "CONSUMER" ? 5 : s.kind === "SERVER" ? 2 : 1,
+                kind: spanKindToOtlp(s.kind),
                 startTimeUnixNano: String(BigInt(s.startTimeEpochMs) * 1_000_000n),
                 endTimeUnixNano: String(BigInt(s.endTimeEpochMs || s.startTimeEpochMs) * 1_000_000n),
                 attributes: Object.entries(s.attributes).map(([key, value]) => ({
@@ -311,7 +329,7 @@ export class Tracer {
   public readonly serviceName: string;
   public readonly resource: Record<string, string>;
   private readonly exporters: SpanExporter[] = [];
-  private activeSpan: Span | null = null;
+  private readonly asyncLocalStorage = new AsyncLocalStorage<Span>();
 
   constructor(options: { serviceName: string; exporters?: SpanExporter[]; resource?: Record<string, string> }) {
     this.serviceName = options.serviceName;
@@ -325,6 +343,10 @@ export class Tracer {
 
   addExporter(exporter: SpanExporter): void {
     this.exporters.push(exporter);
+  }
+
+  getActiveSpan(): Span | undefined {
+    return this.asyncLocalStorage.getStore();
   }
 
   startSpan(
@@ -345,9 +367,12 @@ export class Tracer {
     } else if (options.parent) {
       parentCtx = options.parent;
       parentSpanId = options.parent.spanId;
-    } else if (this.activeSpan) {
-      parentCtx = this.activeSpan.context;
-      parentSpanId = this.activeSpan.context.spanId;
+    } else {
+      const active = this.getActiveSpan();
+      if (active) {
+        parentCtx = active.context;
+        parentSpanId = active.context.spanId;
+      }
     }
 
     const traceId = parentCtx ? parentCtx.traceId : generateTraceId();
@@ -377,19 +402,18 @@ export class Tracer {
     } = {}
   ): Promise<T> {
     const span = this.startSpan(name, options);
-    const previous = this.activeSpan;
-    this.activeSpan = span;
-    try {
-      const result = await fn(span);
-      if (span.status.code === "UNSET") span.setStatus("OK");
-      return result;
-    } catch (err) {
-      span.recordException(err);
-      throw err;
-    } finally {
-      span.end();
-      this.activeSpan = previous;
-    }
+    return this.asyncLocalStorage.run(span, async () => {
+      try {
+        const result = await fn(span);
+        if (span.status.code === "UNSET") span.setStatus("OK");
+        return result;
+      } catch (err) {
+        span.recordException(err);
+        throw err;
+      } finally {
+        span.end();
+      }
+    });
   }
 
   recordSpanEnd(span: Span): void {
@@ -401,6 +425,64 @@ export class Tracer {
     }
   }
 }
+
+/**
+ * Cross-Process Event Seam Correlation Registry.
+ *
+ * Stores the originating trace context for transactions (keyed by transaction hash or stream ID),
+ * allowing the asynchronous Indexer to look up originating trace context when events are
+ * ingested from Soroban RPC and attach a SpanLink!
+ */
+export class TraceCorrelationRegistry {
+  private correlations = new Map<string, { context: SpanContext; timestamp: number; streamId?: string }>();
+
+  register(
+    txHash: string,
+    context: SpanContext,
+    streamId?: string
+  ): void {
+    const cleanHash = txHash.trim().toLowerCase();
+    this.correlations.set(cleanHash, {
+      context: { ...context },
+      timestamp: Date.now(),
+      streamId,
+    });
+
+    if (streamId) {
+      this.correlations.set(`stream:${streamId}`, {
+        context: { ...context },
+        timestamp: Date.now(),
+        streamId,
+      });
+    }
+
+    // Keep registry bounded (evict entries older than 30 minutes)
+    if (this.correlations.size > 5000) {
+      const cutoff = Date.now() - 1800000;
+      for (const [k, v] of this.correlations.entries()) {
+        if (v.timestamp < cutoff) this.correlations.delete(k);
+      }
+    }
+  }
+
+  get(txHash?: string | null): SpanContext | null {
+    if (!txHash) return null;
+    const entry = this.correlations.get(txHash.trim().toLowerCase());
+    return entry ? entry.context : null;
+  }
+
+  getByStream(streamId?: string | number | null): SpanContext | null {
+    if (!streamId) return null;
+    const entry = this.correlations.get(`stream:${streamId}`);
+    return entry ? entry.context : null;
+  }
+
+  clear(): void {
+    this.correlations.clear();
+  }
+}
+
+export const traceCorrelationRegistry = new TraceCorrelationRegistry();
 
 export const globalIndexerTracer = new Tracer({
   serviceName: "streampay-indexer",

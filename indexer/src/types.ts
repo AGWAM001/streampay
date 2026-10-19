@@ -10,6 +10,8 @@ export interface DecodedEvent {
   streamId: string;
   data: Record<string, EventValue>;
   txHash?: string;
+  traceId?: string;
+  spanId?: string;
   linkedSpanContext?: {
     traceId: string;
     spanId: string;
@@ -25,6 +27,8 @@ export interface RpcEvent {
   contractId: string;
   topic: (string | unknown)[];
   value: string | unknown;
+  txHash?: string;
+  transactionHash?: string;
 }
 
 export interface Stream {

@@ -30,7 +30,7 @@ Every span attribute, event attribute, and span link attribute must strictly adh
 | **Webhook Endpoint URL** | `https://api.acme.com/v1/hook?token=secret123` | **Masked** | `https://api.acme.com/***` | Strips all path credentials, tokens, and query parameters. |
 | **Email Address** | `alice.smith@company.org` | **Masked** | `***@company.org` | Prevents email harvesting while allowing domain diagnosis. |
 | **Telegram Chat ID** | `123456789` | **Masked** | `chat_***6789` (Last 4 digits only) | Prevents user tracking while verifying notification routing. |
-| **Stream Deposit/Claim Amount** | `50000000` (5 XLM in stroops) | **Yes** | Stroop integer or unit string | Non-PII business metrics. |
+| **Stream Deposit/Claim Amount** | `50000000` (5 XLM in stroops) | **NEVER** | `[OMITTED]` | Financial amounts and balances are omitted from traces to preserve transaction confidentiality. |
 | **Error Messages / Stack Traces** | Revert message or RPC error | **Sanitized** | Filtered via `sanitizeError()` | Strips accidental keys, secrets, or bearer tokens. |
 
 ---
