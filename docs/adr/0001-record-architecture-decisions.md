@@ -31,7 +31,7 @@ Without a structured, immutable log of architectural decisions:
 Chosen option: "Option 1: Architecture Decision Records (ADRs) stored in `docs/adr/`", because:
 1. ADRs provide lightweight, version-controlled, immutable records that live alongside the codebase.
 2. Numbered files (`NNNN-title.md`) establish a clear chronology.
-3. Once accepted, ADRs are immutable. If an architectural direction changes, a new ADR is proposed that explicitly supersedes the earlier record via a `Superseded by [ADR-XXXX](./XXXX-title.md)` link.
+3. Once accepted, ADRs are immutable. If an architectural direction changes, a new ADR is proposed that explicitly supersedes the earlier record via a `Superseded by ADR-XXXX` reference and link to the new record.
 4. CI tooling validates that ADR numbers are contiguous and all internal links remain valid.
 
 ### Consequences

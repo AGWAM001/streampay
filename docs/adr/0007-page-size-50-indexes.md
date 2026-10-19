@@ -1,7 +1,7 @@
 # ADR 0007: Page-Size-50 Indexes for Address Discovery
 
-Status: Accepted
-Date: 2026-09-09
+Status: Accepted (backfilled)
+Date: 2026-10-04
 Deciders: StreamPay Engineering Team
 
 ## Context and Problem Statement
@@ -32,7 +32,7 @@ If an active sender (such as a DAO or enterprise payroll administrator) creates 
 
 Chosen option: "Option 1: Per-address index vectors with page limit clamped to `MAX_PAGE_SIZE = 50`", because:
 1. Stream discovery is partitioned per address: `DataKey::RecipientStreams(Address)` and `DataKey::SenderStreams(Address)`.
-2. Public discovery entrypoints (`recipient_streams` and `sender_streams`) and administrative scans (`verify_treasury`) accept `offset: u32` and `limit: u32`, where `limit` is strictly clamped:
+2. Public discovery entrypoints (`recipient_streams` and `sender_streams`) accept `offset: u32` and `limit: u32` with `limit` clamped via `limit.min(MAX_PAGE_SIZE)`. Similarly, administrative audit scans (`verify_treasury(token, start_id, count)`) clamp requested batch counts via `count.min(MAX_PAGE_SIZE)`:
    ```rust
    let page_limit = limit.min(MAX_PAGE_SIZE); // MAX_PAGE_SIZE = 50
    ```
@@ -68,7 +68,7 @@ Chosen option: "Option 1: Per-address index vectors with page limit clamped to `
 
 ## Validation and Evidence
 
-- Defined in `contracts/streaming-payments/src/lib.rs` (`const MAX_PAGE_SIZE: u32 = 50;`).
+- Defined in `contracts/streaming-payments/src/stream.rs:34` (`pub const MAX_PAGE_SIZE: u32 = 50;`) and exposed via discovery and treasury entrypoints in `contracts/streaming-payments/src/lib.rs`.
 - Documented in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#2-storage-model).
 - Unit tests in `contracts/streaming-payments/src/test.rs` verify boundary clamping (requesting 100 items returns exactly 50).
 - Commit: `7fad774` ("feat(contract): on-chain address indexes and withdraw_max").

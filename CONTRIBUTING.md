@@ -216,7 +216,7 @@ git commit -m "chore: normalize line endings to LF"
 Significant architectural choices, invariants, or storage/tooling changes are documented as Architecture Decision Records in [`docs/adr/`](./docs/adr/README.md).
 
 - When introducing or altering architectural invariants, create a new record using [`docs/adr/template.md`](./docs/adr/template.md) with the next sequential number.
-- Records are immutable: if superseding a prior decision, update the status of the previous record to `Superseded by [ADR-XXXX](./XXXX-title.md)` and link back from the new record.
+- Records are immutable: if superseding a prior decision, mark the previous record as `Superseded by ADR-XXXX` (with a link to the replacement ADR) and link back from the new record.
 - Verify numbering and link integrity locally before opening a PR:
   ```bash
   node scripts/check-adrs.mjs

@@ -1,7 +1,7 @@
 # ADR 0005: Pure `streamed_at` Rate Math Function
 
-Status: Accepted
-Date: 2026-09-08
+Status: Accepted (backfilled)
+Date: 2026-09-13
 Deciders: StreamPay Engineering Team
 
 ## Context and Problem Statement
@@ -35,7 +35,7 @@ Chosen option: "Option 1: Implement `streamed_at` as a pure, stateless function"
    [lib]
    crate-type = ["cdylib", "rlib"]
    ```
-4. This enables external test harnesses (such as the `cargo-fuzz` target in `fuzz/fuzz_targets/streamed_at.rs` and the differential reference model in `contracts/streaming-payments-model`) to link directly to `streampay_contract::stream::streamed_at` and run natively on developer workstations and CI runners.
+4. This enables external test harnesses (such as the `cargo-fuzz` target in `fuzz/fuzz_targets/streamed_at.rs` and the differential reference model in `model/`) to link directly to `streampay_contract::stream::streamed_at` and run natively on developer workstations and CI runners.
 
 ### Consequences
 
@@ -62,5 +62,5 @@ Chosen option: "Option 1: Implement `streamed_at` as a pure, stateless function"
 
 - Defined in `contracts/streaming-payments/src/stream.rs` and documented in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#3-accrual-math).
 - Continuous fuzzing harness in `fuzz/fuzz_targets/streamed_at.rs` and CI workflow `.github/workflows/fuzz.yml`.
-- Differential test model in `crates/streampay-model` verifying 100% equivalence against formal reference models.
+- Differential test model in `model/` verifying 100% equivalence against formal reference models.
 - Commits: `7f740cf` (Initial implementation) and `000caec` ("chore(ci): fuzz harness, supply-chain gates, dependabot").

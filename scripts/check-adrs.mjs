@@ -107,7 +107,13 @@ for (const file of adrFiles) {
   const content = fs.readFileSync(fullPath, 'utf8');
 
   // Verify Status
-  const statusMatch = content.match(/Status:\s*([A-Za-z]+)(?:\s+by\s+\[ADR-(\d{4})\]\(([^)]+)\))?/i);
+  // Matches:
+  // - Status: Accepted
+  // - Status: Accepted (backfilled)
+  // - Status: Accepted-with-backfill
+  // - Status: Superseded by [ADR-000X](000X-name.md)
+  // - Status: Superseded by commit [8ac0d12](https://...)
+  const statusMatch = content.match(/Status:\s*([A-Za-z]+)(?:-with-backfill|\s+\(backfill(?:ed)?\))?(?:\s+by\s+(?:\[ADR-(\d{4})\]\(([^)]+)\)|commit\s+\[([a-f0-9]+)\]\(([^)]+)\)))?/i);
   if (!statusMatch) {
     error(`${file}: Missing valid 'Status:' line`);
   } else {
@@ -116,14 +122,16 @@ for (const file of adrFiles) {
       error(`${file}: Unknown status '${rawStatus}'. Must be one of: ${VALID_STATUSES.join(', ')}`);
     }
     if (rawStatus === 'Superseded') {
-      const targetNum = statusMatch[2];
-      const targetLink = statusMatch[3];
-      if (!targetNum || !targetLink) {
-        error(`${file}: Superseded status must include link to replacing ADR, e.g. 'Superseded by [ADR-000X](000X-name.md)'`);
-      } else {
-        const targetResolved = path.resolve(ADR_DIR, targetLink);
+      const targetAdrNum = statusMatch[2];
+      const targetAdrLink = statusMatch[3];
+      const targetCommitHash = statusMatch[4];
+      const targetCommitLink = statusMatch[5];
+      if ((!targetAdrNum || !targetAdrLink) && (!targetCommitHash || !targetCommitLink)) {
+        error(`${file}: Superseded status must include link to replacing ADR or commit, e.g. 'Superseded by [ADR-000X](000X-name.md)' or 'Superseded by commit [8ac0d12](https://...)'`);
+      } else if (targetAdrLink) {
+        const targetResolved = path.resolve(ADR_DIR, targetAdrLink);
         if (!fs.existsSync(targetResolved)) {
-          error(`${file}: Superseded-by link '${targetLink}' points to non-existent file`);
+          error(`${file}: Superseded-by link '${targetAdrLink}' points to non-existent file`);
         }
       }
     }

@@ -1,7 +1,7 @@
 # ADR 0003: Append-Only Interface for Error Codes and Address Indexes
 
-Status: Accepted
-Date: 2026-09-09
+Status: Accepted (backfilled)
+Date: 2026-09-13
 Deciders: StreamPay Engineering Team
 
 ## Context and Problem Statement
@@ -65,4 +65,4 @@ Chosen option: "Option 1: Strictly append-only error codes and address index vec
 
 - Enforced in `contracts/streaming-payments/src/errors.rs` and [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#7-error-surface).
 - Automated CI gate: `cargo run -p streampay-contract --example error_surface_doc` verifies against `docs/ERRORS.md` in CI (`.github/workflows/ci.yml`).
-- Commits: `7fad774` ("feat(contract): on-chain address indexes and withdraw_max") and `9f34b97` ("test: generated entrypoint-by-error matrix with docs artifact").
+- Commits: `7f740cf` (Initial error code definition and interface), `7fad774` ("feat(contract): on-chain address indexes and withdraw_max"), and `9f34b97` ("test: generated entrypoint-by-error matrix with docs artifact").

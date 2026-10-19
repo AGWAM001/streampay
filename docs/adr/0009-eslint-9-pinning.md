@@ -1,8 +1,12 @@
 # ADR 0009: ESLint 9 Pinning for Next.js 16 Flat Config Compatibility
 
-Status: Accepted
+Status: Superseded by commit [8ac0d12](https://github.com/Neziahtech/streampay/commit/8ac0d12a4b77309fde0de1ac0fc347747d83efca)
 Date: 2026-10-04
 Deciders: StreamPay Engineering Team
+
+> [!NOTE]
+> **Superseded Notice (2026-10-15):**
+> This decision was superseded in code on 2026-10-15 by commit [8ac0d12](https://github.com/Neziahtech/streampay/commit/8ac0d12a4b77309fde0de1ac0fc347747d83efca) ("npm: bump eslint from 9.39.5 to 10.12.0 in /frontend"), which upgraded `frontend/package.json` to `eslint@^10.12.0` once upstream flat-config compatibility was resolved. This record is preserved as an immutable historical artifact documenting the original constraint and rationale that motivated the pinning.
 
 ## Context and Problem Statement
 
@@ -34,11 +38,12 @@ ESLint 10 removed deprecated APIs, including `context.getFilename()`, in favor o
 Chosen option: "Option 1: Pin `eslint` to `^9.39.5` (9.x series)", because:
 1. ESLint 9 fully supports the flat configuration standard (`eslint.config.mjs`) without deprecation warnings.
 2. ESLint 9 retains backwards-compatible shims for `context.getFilename()`, allowing `@next/eslint-plugin-next` and `eslint-config-next` to execute without crashes.
-3. In `frontend/package.json`, `eslint` is pinned to `^9.39.5` and the lint script is defined as:
+3. In `frontend/package.json`, `eslint` was pinned to `^9.39.5` and the lint script was defined as:
    ```json
    "lint": "eslint ."
    ```
-4. Automated PRs attempting to bump `eslint` to version 10 are held or rejected until Next.js upstream releases an `eslint-config-next` release that explicitly supports ESLint 10.
+   (Note: subsequently superseded on 2026-10-15 by commit `8ac0d12` bumping `frontend/package.json` to `^10.12.0`).
+4. Automated PRs attempting to bump `eslint` to version 10 were held until upstream compatibility unblocked the upgrade.
 
 ### Consequences
 
@@ -66,4 +71,5 @@ Chosen option: "Option 1: Pin `eslint` to `^9.39.5` (9.x series)", because:
 - Defined in `frontend/package.json` (`"eslint": "^9.39.5"` and `"eslint.config.mjs"`).
 - Documented in commit `4c48978adbdfc5eea9788970075708cd1100e3c3` ("fix(frontend): complete the Next 16 migration the merged dependabot PR started").
 - Prior revert commit `5fd6a54` ("fix(frontend): revert eslint to ^8 — eslint-config-next@15 peers cap at eslint 9").
+- Superseded in commit `8ac0d12` ("npm: bump eslint from 9.39.5 to 10.12.0 in /frontend") on 2026-10-15.
 - CI gate runs `npm run lint` cleanly in `.github/workflows/ci.yml`.

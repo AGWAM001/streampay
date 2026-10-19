@@ -1,6 +1,6 @@
 # ADR {NUMBER}: {TITLE}
 
-Status: Proposed <!-- Proposed | Accepted | Rejected | Superseded by [ADR-XXXX](./XXXX-title.md) | Deprecated -->
+Status: Proposed <!-- Proposed | Accepted | Rejected | Superseded by ADR-XXXX | Deprecated -->
 Date: YYYY-MM-DD
 Deciders: {Contributors / Stakeholders}
 

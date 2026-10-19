@@ -1,7 +1,7 @@
 # ADR 0002: CEI-First Payouts and Reentrancy Protection
 
-Status: Accepted
-Date: 2026-09-08
+Status: Accepted (backfilled)
+Date: 2026-09-13
 Deciders: StreamPay Engineering Team
 
 ## Context and Problem Statement
@@ -30,7 +30,7 @@ Chosen option: "Option 1: Checks-Effects-Interactions (CEI) ordering", because:
    - `cancel_stream`: updates status to `Cancelled`, records payout amounts as withdrawn, emits `StreamCancelled`, and only then transfers the split funds to recipient and sender.
    - `withdraw_treasury`: increments `withdrawn_total`, writes updated treasury storage, emits `FeeWithdrawn`, and only then calls `token.transfer`.
 2. In `withdraw` and `cancel_stream`, `status` is checked after caller authorization: any reentrant attempt observes the post-write state where `available` has already reverted to zero or the remaining headroom.
-3. If an external token transfer fails, Soroban's transactional host rolls back the entire invocation (including preceding state mutations and emitted events), returning a mapped `StreamError::*TransferFailed` without state corruption.
+3. If an external token transfer fails, Soroban's transactional host rolls back the entire invocation (including preceding state mutations and emitted events), returning a mapped payout failure (`StreamError::RecipientPayoutFailed` for recipient withdrawals/splits, `StreamError::SenderRefundFailed` for unaccrued sender refunds, or `StreamError::TreasuryPayoutFailed` for treasury fees) without state corruption. (The `*TransferFailed` family—`DepositTransferFailed` and `TopUpTransferFailed`—is reserved exclusively for inbound token pulls via `transfer_from`).
 
 ### Consequences
 

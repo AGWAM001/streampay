@@ -1,7 +1,7 @@
 # ADR 0004: Floor-Per-Second Accrual Math
 
-Status: Accepted
-Date: 2026-09-08
+Status: Accepted (backfilled)
+Date: 2026-09-13
 Deciders: StreamPay Engineering Team
 
 ## Context and Problem Statement

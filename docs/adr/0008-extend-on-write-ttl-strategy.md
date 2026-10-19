@@ -1,7 +1,7 @@
 # ADR 0008: Extend-on-Write TTL Strategy for Persistent Storage
 
-Status: Accepted
-Date: 2026-09-09
+Status: Accepted (backfilled)
+Date: 2026-09-13
 Deciders: StreamPay Engineering Team
 
 ## Context and Problem Statement
@@ -32,9 +32,9 @@ Chosen option: "Option 1: Extend-on-write for streams + extend-on-read for index
 1. **Extend-on-Write for Streams:**
    - Every mutating entrypoint that touches a stream (`create_stream`, `withdraw`, `withdraw_max`, `cancel_stream`, `top_up`) invokes:
      ```rust
-     env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_TO_LEDGERS);
+     env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
      ```
-     where `TTL_THRESHOLD_LEDGERS = 200_000` (~11.6 days) and `TTL_EXTEND_TO_LEDGERS = 500_000` (~29 days).
+     where `TTL_THRESHOLD_LEDGERS = 200_000` (~11.6 days) and `TTL_EXTEND_LEDGERS = 500_000` (~29 days).
    - An active stream being topped up or claimed regularly stays hot indefinitely.
 2. **Natural State Archiving:**
    - Abandoned or completed streams that are never touched again receive no extensions and expire into Soroban archival storage, bounding on-chain state bloat without penalizing active users.
@@ -75,4 +75,4 @@ Chosen option: "Option 1: Extend-on-write for streams + extend-on-read for index
 - Implementation in `contracts/streaming-payments/src/stream.rs` and `contracts/streaming-payments/src/lib.rs`.
 - Comprehensive TTL rent model and operational runbook in [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#12-ttl-and-rent-operations).
 - Sentinel daemon test suite in `infra/ttl-sentinel/test/` asserting alert thresholds against ledger cliffs.
-- Commits: `7fad774` (Contract TTL extension) and `d47fc5d` ("feat(infra): add a TTL/rent sentinel for storage cliffs and rent projection").
+- Commits: `7f740cf` (Initial extend-on-write stream TTL), `7fad774` (Address index TTL extension), and `d47fc5d` ("feat(infra): add a TTL/rent sentinel for storage cliffs and rent projection").
