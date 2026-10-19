@@ -1,13 +1,12 @@
-///! streampay-state — export, verify, and replay StreamPay contract storage.
-///!
-///! # Sub-commands
-///!
-///! ```
-///! streampay-state export   --rpc <url> --contract <C...> --out <file.json>
-///! streampay-state verify   --snapshot <file.json>
-///! streampay-state replay   --snapshot <file.json> --rpc <url> --contract <C...>
-///! ```
-
+//! streampay-state — export, verify, and replay StreamPay contract storage.
+//!
+//! # Sub-commands
+//!
+//! ```
+//! streampay-state export   --rpc <url> --contract <C...> --out <file.json>
+//! streampay-state verify   --snapshot <file.json>
+//! streampay-state replay   --snapshot <file.json> --rpc <url> --contract <C...>
+//! ```
 mod export;
 mod model;
 mod rpc;
@@ -16,7 +15,11 @@ mod verify;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "streampay-state", version, about = "StreamPay contract state backup, verification and sandbox replay")]
+#[command(
+    name = "streampay-state",
+    version,
+    about = "StreamPay contract state backup, verification and sandbox replay"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -62,15 +65,18 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Commands::Export { rpc, contract, out, network } => {
-            export::run(&rpc, &contract, &out, &network)
-        }
-        Commands::Verify { snapshot } => {
-            verify::run(&snapshot)
-        }
-        Commands::Replay { snapshot, rpc, contract } => {
-            replay_cmd::run(&snapshot, &rpc, &contract)
-        }
+        Commands::Export {
+            rpc,
+            contract,
+            out,
+            network,
+        } => export::run(&rpc, &contract, &out, &network),
+        Commands::Verify { snapshot } => verify::run(&snapshot),
+        Commands::Replay {
+            snapshot,
+            rpc,
+            contract,
+        } => replay_cmd::run(&snapshot, &rpc, &contract),
     };
     if let Err(e) = result {
         eprintln!("error: {e}");
@@ -91,11 +97,18 @@ mod replay_cmd {
         let raw = std::fs::read_to_string(snapshot_path)?;
         let snap: Snapshot = serde_json::from_str(&raw)?;
 
-        println!("Replay: {} streams, {} intents, {} treasury entries",
-            snap.streams.len(), snap.scheduled_intents.len(), snap.treasuries.len());
+        println!(
+            "Replay: {} streams, {} intents, {} treasury entries",
+            snap.streams.len(),
+            snap.scheduled_intents.len(),
+            snap.treasuries.len()
+        );
         println!("RPC endpoint : {rpc_url}");
         println!("Contract     : {contract_id}");
-        println!("Schema       : v{} (fingerprint {})", snap.schema_version, snap.schema_fingerprint);
+        println!(
+            "Schema       : v{} (fingerprint {})",
+            snap.schema_version, snap.schema_fingerprint
+        );
 
         // 3. Verify that the sandbox contract responds (health check).
         let client = crate::rpc::RpcClient::new(rpc_url)?;
@@ -107,11 +120,18 @@ mod replay_cmd {
         // environment-specific; this sub-command validates that the snapshot
         // is structurally sound and that the sandbox RPC is reachable.
         println!("✓ Snapshot verified and sandbox RPC reachable.");
-        println!("  {} streams can be replayed ({} active, {} cancelled, {} depleted)",
+        println!(
+            "  {} streams can be replayed ({} active, {} cancelled, {} depleted)",
             snap.streams.len(),
             snap.streams.iter().filter(|s| s.status == "Active").count(),
-            snap.streams.iter().filter(|s| s.status == "Cancelled").count(),
-            snap.streams.iter().filter(|s| s.status == "Depleted").count(),
+            snap.streams
+                .iter()
+                .filter(|s| s.status == "Cancelled")
+                .count(),
+            snap.streams
+                .iter()
+                .filter(|s| s.status == "Depleted")
+                .count(),
         );
 
         // Aggregate per-token deposit coverage.
@@ -128,7 +148,9 @@ mod replay_cmd {
             println!("  Token {short}…: {unclaimed} stroops unclaimed across active streams");
         }
 
-        println!("Replay complete — use these streams to seed a post-upgrade migration test harness.");
+        println!(
+            "Replay complete — use these streams to seed a post-upgrade migration test harness."
+        );
         Ok(())
     }
 }

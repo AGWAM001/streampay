@@ -15,7 +15,6 @@ import React, { Suspense, lazy, useState, useEffect, useCallback } from "react";
 import {
   forecastIncome,
   buildAggregatedTimeSeries,
-  defaultStreamWindow,
   DATA_SOURCE_NOTE,
   type AnalyticsStream,
 } from "../../lib/analytics";
@@ -48,8 +47,15 @@ export default function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [window, setWindow] = useState<Window>("30d");
   const [staleNote, setStaleNote] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(() => Math.floor(Date.now() / 1000));
 
-  const now = Math.floor(Date.now() / 1000);
+  // Ticker for live projections.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Math.floor(Date.now() / 1000));
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const load = useCallback(async () => {
     if (!address.trim()) return;

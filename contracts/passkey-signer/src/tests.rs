@@ -25,9 +25,9 @@ extern crate std;
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, Bytes, BytesN, Env};
 
-use crate::PasskeySigner;
-use crate::registry::REGISTRATION_FLAGS_REQUIRE_UV;
 use crate::errors::PasskeyError;
+use crate::registry::REGISTRATION_FLAGS_REQUIRE_UV;
+use crate::PasskeySigner;
 
 // ── Test client ───────────────────────────────────────────────────────────────
 // The soroban-sdk `#[contractclient]` attribute generates a typed client
@@ -35,12 +35,32 @@ use crate::errors::PasskeyError;
 
 use soroban_sdk::contractclient;
 
+/// Interface of the PasskeySigner contract for tests.
 #[contractclient(name = "PasskeySignerTestClient")]
-trait PasskeySignerApi {
-    fn register(env: Env, owner: Address, rp_id_hash: BytesN<32>, x: BytesN<32>, y: BytesN<32>, flags: u32) -> Result<(), PasskeyError>;
+#[allow(dead_code)] // generated client methods are used selectively per test
+pub trait PasskeySignerApi {
+    fn register(
+        env: Env,
+        owner: Address,
+        rp_id_hash: BytesN<32>,
+        x: BytesN<32>,
+        y: BytesN<32>,
+        flags: u32,
+    ) -> Result<(), PasskeyError>;
     fn deregister(env: Env, owner: Address) -> Result<(), PasskeyError>;
-    fn get_credential(env: Env, owner: Address) -> Result<crate::registry::Credential, PasskeyError>;
-    fn verify_and_record(env: Env, owner: Address, auth_data: Bytes, client_data_json: Bytes, challenge: BytesN<32>, sig_r: BytesN<32>, sig_s: BytesN<32>) -> Result<(), PasskeyError>;
+    fn get_credential(
+        env: Env,
+        owner: Address,
+    ) -> Result<crate::registry::Credential, PasskeyError>;
+    fn verify_and_record(
+        env: Env,
+        owner: Address,
+        auth_data: Bytes,
+        client_data_json: Bytes,
+        challenge: BytesN<32>,
+        sig_r: BytesN<32>,
+        sig_s: BytesN<32>,
+    ) -> Result<(), PasskeyError>;
     fn is_nonce_used(env: Env, challenge: BytesN<32>) -> bool;
 }
 
@@ -122,9 +142,9 @@ fn register_and_get_credential_roundtrip() {
         &to_bytes32(&env, &x),
         &to_bytes32(&env, &y),
         &0u32,
-    ).unwrap();
+    );
 
-    let cred = client.get_credential(&owner).unwrap();
+    let cred = client.get_credential(&owner);
     assert_eq!(cred.rp_id_hash, to_bytes32(&env, &rp_id_hash));
     assert_eq!(cred.x, to_bytes32(&env, &x));
     assert_eq!(cred.y, to_bytes32(&env, &y));
@@ -148,9 +168,18 @@ fn deregister_removes_credential() {
     let rp_id_hash = [0x22u8; 32];
     let (x, y) = fake_pub_key();
 
-    client.register(&owner, &to_bytes32(&env, &rp_id_hash), &to_bytes32(&env, &x), &to_bytes32(&env, &y), &0u32).unwrap();
-    client.deregister(&owner).unwrap();
-    assert_eq!(client.try_get_credential(&owner), Err(Ok(PasskeyError::CredentialNotFound)));
+    client.register(
+        &owner,
+        &to_bytes32(&env, &rp_id_hash),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0u32,
+    );
+    client.deregister(&owner);
+    assert_eq!(
+        client.try_get_credential(&owner),
+        Err(Ok(PasskeyError::CredentialNotFound))
+    );
 }
 
 #[test]
@@ -158,7 +187,10 @@ fn deregister_not_registered_returns_error() {
     let env = new_env();
     let (_, client) = deploy(&env);
     let owner = Address::generate(&env);
-    assert_eq!(client.try_deregister(&owner), Err(Ok(PasskeyError::CredentialNotFound)));
+    assert_eq!(
+        client.try_deregister(&owner),
+        Err(Ok(PasskeyError::CredentialNotFound))
+    );
 }
 
 // ── authData validation tests ─────────────────────────────────────────────────
@@ -170,7 +202,13 @@ fn auth_data_too_short_rejected() {
     let owner = Address::generate(&env);
     let rp_id_hash = [0x33u8; 32];
     let (x, y) = fake_pub_key();
-    client.register(&owner, &to_bytes32(&env, &rp_id_hash), &to_bytes32(&env, &x), &to_bytes32(&env, &y), &0u32).unwrap();
+    client.register(
+        &owner,
+        &to_bytes32(&env, &rp_id_hash),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0u32,
+    );
 
     let challenge = [0x01u8; 32];
     let cdj = make_client_data_json(&challenge);
@@ -192,7 +230,13 @@ fn rp_id_hash_mismatch_rejected() {
     let owner = Address::generate(&env);
     let rp_id_hash = [0x44u8; 32];
     let (x, y) = fake_pub_key();
-    client.register(&owner, &to_bytes32(&env, &rp_id_hash), &to_bytes32(&env, &x), &to_bytes32(&env, &y), &0u32).unwrap();
+    client.register(
+        &owner,
+        &to_bytes32(&env, &rp_id_hash),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0u32,
+    );
 
     let challenge = [0x01u8; 32];
     let cdj = make_client_data_json(&challenge);
@@ -217,7 +261,13 @@ fn user_presence_not_set_rejected() {
     let owner = Address::generate(&env);
     let rp_id_hash = [0x55u8; 32];
     let (x, y) = fake_pub_key();
-    client.register(&owner, &to_bytes32(&env, &rp_id_hash), &to_bytes32(&env, &x), &to_bytes32(&env, &y), &0u32).unwrap();
+    client.register(
+        &owner,
+        &to_bytes32(&env, &rp_id_hash),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0u32,
+    );
 
     let challenge = [0x01u8; 32];
     let cdj = make_client_data_json(&challenge);
@@ -241,7 +291,13 @@ fn uv_required_but_not_set_rejected() {
     let owner = Address::generate(&env);
     let rp_id_hash = [0x66u8; 32];
     let (x, y) = fake_pub_key();
-    client.register(&owner, &to_bytes32(&env, &rp_id_hash), &to_bytes32(&env, &x), &to_bytes32(&env, &y), &REGISTRATION_FLAGS_REQUIRE_UV).unwrap();
+    client.register(
+        &owner,
+        &to_bytes32(&env, &rp_id_hash),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &REGISTRATION_FLAGS_REQUIRE_UV,
+    );
 
     let challenge = [0x01u8; 32];
     let cdj = make_client_data_json(&challenge);
@@ -267,7 +323,13 @@ fn wrong_type_in_client_data_json_rejected() {
     let owner = Address::generate(&env);
     let rp_id_hash = [0x77u8; 32];
     let (x, y) = fake_pub_key();
-    client.register(&owner, &to_bytes32(&env, &rp_id_hash), &to_bytes32(&env, &x), &to_bytes32(&env, &y), &0u32).unwrap();
+    client.register(
+        &owner,
+        &to_bytes32(&env, &rp_id_hash),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0u32,
+    );
 
     let challenge = [0x01u8; 32];
     let wrong_cdj = std::format!(
@@ -294,7 +356,13 @@ fn wrong_challenge_in_client_data_json_rejected() {
     let owner = Address::generate(&env);
     let rp_id_hash = [0x88u8; 32];
     let (x, y) = fake_pub_key();
-    client.register(&owner, &to_bytes32(&env, &rp_id_hash), &to_bytes32(&env, &x), &to_bytes32(&env, &y), &0u32).unwrap();
+    client.register(
+        &owner,
+        &to_bytes32(&env, &rp_id_hash),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0u32,
+    );
 
     let challenge = [0x01u8; 32];
     let wrong_cdj = std::format!(
@@ -327,14 +395,18 @@ fn is_nonce_used_false_before_use() {
 #[test]
 fn challenge_replay_prevented_via_registry() {
     let env = new_env();
+    let (contract_id, client) = deploy(&env);
     let challenge = to_bytes32(&env, &[0xAAu8; 32]);
-    crate::registry::record_challenge(&env, &challenge).expect("first record ok");
+    env.as_contract(&contract_id, || {
+        crate::registry::record_challenge(&env, &challenge).expect("first record ok");
+    });
 
-    let (_, client) = deploy(&env);
-    // is_nonce_used reads from the same env storage.
+    // is_nonce_used reads from the same contract storage.
     assert!(client.is_nonce_used(&challenge));
 
-    let result = crate::registry::record_challenge(&env, &challenge);
+    let result = env.as_contract(&contract_id, || {
+        crate::registry::record_challenge(&env, &challenge)
+    });
     assert_eq!(result, Err(PasskeyError::ChallengeAlreadyUsed));
 }
 
@@ -365,14 +437,20 @@ fn verify_without_registration_returns_not_found() {
 #[test]
 fn expired_challenge_nonce_rejected() {
     let env = new_env();
+    let (contract_id, client) = deploy(&env);
     let challenge = to_bytes32(&env, &[0xCCu8; 32]);
-    crate::registry::record_challenge(&env, &challenge)
-        .expect("first record should succeed");
+    env.as_contract(&contract_id, || {
+        crate::registry::record_challenge(&env, &challenge).expect("first record should succeed");
+    });
 
-    let (_, client) = deploy(&env);
-    assert!(client.is_nonce_used(&challenge), "nonce must be marked used");
+    assert!(
+        client.is_nonce_used(&challenge),
+        "nonce must be marked used"
+    );
 
     // Attempting record_challenge again must fail.
-    let result = crate::registry::record_challenge(&env, &challenge);
+    let result = env.as_contract(&contract_id, || {
+        crate::registry::record_challenge(&env, &challenge)
+    });
     assert_eq!(result, Err(PasskeyError::ChallengeAlreadyUsed));
 }

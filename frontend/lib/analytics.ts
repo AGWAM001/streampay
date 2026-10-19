@@ -8,7 +8,7 @@
  * the single accrual oracle.
  */
 
-import { computeAccruedAt, computeAvailable } from "./accrual";
+import { computeAccruedAt, computeAvailable } from "./accrual.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

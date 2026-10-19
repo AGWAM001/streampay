@@ -313,8 +313,8 @@ export class RpcManager {
       }
 
       // Update ledger tracking for lag detection.
-      if (json.result && typeof json.result === "object" && "sequence" in (json.result as object)) {
-        this.updateLedger(url, (json.result as { sequence: number }).sequence);
+      if (json.result && typeof json.result === "object" && "sequence" in json.result) {
+        this.updateLedger(url, (json.result as unknown as { sequence: number }).sequence);
       }
 
       this.recordSuccess(url);

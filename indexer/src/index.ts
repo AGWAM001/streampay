@@ -4,8 +4,7 @@ import { decodeEvent } from "./decoder.js";
 import { StreamStore } from "./store.js";
 import type { RpcEvent } from "./types.js";
 import { getGlobalRpcManager } from "./rpc-manager.js";
-
-export function createApp(store: StreamStore, rpcHealth?: () => import("./rpc-manager.js").EndpointHealth[]): express.Express {
+import type { EndpointHealth } from "./rpc-manager.js";
 import { WebhookDispatcher } from "./webhooks/dispatcher.js";
 import { validateWebhookUrl } from "./webhooks/ssrf.js";
 import { OutboxDispatcher } from "./outbox/dispatcher.js";
@@ -26,7 +25,8 @@ export function createApp(
   store: StreamStore,
   dispatcher?: WebhookDispatcher,
   outboxDispatcher?: OutboxDispatcher,
-  outboxMetrics?: OutboxMetrics
+  outboxMetrics?: OutboxMetrics,
+  rpcHealth?: () => EndpointHealth[]
 ): express.Express {
   const app = express();
   app.use(express.json());
@@ -277,11 +277,6 @@ export async function run(): Promise<void> {
     timeoutMs: 20_000,
   });
 
-  const app = createApp(store, () => manager.getHealth());
-    hedgeDelayMs: 300,
-    healthCheckIntervalMs: 15_000,
-    timeoutMs: 20_000,
-  });
   const dispatcher = new WebhookDispatcher(store.webhooks);
   dispatcher.start();
 
@@ -304,7 +299,7 @@ export async function run(): Promise<void> {
   });
   outboxDispatcher.start();
 
-  const app = createApp(store, dispatcher, outboxDispatcher, outboxMetrics);
+  const app = createApp(store, dispatcher, outboxDispatcher, outboxMetrics, () => manager.getHealth());
 
   const eventNames = ["stream_created", "withdrawn", "stream_cancelled", "stream_topped_up", "stream_paused", "stream_resumed"];
   const topicFilters = eventNames.map((name) => [nativeToScVal(name, { type: "symbol" }).toXDR("base64")]);

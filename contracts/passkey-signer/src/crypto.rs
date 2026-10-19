@@ -49,7 +49,9 @@ pub fn verify_auth_data(
     // We copy to a fixed array to use BytesN<32> comparison.
     let mut rp_buf = [0u8; 32];
     for (i, b) in auth_data.iter().enumerate() {
-        if i == 32 { break; }
+        if i == 32 {
+            break;
+        }
         rp_buf[i] = b;
     }
     let auth_rp: BytesN<32> = BytesN::from_array(_env, &rp_buf);
@@ -85,10 +87,10 @@ pub fn verify_p256_assertion(
     sig_s: &BytesN<32>,
 ) -> Result<(), PasskeyError> {
     // digest = sha256(authData ‖ sha256(clientDataJSON))
-    let cdj_hash: BytesN<32> = env.crypto().sha256(client_data_json);
+    let cdj_hash = env.crypto().sha256(client_data_json);
     let mut msg = auth_data.clone();
     msg.extend_from_slice(&cdj_hash.to_array());
-    let digest: BytesN<32> = env.crypto().sha256(&msg);
+    let digest = env.crypto().sha256(&msg);
 
     // Uncompressed P-256 public key: 0x04 || x || y  (65 bytes).
     let mut pk_bytes = [0u8; 65];

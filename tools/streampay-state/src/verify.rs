@@ -27,8 +27,8 @@ use crate::model::{Snapshot, SNAPSHOT_SCHEMA_FINGERPRINT};
 pub fn run(snapshot_path: &str) -> anyhow::Result<()> {
     let raw = std::fs::read_to_string(snapshot_path)
         .map_err(|e| anyhow::anyhow!("cannot read snapshot: {e}"))?;
-    let snap: Snapshot = serde_json::from_str(&raw)
-        .map_err(|e| anyhow::anyhow!("cannot parse snapshot: {e}"))?;
+    let snap: Snapshot =
+        serde_json::from_str(&raw).map_err(|e| anyhow::anyhow!("cannot parse snapshot: {e}"))?;
 
     let mut violations: Vec<String> = Vec::new();
 
@@ -119,7 +119,11 @@ pub fn run(snapshot_path: &str) -> anyhow::Result<()> {
     }
 
     // ── 5. Index completeness ─────────────────────────────────────────────────
-    for entry in snap.sender_indexes.iter().chain(snap.recipient_indexes.iter()) {
+    for entry in snap
+        .sender_indexes
+        .iter()
+        .chain(snap.recipient_indexes.iter())
+    {
         for &id in &entry.stream_ids {
             if !stream_ids.contains(&id) {
                 violations.push(format!(
@@ -153,9 +157,13 @@ pub fn run(snapshot_path: &str) -> anyhow::Result<()> {
     // ── Report ────────────────────────────────────────────────────────────────
     if violations.is_empty() {
         println!("✓ Snapshot verified: no violations found.");
-        println!("  {} streams, {} intents, {} treasuries, {} fee records",
-            snap.streams.len(), snap.scheduled_intents.len(),
-            snap.treasuries.len(), snap.stream_fees.len());
+        println!(
+            "  {} streams, {} intents, {} treasuries, {} fee records",
+            snap.streams.len(),
+            snap.scheduled_intents.len(),
+            snap.treasuries.len(),
+            snap.stream_fees.len()
+        );
         // Print per-token unclaimed balance summary.
         for (token, unclaimed) in &token_unclaimed {
             let short = &token[..token.len().min(16)];
@@ -167,7 +175,11 @@ pub fn run(snapshot_path: &str) -> anyhow::Result<()> {
             "Snapshot verification FAILED ({} violation{}):\n{}",
             violations.len(),
             if violations.len() == 1 { "" } else { "s" },
-            violations.iter().map(|v| format!("  • {v}")).collect::<Vec<_>>().join("\n")
+            violations
+                .iter()
+                .map(|v| format!("  • {v}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         );
         Err(anyhow::anyhow!("{msg}"))
     }

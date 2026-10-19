@@ -33,7 +33,11 @@ impl RpcClient {
             "method": method,
             "params": params,
         });
-        let resp = self.client.post(&self.url).json(&body).send()
+        let resp = self
+            .client
+            .post(&self.url)
+            .json(&body)
+            .send()
             .map_err(|e| anyhow::anyhow!("HTTP: {e}"))?;
         if !resp.status().is_success() {
             return Err(anyhow::anyhow!("HTTP {}", resp.status()));
@@ -50,7 +54,8 @@ impl RpcClient {
     /// Returns the latest ledger sequence number.
     pub fn get_latest_ledger(&self) -> anyhow::Result<u64> {
         let result = self.call("getLatestLedger", json!({}))?;
-        result["sequence"].as_u64()
+        result["sequence"]
+            .as_u64()
             .ok_or_else(|| anyhow::anyhow!("missing sequence"))
     }
 }

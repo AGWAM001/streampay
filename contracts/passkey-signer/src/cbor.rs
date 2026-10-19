@@ -13,8 +13,7 @@ use crate::errors::PasskeyError;
 
 // ── base64url (RFC 4648 §5, no padding) ──────────────────────────────────────
 
-const B64_CHARS: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /// Encodes `input` (≤32 bytes) as base64url with no padding.
 /// Returns the encoded length; fills `out` starting at index 0.
@@ -132,15 +131,15 @@ pub fn verify_client_data_json(
     let json = &buf[..cdj_len];
 
     // 1. Verify `type` field.
-    let (ts, te) = find_json_string_value(json, b"type")
-        .ok_or(PasskeyError::ClientDataTypeMismatch)?;
+    let (ts, te) =
+        find_json_string_value(json, b"type").ok_or(PasskeyError::ClientDataTypeMismatch)?;
     if &json[ts..te] != b"webauthn.get" {
         return Err(PasskeyError::ClientDataTypeMismatch);
     }
 
     // 2. Verify `challenge` field.
-    let (cs, ce) = find_json_string_value(json, b"challenge")
-        .ok_or(PasskeyError::ChallengeMismatch)?;
+    let (cs, ce) =
+        find_json_string_value(json, b"challenge").ok_or(PasskeyError::ChallengeMismatch)?;
     let challenge_val = &json[cs..ce];
 
     // Compute expected base64url.

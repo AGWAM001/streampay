@@ -11,10 +11,11 @@ use serde::{Deserialize, Serialize};
 /// Current schema version. Increment when the Snapshot struct changes.
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 
-/// Stable SHA-256 fingerprint of the v1 Snapshot schema.
-/// Computed from the sorted field names of `StreamEntry` + `ScheduledIntentEntry`
-/// + `TreasuryEntry` + `StreamFeeEntry` as a canonical JSON array.
+/// Stable SHA-256 fingerprint of the v1 Snapshot schema. Computed from the
+/// sorted field names of `StreamEntry` + `ScheduledIntentEntry` +
+/// `TreasuryEntry` + `StreamFeeEntry` as a canonical JSON array.
 /// Run `cargo run --bin streampay-state -- fingerprint` to regenerate.
+///
 pub const SNAPSHOT_SCHEMA_FINGERPRINT: &str =
     "a3f9c2e1b4d7f0e2a1c5b8d3e6f9a2b5c8d1e4f7a0b3c6d9e2f5a8b1c4d7e0";
 
@@ -121,6 +122,7 @@ pub struct Snapshot {
 impl Snapshot {
     /// Computes the canonical schema fingerprint for the current struct layout.
     /// Used to detect version skew between snapshot files and the current verifier.
+    #[allow(dead_code)]
     pub fn compute_fingerprint() -> String {
         use sha2::{Digest, Sha256};
         // Sorted field names of all entry types concatenated as a JSON array.

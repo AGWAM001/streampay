@@ -15,17 +15,16 @@ use std::collections::HashMap;
 use serde_json::json;
 
 use crate::model::{
-    IndexEntry, ScheduledIntentEntry, Snapshot, StreamEntry, StreamFeeEntry, TreasuryEntry,
-    SNAPSHOT_SCHEMA_FINGERPRINT, SNAPSHOT_SCHEMA_VERSION,
+    IndexEntry, Snapshot, StreamEntry, StreamFeeEntry, TreasuryEntry, SNAPSHOT_SCHEMA_FINGERPRINT,
+    SNAPSHOT_SCHEMA_VERSION,
 };
-use crate::rpc::RpcClient;
 
 // Soroban SDK types we need for encoding arguments.
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use stellar_xdr::curr::{
-    AccountId, Hash, HostFunction, InvokeContractArgs, PublicKey, ScAddress, ScSymbol, ScVal,
-    ScVec, StringM, Transaction, TransactionExt, TransactionV1Envelope, Uint256,
-    VecM, WriteXdr,
+use stellar_xdr::{
+    ContractId, Hash, HostFunction, InvokeContractArgs, InvokeHostFunctionOp, Limits, Memo,
+    MuxedAccount, Operation, OperationBody, Preconditions, PublicKey, ReadXdr, ScAddress, ScSymbol,
+    ScVal, SequenceNumber, Transaction, TransactionEnvelope, TransactionExt, TransactionV1Envelope,
+    Uint256, VecM, WriteXdr,
 };
 
 /// All-zero G-address used as a dummy source for simulation transactions.
@@ -35,22 +34,15 @@ const DUMMY_SOURCE: [u8; 32] = [0u8; 32];
 
 fn contract_address(id: &str) -> anyhow::Result<ScAddress> {
     // Contract ids are StrKey C… addresses. Decode the 32-byte hash.
-    let bytes = stellar_strkey::Contract::from_str(id)
+    let bytes = id
+        .parse::<stellar_strkey::Contract>()
         .map_err(|e| anyhow::anyhow!("invalid contract id {id}: {e}"))?
         .0;
-    Ok(ScAddress::Contract(Hash(bytes)))
+    Ok(ScAddress::Contract(ContractId(Hash(bytes))))
 }
 
 fn sc_u64(n: u64) -> ScVal {
     ScVal::U64(n)
-}
-
-fn sc_u32(n: u32) -> ScVal {
-    ScVal::U32(n)
-}
-
-fn sc_symbol(s: &str) -> ScVal {
-    ScVal::Symbol(ScSymbol(s.try_into().unwrap()))
 }
 
 /// Encodes a `simulateTransaction` call body for one read-only invocation.
@@ -58,7 +50,7 @@ fn build_sim_tx(
     contract_id: &str,
     method: &str,
     args: Vec<ScVal>,
-    network_passphrase: &str,
+    _network_passphrase: &str,
 ) -> anyhow::Result<String> {
     let invoke = HostFunction::InvokeContract(InvokeContractArgs {
         contract_address: contract_address(contract_id)?,
@@ -66,32 +58,29 @@ fn build_sim_tx(
         args: args.try_into()?,
     });
 
-    let source = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(DUMMY_SOURCE)));
     let tx = Transaction {
-        source_account: stellar_xdr::curr::MuxedAccount::Ed25519(Uint256(DUMMY_SOURCE)),
+        source_account: MuxedAccount::Ed25519(Uint256(DUMMY_SOURCE)),
         fee: 100,
-        seq_num: stellar_xdr::curr::SequenceNumber(1),
-        time_bounds: None,
-        memo: stellar_xdr::curr::Memo::None,
-        operations: vec![stellar_xdr::curr::Operation {
+        seq_num: SequenceNumber(1),
+        cond: Preconditions::None,
+        memo: Memo::None,
+        operations: vec![Operation {
             source_account: None,
-            body: stellar_xdr::curr::OperationBody::InvokeHostFunction(
-                stellar_xdr::curr::InvokeHostFunctionOp {
-                    host_function: invoke,
-                    auth: VecM::default(),
-                },
-            ),
+            body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+                host_function: invoke,
+                auth: VecM::default(),
+            }),
         }]
         .try_into()?,
-        ext: TransactionExt::V0,
+        ext: TransactionExt::default(),
     };
 
-    let env_tx = TransactionV1Envelope {
+    let env_tx = TransactionEnvelope::Tx(TransactionV1Envelope {
         tx,
         signatures: VecM::default(),
-    };
+    });
 
-    let xdr = env_tx.to_xdr_base64(stellar_xdr::curr::Limits::none())?;
+    let xdr = env_tx.to_xdr_base64(Limits::none())?;
     Ok(xdr)
 }
 
@@ -108,11 +97,7 @@ fn simulate(
         "method": "simulateTransaction",
         "params": { "transaction": tx_xdr }
     });
-    let resp: serde_json::Value = client
-        .post(rpc_url)
-        .json(&body)
-        .send()?
-        .json()?;
+    let resp: serde_json::Value = client.post(rpc_url).json(&body).send()?.json()?;
 
     if let Some(err) = resp["error"].as_str() {
         return Err(anyhow::anyhow!("simulateTransaction: {err}"));
@@ -120,7 +105,7 @@ fn simulate(
     let xdr = resp["result"]["results"][0]["xdr"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("no simulation retval"))?;
-    let val = ScVal::from_xdr_base64(xdr, stellar_xdr::curr::Limits::none())?;
+    let val = ScVal::from_xdr_base64(xdr, Limits::none())?;
     Ok(val)
 }
 
@@ -143,13 +128,6 @@ fn scval_to_u64(v: &ScVal) -> anyhow::Result<u64> {
     }
 }
 
-fn scval_to_u32(v: &ScVal) -> anyhow::Result<u32> {
-    match v {
-        ScVal::U32(n) => Ok(*n),
-        _ => Err(anyhow::anyhow!("expected u32, got {v:?}")),
-    }
-}
-
 fn scval_to_bool(v: &ScVal) -> bool {
     matches!(v, ScVal::Bool(true))
 }
@@ -162,15 +140,16 @@ fn scval_to_address(v: &ScVal) -> anyhow::Result<String> {
                     let inner = match &acc.0 {
                         PublicKey::PublicKeyTypeEd25519(u) => u.0,
                     };
-                    stellar_strkey::Strkey::PublicKeyEd25519(
-                        stellar_strkey::ed25519::PublicKey(inner)
-                    )
+                    stellar_strkey::Strkey::PublicKeyEd25519(stellar_strkey::ed25519::PublicKey(
+                        inner,
+                    ))
                 }
                 ScAddress::Contract(hash) => {
-                    stellar_strkey::Strkey::Contract(stellar_strkey::Contract(hash.0))
+                    stellar_strkey::Strkey::Contract(stellar_strkey::Contract(hash.0 .0))
                 }
+                _ => return Err(anyhow::anyhow!("unsupported address kind in {v:?}")),
             };
-            Ok(strkey.to_string())
+            Ok(strkey.to_string().to_string())
         }
         _ => Err(anyhow::anyhow!("expected Address, got {v:?}")),
     }
@@ -180,19 +159,19 @@ fn scval_to_string_status(v: &ScVal) -> String {
     match v {
         ScVal::Vec(Some(vec)) if !vec.is_empty() => {
             if let ScVal::Symbol(s) = &vec[0] {
-                return s.0.to_string_lossy();
+                return s.0.to_utf8_string_lossy();
             }
         }
-        ScVal::Symbol(s) => return s.0.to_string_lossy(),
+        ScVal::Symbol(s) => return s.0.to_utf8_string_lossy(),
         _ => {}
     }
     format!("{v:?}")
 }
 
 fn map_get<'a>(map: &'a [(ScVal, ScVal)], key: &str) -> Option<&'a ScVal> {
-    map.iter().find(|(k, _)| {
-        matches!(k, ScVal::Symbol(s) if s.0.as_ref().as_bytes() == key.as_bytes())
-    }).map(|(_, v)| v)
+    map.iter()
+        .find(|(k, _)| matches!(k, ScVal::Symbol(s) if s.0.as_slice() == key.as_bytes()))
+        .map(|(_, v)| v)
 }
 
 fn scval_map_to_pairs(v: &ScVal) -> anyhow::Result<Vec<(ScVal, ScVal)>> {
@@ -204,7 +183,12 @@ fn scval_map_to_pairs(v: &ScVal) -> anyhow::Result<Vec<(ScVal, ScVal)>> {
 
 // ── Entry-point ───────────────────────────────────────────────────────────────
 
-pub fn run(rpc_url: &str, contract_id: &str, out_path: &str, network_passphrase: &str) -> anyhow::Result<()> {
+pub fn run(
+    rpc_url: &str,
+    contract_id: &str,
+    out_path: &str,
+    network_passphrase: &str,
+) -> anyhow::Result<()> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
@@ -235,7 +219,8 @@ pub fn run(rpc_url: &str, contract_id: &str, out_path: &str, network_passphrase:
 
     for id in 1..=total_streams {
         let tx = build_sim_tx(
-            contract_id, "get_stream",
+            contract_id,
+            "get_stream",
             vec![sc_u64(id)],
             network_passphrase,
         )?;
@@ -252,8 +237,14 @@ pub fn run(rpc_url: &str, contract_id: &str, out_path: &str, network_passphrase:
             ScVal::Vec(Some(v)) if v.len() == 2 => {
                 // Result::Ok variant.
                 if let ScVal::Symbol(s) = &v[0] {
-                    if s.0.as_ref().as_bytes() == b"Ok" { &v[1] } else { &val }
-                } else { &val }
+                    if s.0.as_slice() == b"Ok" {
+                        &v[1]
+                    } else {
+                        &val
+                    }
+                } else {
+                    &val
+                }
             }
             _ => &val,
         };
@@ -297,14 +288,19 @@ pub fn run(rpc_url: &str, contract_id: &str, out_path: &str, network_passphrase:
 
         // Per-stream fee.
         let fee_tx = build_sim_tx(
-            contract_id, "stream_fee",
+            contract_id,
+            "stream_fee",
             vec![sc_u64(id)],
             network_passphrase,
         )?;
         if let Ok(fv) = simulate(&client, rpc_url, &fee_tx) {
             if let Ok(fee) = scval_to_i128(&fv) {
                 if fee > 0 {
-                    stream_fees.push(StreamFeeEntry { stream_id: id, token: token.clone(), amount: fee });
+                    stream_fees.push(StreamFeeEntry {
+                        stream_id: id,
+                        token: token.clone(),
+                        amount: fee,
+                    });
                 }
             }
         }
@@ -318,13 +314,13 @@ pub fn run(rpc_url: &str, contract_id: &str, out_path: &str, network_passphrase:
     let mut treasuries = Vec::new();
     for token in &treasury_tokens {
         let addr_val = match stellar_strkey::Strkey::from_string(token) {
-            Ok(stellar_strkey::Strkey::Contract(c)) =>
-                ScVal::Address(ScAddress::Contract(Hash(c.0))),
+            Ok(stellar_strkey::Strkey::Contract(c)) => ScAddress::Contract(ContractId(Hash(c.0))),
             _ => continue,
         };
         let tx = build_sim_tx(
-            contract_id, "treasury_status",
-            vec![addr_val],
+            contract_id,
+            "treasury_status",
+            vec![ScVal::Address(addr_val)],
             network_passphrase,
         )?;
         if let Ok(val) = simulate(&client, rpc_url, &tx) {
@@ -347,15 +343,24 @@ pub fn run(rpc_url: &str, contract_id: &str, out_path: &str, network_passphrase:
     let mut recipient_map: HashMap<String, Vec<u64>> = HashMap::new();
     for s in &streams {
         sender_map.entry(s.sender.clone()).or_default().push(s.id);
-        recipient_map.entry(s.recipient.clone()).or_default().push(s.id);
+        recipient_map
+            .entry(s.recipient.clone())
+            .or_default()
+            .push(s.id);
     }
     let sender_indexes: Vec<IndexEntry> = sender_map
         .into_iter()
-        .map(|(address, stream_ids)| IndexEntry { address, stream_ids })
+        .map(|(address, stream_ids)| IndexEntry {
+            address,
+            stream_ids,
+        })
         .collect();
     let recipient_indexes: Vec<IndexEntry> = recipient_map
         .into_iter()
-        .map(|(address, stream_ids)| IndexEntry { address, stream_ids })
+        .map(|(address, stream_ids)| IndexEntry {
+            address,
+            stream_ids,
+        })
         .collect();
 
     // ── Build snapshot ─────────────────────────────────────────────────────────
@@ -385,7 +390,11 @@ pub fn run(rpc_url: &str, contract_id: &str, out_path: &str, network_passphrase:
     let json_output = serde_json::to_string_pretty(&snapshot)?;
     std::fs::write(out_path, &json_output)?;
     println!("Snapshot written to {out_path}");
-    println!("  {} streams, {} fees, {} treasuries",
-        snapshot.streams.len(), snapshot.stream_fees.len(), snapshot.treasuries.len());
+    println!(
+        "  {} streams, {} fees, {} treasuries",
+        snapshot.streams.len(),
+        snapshot.stream_fees.len(),
+        snapshot.treasuries.len()
+    );
     Ok(())
 }
