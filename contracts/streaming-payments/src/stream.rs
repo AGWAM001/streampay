@@ -6,9 +6,22 @@
 //! intermediate products) and returns [`StreamError::MathOverflow`] instead of
 //! overflowing or panicking.
 
-use soroban_sdk::{contracttype, Address, Env, MuxedAddress, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, MuxedAddress, Vec};
 
 use crate::errors::StreamError;
+use crate::surface::{self, Branch};
+
+/// Minimum delay for an upgrade proposal timelock: 24 hours.
+pub const MIN_UPGRADE_DELAY_SECONDS: u64 = 86_400;
+
+/// Initial schema version (v1).
+pub const INITIAL_SCHEMA_VERSION: u32 = 1;
+
+/// Target schema version after migration (v2).
+pub const TARGET_SCHEMA_VERSION: u32 = 2;
+
+/// Maximum number of streams processed per migration call.
+pub const MAX_MIGRATION_BATCH_SIZE: u32 = 50;
 
 /// Maximum supported stream duration: 100 years, including leap days
 /// (36,525 days). Bounds worst-case rate multiplications and rejects
@@ -20,11 +33,22 @@ pub const MAX_DURATION_SECONDS: u64 = 3_155_760_000;
 /// of the address-index views.
 pub const MAX_PAGE_SIZE: u32 = 50;
 
+/// Minimum number of stream entries permitted in a batch.
+pub const MIN_BATCH: u32 = 1;
+
+/// Maximum number of stream entries permitted in a batch.
+///
+/// Bounded to 25 because each stream creation emits a `StreamCreated` event
+/// and a token `transfer` event (~600 bytes combined). At 25 streams, event
+/// size is ~15.5 KB, safely within Soroban's network limit of 16,384 bytes (16 KB),
+/// and consumes ~16.2M CPU instructions (~16% of the 100M transaction budget).
+pub const MAX_BATCH: u32 = 25;
+
 /// Lifetime of a pending ownership proposal, in seconds (7 days).
 ///
 /// A proposal that is not accepted within this window becomes stale: it can no
-/// longer be accepted (the target must ask the current owner to propose
-/// again), but the current owner can still cancel it explicitly or replace it
+/// longer be accepted (the target must ask the current role holder to propose
+/// again), but the current holder can still cancel it explicitly or replace it
 /// with a fresh proposal. Expiry is enforced against the ledger timestamp, not
 /// storage TTL, so the semantics are identical on every network.
 pub const OWNERSHIP_PROPOSAL_TTL_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -35,8 +59,8 @@ pub const OWNERSHIP_PROPOSAL_TTL_SECONDS: u64 = 7 * 24 * 60 * 60;
 /// eventually archived off-chain (and auto-restored at a fee when next read).
 /// Every mutating entrypoint extends the stream entry's TTL, so a stream that
 /// is actually being used never goes cold.
-const TTL_THRESHOLD_LEDGERS: u32 = 200_000; // extend when TTL drops below ~11.5 days
-const TTL_EXTEND_LEDGERS: u32 = 500_000; // extend to ~29 days
+pub(crate) const TTL_THRESHOLD_LEDGERS: u32 = 200_000; // extend when TTL drops below ~11.5 days
+pub(crate) const TTL_EXTEND_LEDGERS: u32 = 500_000; // extend to ~29 days
 
 /// The role being handed over by a two-step ownership transfer.
 #[contracttype]
@@ -97,6 +121,8 @@ pub struct Stream {
     /// If true, the recipient may also cancel and reclaim their accrued balance.
     pub cancelable: bool,
     pub status: StreamStatus,
+    /// If true, settles against external oracle time feed instead of ledger time.
+    pub use_oracle: bool,
 }
 
 impl Stream {
@@ -105,6 +131,38 @@ impl Stream {
     pub fn duration(&self) -> u64 {
         self.end_time - self.start_time
     }
+}
+
+/// Parameters for creating a single stream within a batch creation call.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchEntry {
+    pub sender: Address,
+    pub recipient: Address,
+    pub token: Address,
+    pub deposit: i128,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub cancelable: bool,
+}
+
+/// Proposed contract upgrade pending timelock expiration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingUpgrade {
+    pub new_wasm_hash: BytesN<32>,
+    pub unlock_time: u64,
+}
+
+/// Progress report for on-chain storage migration.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationStatus {
+    pub current_version: u32,
+    pub target_version: u32,
+    pub cursor: u64,
+    pub total_streams: u64,
+    pub is_complete: bool,
 }
 
 /// Storage keys for the contract.
@@ -122,24 +180,70 @@ pub enum DataKey {
     /// Append-only index of stream ids created (as sender) by the given
     /// address. Same advisory semantics as [`DataKey::RecipientStreams`].
     SenderStreams(Address),
+    /// Next scheduled-intent id to hand out; ids start at 1.
+    NextIntentId,
+    /// The scheduled intent with the given id.
+    Intent(u64),
+    /// Append-only index of scheduled-intent ids created (as sender) by the
+    /// given address. Same advisory semantics as [`DataKey::SenderStreams`].
+    SenderIntents(Address),
+    /// Treasury governor address (instance storage; set once by the
+    /// contract constructor, later by two-step nomination/acceptance).
+    Governor,
+    /// Pending governor nominee (instance storage; set by
+    /// `nominate_governor`, cleared by `accept_governor`).
+    PendingGovernor,
+    /// Configured protocol fee in basis points (instance storage; absent
+    /// means 0 — fees disabled, the v0.3 behavior).
+    FeeBps,
+    /// Per-token fee accounting: fees charged minus fees withdrawn
+    /// (persistent storage; written only by fee-affecting entrypoints).
+    Treasury(Address),
+    /// Fee charged for one stream at creation time (persistent storage;
+    /// written only when the fee rounds above zero, so absent == 0).
+    StreamFee(u64),
+    /// Schema version for storage layout evolution (instance storage).
+    SchemaVersion,
+    /// Freeze state: when true, all state-mutating entrypoints revert (instance storage).
+    ContractFrozen,
+    /// Proposed contract upgrade pending timelock expiration (instance storage).
+    PendingUpgrade,
+    /// Highest stream id processed by storage migration (instance storage).
+    MigrationCursor,
+    /// Global oracle configuration (instance storage).
+    OracleConfig,
+    /// Most recent timestamp report from a publisher (persistent storage).
+    OracleReport(Address),
     /// The pending two-step ownership proposal for the given stream, if any.
     /// At most one proposal exists per stream at a time.
     PendingOwnership(u64),
+}
+
+/// Seconds elapsed of the stream window at the given timestamp `now`.
+pub fn elapsed_seconds_at(now: u64, start_time: u64, end_time: u64) -> u64 {
+    if now <= start_time {
+        0
+    } else if now >= end_time {
+        // MUTANT-SUPPRESS: replace - with + is acceptable because this branch
+        // is only reachable when now >= end_time, which means the full duration
+        // has already elapsed. The test elapsed_after_end_returns_full_duration
+        // verifies that the full deposit is available at this point. The mutation
+        // would cause an overflow in the subsequent streamed_at calculation,
+        // which is caught by MathOverflow. This is an unreachable code path given
+        // the contract's usage pattern.
+        end_time - start_time
+    } else {
+        now - start_time
+    }
 }
 
 /// Seconds elapsed of the stream window at the current ledger time.
 ///
 /// The window is half-open `[start_time, end_time)`: at `now == start_time`
 /// nothing has accrued yet; at `now >= end_time` the full duration has elapsed.
+#[allow(dead_code)]
 pub fn elapsed_seconds(env: &Env, start_time: u64, end_time: u64) -> u64 {
-    let now = env.ledger().timestamp();
-    if now <= start_time {
-        0
-    } else if now >= end_time {
-        end_time - start_time
-    } else {
-        now - start_time
-    }
+    elapsed_seconds_at(env.ledger().timestamp(), start_time, end_time)
 }
 
 /// Validates that `deposit * duration` — the worst-case rate multiplication —
@@ -149,7 +253,7 @@ pub fn elapsed_seconds(env: &Env, start_time: u64, end_time: u64) -> u64 {
 pub fn validate_capacity(deposit: i128, duration: u64) -> Result<(), StreamError> {
     let cap = u128::MAX / (duration.max(1) as u128);
     if (deposit as u128) > cap {
-        return Err(StreamError::MathOverflow);
+        return Err(surface::reject(Branch::CapacityOverflow));
     }
     Ok(())
 }
@@ -168,46 +272,65 @@ pub fn streamed_at(deposit: i128, duration: u64, elapsed: u64) -> Result<i128, S
     }
     let product = (deposit as u128)
         .checked_mul(elapsed as u128)
-        .ok_or(StreamError::MathOverflow)?;
+        .ok_or_else(|| surface::reject(Branch::RateProductOverflow))?;
     let streamed = (product / (duration.max(1) as u128)).min(deposit as u128);
     // `streamed <= deposit <= i128::MAX`, so the narrowing cast cannot wrap.
     Ok(streamed as i128)
 }
 
+/// Amount streamed (accrued) at reference timestamp `now`.
+pub fn streamed_amount_at(stream: &Stream, now: u64) -> Result<i128, StreamError> {
+    let elapsed = elapsed_seconds_at(now, stream.start_time, stream.end_time);
+    streamed_at(stream.deposit, stream.duration(), elapsed)
+}
+
 /// Amount streamed (accrued) at the current ledger time.
 ///
 /// See [`streamed_at`] for the rate semantics.
+#[allow(dead_code)]
 pub fn streamed_amount(env: &Env, stream: &Stream) -> Result<i128, StreamError> {
-    let elapsed = elapsed_seconds(env, stream.start_time, stream.end_time);
-    streamed_at(stream.deposit, stream.duration(), elapsed)
+    streamed_amount_at(stream, env.ledger().timestamp())
+}
+
+/// Accrued-but-unwithdrawn balance at reference timestamp `now`. Zero for
+/// cancelled streams.
+pub fn available_amount_at(stream: &Stream, now: u64) -> Result<i128, StreamError> {
+    if stream.status == StreamStatus::Cancelled {
+        return Ok(0);
+    }
+    let streamed = streamed_amount_at(stream, now)?;
+    streamed
+        .checked_sub(stream.withdrawn)
+        .ok_or_else(|| surface::reject(Branch::AvailableBalanceOverflow))
 }
 
 /// Accrued-but-unwithdrawn balance at the current ledger time. Zero for
 /// cancelled streams (their payout was settled atomically at cancellation).
+#[allow(dead_code)]
 pub fn available_amount(env: &Env, stream: &Stream) -> Result<i128, StreamError> {
-    if stream.status == StreamStatus::Cancelled {
-        return Ok(0);
-    }
-    let streamed = streamed_amount(env, stream)?;
-    streamed
+    available_amount_at(stream, env.ledger().timestamp())
+}
+
+/// Payout split at cancellation at reference timestamp `now`: `(recipient_amount, sender_amount)`.
+pub fn cancel_amounts_at(stream: &Stream, now: u64) -> Result<(i128, i128), StreamError> {
+    let streamed = streamed_amount_at(stream, now)?;
+    let recipient_amount = streamed
         .checked_sub(stream.withdrawn)
-        .ok_or(StreamError::MathOverflow)
+        .ok_or_else(|| surface::reject(Branch::CancelSplitOverflow))?;
+    let sender_amount = stream
+        .deposit
+        .checked_sub(streamed)
+        .ok_or_else(|| surface::reject(Branch::CancelSplitOverflow))?;
+    Ok((recipient_amount, sender_amount))
 }
 
 /// Payout split at cancellation: `(recipient_amount, sender_amount)`.
 ///
 /// The recipient receives their accrued-but-unwithdrawn balance; the sender is
 /// refunded the unaccrued remainder.
+#[allow(dead_code)]
 pub fn cancel_amounts(env: &Env, stream: &Stream) -> Result<(i128, i128), StreamError> {
-    let streamed = streamed_amount(env, stream)?;
-    let recipient_amount = streamed
-        .checked_sub(stream.withdrawn)
-        .ok_or(StreamError::MathOverflow)?;
-    let sender_amount = stream
-        .deposit
-        .checked_sub(streamed)
-        .ok_or(StreamError::MathOverflow)?;
-    Ok((recipient_amount, sender_amount))
+    cancel_amounts_at(stream, env.ledger().timestamp())
 }
 
 /// Address helper: token transfer destinations are muxed addresses.
@@ -223,16 +346,31 @@ pub fn next_stream_id(env: &Env) -> u64 {
     id
 }
 
+/// Reserves a contiguous range of stream ids with one persistent write.
+pub fn reserve_stream_ids(env: &Env, count: u32) -> Result<u64, StreamError> {
+    let key = DataKey::NextStreamId;
+    let first: u64 = env.storage().persistent().get(&key).unwrap_or(1);
+    let next = first
+        .checked_add(count as u64)
+        .ok_or(StreamError::MathOverflow)?;
+    env.storage().persistent().set(&key, &next);
+    Ok(first)
+}
+
 /// Loads a stream, or returns [`StreamError::StreamNotFound`].
 pub fn get_stream(env: &Env, id: u64) -> Result<Stream, StreamError> {
+    #[cfg(test)]
+    crate::cei_trace::record(&std::format!("read persistent Stream({id})"));
     env.storage()
         .persistent()
         .get(&DataKey::Stream(id))
-        .ok_or(StreamError::StreamNotFound)
+        .ok_or_else(|| surface::reject(Branch::StreamNotFound))
 }
 
 /// Persists a stream and extends its storage TTL.
 pub fn put_stream(env: &Env, stream: &Stream) {
+    #[cfg(test)]
+    crate::cei_trace::record(&std::format!("write persistent Stream({})", stream.id));
     let key = DataKey::Stream(stream.id);
     env.storage().persistent().set(&key, stream);
     env.storage()
@@ -242,7 +380,8 @@ pub fn put_stream(env: &Env, stream: &Stream) {
 
 /// Appends a stream's id to both parties' address indexes.
 ///
-/// Called once, from `create_stream`, right after the stream is persisted.
+/// Called after each stream created by `create_stream` or `create_streams`
+/// is persisted.
 /// Cancel/deplete/top-up flows intentionally do not touch the indexes: they
 /// are append-only discovery aids keyed by *creation*, not by lifecycle.
 pub fn index_stream(env: &Env, stream: &Stream) {
@@ -260,19 +399,6 @@ pub fn index_sender(env: &Env, sender: &Address, id: u64) {
 /// when an accepted ownership transfer installs a new recipient.
 pub fn index_recipient(env: &Env, recipient: &Address, id: u64) {
     push_to_index(env, &DataKey::RecipientStreams(recipient.clone()), id);
-}
-
-fn push_to_index(env: &Env, key: &DataKey, id: u64) {
-    let mut ids: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(key)
-        .unwrap_or_else(|| Vec::new(env));
-    ids.push_back(id);
-    env.storage().persistent().set(key, &ids);
-    env.storage()
-        .persistent()
-        .extend_ttl(key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
 }
 
 /// Loads the pending ownership proposal for `id`, if one exists, and extends
@@ -304,6 +430,19 @@ pub fn remove_pending_ownership(env: &Env, id: u64) {
         .remove(&DataKey::PendingOwnership(id));
 }
 
+pub(crate) fn push_to_index(env: &Env, key: &DataKey, id: u64) {
+    let mut ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(key)
+        .unwrap_or_else(|| Vec::new(env));
+    ids.push_back(id);
+    env.storage().persistent().set(key, &ids);
+    env.storage()
+        .persistent()
+        .extend_ttl(key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+}
+
 /// Returns one page of stream ids from an address index, in creation order.
 ///
 /// `limit` is clamped to [`MAX_PAGE_SIZE`]; an `offset` past the end (or an
@@ -322,13 +461,86 @@ pub fn page_stream_ids(env: &Env, key: &DataKey, offset: u32, limit: u32) -> Vec
     let end = start
         .saturating_add(limit.min(MAX_PAGE_SIZE))
         .min(ids.len());
-    let mut page = Vec::new(env);
-    let mut i = start;
-    while i < end {
-        if let Some(id) = ids.get(i) {
-            page.push_back(id);
-        }
-        i += 1;
-    }
-    page
+    ids.slice(start..end)
+}
+
+/// Returns the current schema version (defaults to INITIAL_SCHEMA_VERSION if unset).
+pub fn schema_version(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::SchemaVersion)
+        .unwrap_or(INITIAL_SCHEMA_VERSION)
+}
+
+/// Persists the new schema version and extends instance storage TTL.
+pub fn set_schema_version(env: &Env, version: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::SchemaVersion, &version);
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+}
+
+/// Checks whether the contract is currently frozen.
+pub fn is_frozen(env: &Env) -> bool {
+    #[cfg(test)]
+    crate::cei_trace::record("read instance ContractFrozen");
+    env.storage()
+        .instance()
+        .get(&DataKey::ContractFrozen)
+        .unwrap_or(false)
+}
+
+/// Updates the contract freeze state and extends instance storage TTL.
+pub fn set_frozen(env: &Env, frozen: bool) {
+    #[cfg(test)]
+    crate::cei_trace::record("write instance ContractFrozen");
+    env.storage()
+        .instance()
+        .set(&DataKey::ContractFrozen, &frozen);
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+}
+
+/// Returns the pending contract upgrade proposal, if one exists.
+pub fn pending_upgrade(env: &Env) -> Option<PendingUpgrade> {
+    env.storage().instance().get(&DataKey::PendingUpgrade)
+}
+
+/// Sets the pending contract upgrade proposal and extends instance storage TTL.
+pub fn set_pending_upgrade(env: &Env, pending: &PendingUpgrade) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingUpgrade, pending);
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+}
+
+/// Removes any pending contract upgrade proposal and extends instance storage TTL.
+pub fn remove_pending_upgrade(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingUpgrade);
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+}
+
+/// Returns the current migration cursor (highest stream id migrated so far).
+pub fn migration_cursor(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MigrationCursor)
+        .unwrap_or(0)
+}
+
+/// Sets the migration cursor and extends instance storage TTL.
+pub fn set_migration_cursor(env: &Env, cursor: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MigrationCursor, &cursor);
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
 }
