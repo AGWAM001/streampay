@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { readPaymentLinkAction } from "@/app/actions";
 
+
 export async function generateMetadata({
   params,
 }: {

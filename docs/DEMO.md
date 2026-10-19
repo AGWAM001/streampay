@@ -432,7 +432,7 @@ fresh wallet; that is exactly the case sponsorship solves).
 
    Expected: recipient is paid 1 000 000 units, the sponsor's window spend
    grows by the same amount (`sponsor_period_spend`), and resubmitting the
-   identical call fails with `ClaimNonceReplay` (25). In the frontend this
+   identical call fails with `ClaimNonceReplay` (53). In the frontend this
    whole step is the **Claim for free** button POSTing
    `{ intent, beneficiarySig }` to the operator relay.
 

@@ -8,7 +8,6 @@
  */
 import {
   Account,
-  Address,
   nativeToScVal,
   Networks,
   rpc,
@@ -20,8 +19,16 @@ import {
 } from "@stellar/stellar-sdk";
 import { signTransaction } from "@stellar/freighter-api";
 import type { BatchStreamEntry } from "./batch";
+import {
+  buildCreateStreamOperationForDays,
+  buildWithdrawOperation,
+  i128,
+  scAddr,
+  u32,
+  u64,
+} from "./stellar-ops.ts";
 
-const RPC_URL =
+export const RPC_URL =
   process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ||
   "https://soroban-testnet.stellar.org";
 const NETWORK =
@@ -56,24 +63,8 @@ export interface StreamArgs {
   cancelable: boolean;
 }
 
-import type { StreamView } from "./pagination";
+import type { StreamView } from "./pagination.ts";
 export type { StreamView };
-
-function scAddr(s: string) {
-  return nativeToScVal(new Address(s), { type: "address" });
-}
-
-function u64(id: string | number | bigint) {
-  return nativeToScVal(BigInt(id), { type: "u64" });
-}
-
-function i128(v: string) {
-  return nativeToScVal(BigInt(v), { type: "i128" });
-}
-
-function u32(v: number) {
-  return nativeToScVal(BigInt(v), { type: "u32" });
-}
 
 /**
  * Network label for localStorage keys — stream ids are per-network facts and
@@ -188,13 +179,15 @@ const STREAM_ERRORS: Record<number, string> = {
   44: "PolicyDurationBelowFloor",
   45: "PolicyDurationAboveCeiling",
   46: "PolicyDepositBelowFloor",
-  47: "SponsorNotFound",
-  48: "SponsorInactive",
-  49: "BeneficiaryNotEnrolled",
-  50: "ClaimExpired",
-  51: "ClaimNonceReplay",
-  52: "SponsorBudgetExceeded",
-  53: "BeneficiaryBudgetExceeded",
+  47: "BatchEmpty",
+  48: "BatchTooLarge",
+  49: "SponsorNotFound",
+  50: "SponsorInactive",
+  51: "BeneficiaryNotEnrolled",
+  52: "ClaimExpired",
+  53: "ClaimNonceReplay",
+  54: "SponsorBudgetExceeded",
+  55: "BeneficiaryBudgetExceeded",
 };
 
 /** Rewrites raw simulation/tx error text into a readable StreamError name. */
@@ -337,21 +330,20 @@ export async function createStream(
   args: StreamArgs
 ): Promise<bigint> {
   const token = tokenContractId(args.token); // "native" → the network's XLM SAC
-  const start = Math.floor(Date.now() / 1000) + 1;
-  const end = start + Math.ceil(Number(args.days) * 86_400);
+  const start = BigInt(Math.floor(Date.now() / 1000) + 1);
   // The contract pulls the deposit through a token allowance — make sure it
   // is in place before simulation (one extra Freighter signature on the
   // first stream with a given asset).
   await ensureAllowance(sender, token, args.deposit);
-  const op = contract().call(
-    "create_stream",
-    scAddr(sender),
-    scAddr(args.recipient),
-    scAddr(token),
-    i128(args.deposit),
-    u64(start),
-    u64(end),
-    nativeToScVal(args.cancelable)
+  const op = buildCreateStreamOperationForDays(
+    CONTRACT_ID,
+    sender,
+    args.recipient,
+    token,
+    args.deposit,
+    start,
+    args.days,
+    args.cancelable
   );
   // create_stream returns the new stream id (u64).
   return send(sender, op, (v) => BigInt(scValToNative(v) as bigint));
@@ -415,7 +407,7 @@ export async function withdrawFromStream(
 ): Promise<void> {
   await send(
     recipient,
-    contract().call("withdraw", u64(streamId), i128(amount)),
+    buildWithdrawOperation(CONTRACT_ID, streamId, amount),
     () => undefined
   );
 }
@@ -433,6 +425,86 @@ export async function withdrawMaxFromStream(
     contract().call("withdraw_max", u64(streamId)),
     (v) => BigInt(scValToNative(v) as bigint)
   );
+}
+
+/**
+ * A simulated, unsigned transaction ready to be signed and held. The claim
+ * scheduler builds one of these, has Freighter sign it, and stores the
+ * resulting envelope until it is worth submitting.
+ */
+export interface PreparedIntent {
+  /** Base64 envelope XDR (unsigned). */
+  xdr: string;
+  /** Unix seconds after which the envelope is invalid (tx `maxTime`). */
+  validUntil: number;
+}
+
+/**
+ * Builds and simulates a `withdraw_max` claim and returns the assembled
+ * transaction *without* signing it, so it can be stored and submitted later.
+ * `validitySeconds` becomes the transaction's `maxTime` window — the hard
+ * limit on how long a held signature stays usable.
+ */
+export async function prepareWithdrawMax(
+  recipient: string,
+  streamId: string,
+  validitySeconds: number
+): Promise<PreparedIntent> {
+  const server = new rpc.Server(RPC_URL);
+  const account = await server.getAccount(recipient);
+  const tx = new TransactionBuilder(account, {
+    fee: "100000",
+    networkPassphrase: NETWORK,
+  })
+    .addOperation(contract().call("withdraw_max", u64(streamId)))
+    .setTimeout(validitySeconds)
+    .build();
+  const simulated = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(simulated)) {
+    throw new Error(`Simulation failed: ${simulated.error}`);
+  }
+  const ready = rpc.assembleTransaction(tx, simulated).build();
+  const maxTime = ready.timeBounds?.maxTime;
+  return {
+    xdr: ready.toXDR(),
+    validUntil: maxTime
+      ? Number(maxTime)
+      : Math.floor(Date.now() / 1000) + validitySeconds,
+  };
+}
+
+/** Freighter-signs a prepared envelope, returning the signed XDR. */
+export async function signPreparedIntent(xdr: string): Promise<string> {
+  const { signedTxXdr } = await signTransaction(xdr, {
+    networkPassphrase: NETWORK,
+  });
+  return signedTxXdr;
+}
+
+/**
+ * Submits a previously signed envelope and waits for inclusion. Resolves with
+ * the transaction hash; throws on rejection or timeout.
+ */
+export async function submitSignedIntent(
+  signedXdr: string
+): Promise<{ hash: string }> {
+  const server = new rpc.Server(RPC_URL);
+  const signed = TransactionBuilder.fromXDR(signedXdr, NETWORK);
+  const sent = await server.sendTransaction(signed);
+  if (sent.status === "ERROR") {
+    throw new Error(`Submit failed: ${JSON.stringify(sent.errorResult)}`);
+  }
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const res = await server.getTransaction(sent.hash);
+    if (res.status === rpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error(`Transaction failed: ${JSON.stringify(res.resultXdr)}`);
+    }
+    if (res.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      return { hash: sent.hash };
+    }
+  }
+  throw new Error("Timed out waiting for transaction inclusion");
 }
 
 export interface ClaimReceipt {
@@ -681,7 +753,7 @@ import {
   paginateStreamsByCursor,
   type CursorPaginationOptions,
   type PaginatedStreamsResponse,
-} from "./pagination";
+} from "./pagination.ts";
 
 export {
   paginateStreamsByCursor,
@@ -690,7 +762,7 @@ export {
   type PaginationDirection,
   type CursorPaginationOptions,
   type PaginatedStreamsResponse,
-} from "./pagination";
+} from "./pagination.ts";
 
 /**
  * Discovers and paginates streams for any Stellar address across incoming

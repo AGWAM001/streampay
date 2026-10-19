@@ -54,13 +54,15 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 44 | `PolicyDurationBelowFloor` | reachable (1 branch(es)) | `create_stream`, `create_streams` | stream duration is below the governance policy floor |
 | 45 | `PolicyDurationAboveCeiling` | reachable (1 branch(es)) | `create_stream`, `create_streams` | stream duration exceeds the governance policy ceiling |
 | 46 | `PolicyDepositBelowFloor` | reachable (1 branch(es)) | `create_stream`, `create_streams`, `top_up` | stream deposit is below the governance policy floor |
-| 47 | `SponsorNotFound` | reachable (1 branch(es)) | `sponsored_withdraw` | no sponsor budget is registered for the address |
-| 48 | `SponsorInactive` | reachable (1 branch(es)) | `sponsored_withdraw` | the sponsor's budget is paused (inactive) |
-| 49 | `BeneficiaryNotEnrolled` | reachable (1 branch(es)) | `sponsored_withdraw` | the beneficiary has not enrolled an ed25519 consent key |
-| 50 | `ClaimExpired` | reachable (1 branch(es)) | `sponsored_withdraw` | the relayed claim was submitted after its deadline |
-| 51 | `ClaimNonceReplay` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim's nonce was already spent for this pair |
-| 52 | `SponsorBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the sponsor's per-period budget cap |
-| 53 | `BeneficiaryBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the per-beneficiary budget cap |
+| 47 | `BatchEmpty` | reachable (1 branch(es)) | `create_streams_batch` | entries is empty |
+| 48 | `BatchTooLarge` | reachable (1 branch(es)) | `create_streams_batch` | entries length exceeds MAX_BATCH |
+| 49 | `SponsorNotFound` | reachable (1 branch(es)) | `sponsored_withdraw` | no sponsor budget is registered for the address |
+| 50 | `SponsorInactive` | reachable (1 branch(es)) | `sponsored_withdraw` | the sponsor's budget is paused (inactive) |
+| 51 | `BeneficiaryNotEnrolled` | reachable (1 branch(es)) | `sponsored_withdraw` | the beneficiary has not enrolled an ed25519 consent key |
+| 52 | `ClaimExpired` | reachable (1 branch(es)) | `sponsored_withdraw` | the relayed claim was submitted after its deadline |
+| 53 | `ClaimNonceReplay` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim's nonce was already spent for this pair |
+| 54 | `SponsorBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the sponsor's per-period budget cap |
+| 55 | `BeneficiaryBudgetExceeded` | reachable (1 branch(es)) | `sponsored_withdraw` | the claim would exceed the per-beneficiary budget cap |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -93,13 +95,13 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `RegisterLimitNonPositive` | `register_sponsor` | `ZeroAmount` | 9 | a sponsor budget cap (per-period or per-beneficiary) is zero or negative | reachable |
 | `SponsoredWithdrawAmountNonPositive` | `sponsored_withdraw` | `ZeroAmount` | 9 | a sponsored claim requests a zero or negative payout | reachable |
 | `SponsoredWithdrawAmountExceedsAvailable` | `sponsored_withdraw` | `AmountExceedsAvailable` | 10 | a sponsored claim exceeds the stream's accrued-but-unwithdrawn balance | reachable |
-| `SponsorNotFound` | `sponsored_withdraw` | `SponsorNotFound` | 47 | no sponsor budget is registered for the address | reachable |
-| `SponsorInactive` | `sponsored_withdraw` | `SponsorInactive` | 48 | the sponsor's budget is paused (inactive) | reachable |
-| `BeneficiaryNotEnrolled` | `sponsored_withdraw` | `BeneficiaryNotEnrolled` | 49 | the beneficiary has not enrolled an ed25519 consent key | reachable |
-| `ClaimExpired` | `sponsored_withdraw` | `ClaimExpired` | 50 | the relayed claim was submitted after its deadline | reachable |
-| `ClaimNonceReplay` | `sponsored_withdraw` | `ClaimNonceReplay` | 51 | the claim's nonce was already spent for this pair | reachable |
-| `SponsorBudgetPeriodExceeded` | `sponsored_withdraw` | `SponsorBudgetExceeded` | 52 | the claim would exceed the sponsor's per-period budget cap | reachable |
-| `SponsorBudgetBeneficiaryExceeded` | `sponsored_withdraw` | `BeneficiaryBudgetExceeded` | 53 | the claim would exceed the per-beneficiary budget cap | reachable |
+| `SponsorNotFound` | `sponsored_withdraw` | `SponsorNotFound` | 49 | no sponsor budget is registered for the address | reachable |
+| `SponsorInactive` | `sponsored_withdraw` | `SponsorInactive` | 50 | the sponsor's budget is paused (inactive) | reachable |
+| `BeneficiaryNotEnrolled` | `sponsored_withdraw` | `BeneficiaryNotEnrolled` | 51 | the beneficiary has not enrolled an ed25519 consent key | reachable |
+| `ClaimExpired` | `sponsored_withdraw` | `ClaimExpired` | 52 | the relayed claim was submitted after its deadline | reachable |
+| `ClaimNonceReplay` | `sponsored_withdraw` | `ClaimNonceReplay` | 53 | the claim's nonce was already spent for this pair | reachable |
+| `SponsorBudgetPeriodExceeded` | `sponsored_withdraw` | `SponsorBudgetExceeded` | 54 | the claim would exceed the sponsor's per-period budget cap | reachable |
+| `SponsorBudgetBeneficiaryExceeded` | `sponsored_withdraw` | `BeneficiaryBudgetExceeded` | 55 | the claim would exceed the per-beneficiary budget cap | reachable |
 | `IntentNotFound` | `get_intent`, `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotFound` | 18 | no scheduled intent is stored under the id | reachable |
 | `IntentNotPending` | `execute_scheduled`, `cancel_scheduled`, `reclaim_expired` | `IntentNotPending` | 19 | the intent is already executed, cancelled, or expired | reachable |
 | `IntentNotYetExecutable` | `execute_scheduled` | `IntentNotYetExecutable` | 20 | the next occurrence has not reached execute_after | reachable |
@@ -118,6 +120,8 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `PolicyNoQueuedChange` | `policy_execute_asset` | `PolicyNoQueuedChange` | 33 | no policy change is queued for the specified asset | reachable |
 | `PolicyNotInitialized` | `policy_execute_asset`, `policy_propose_asset`, `policy_propose_handoff`, `policy_accept_handoff`, `policy_cancel_handoff`, `policy_set_timelock_delay` | `PolicyNotInitialized` | 34 | the policy module has not been initialized | reachable |
 | `PolicyNoPendingHandoff` | `policy_accept_handoff`, `policy_cancel_handoff` | `PolicyNoPendingHandoff` | 35 | no admin handoff proposal is pending | reachable |
+| `CreateBatchEmpty` | `create_streams_batch` | `BatchEmpty` | 47 | entries is empty | reachable |
+| `CreateBatchTooLarge` | `create_streams_batch` | `BatchTooLarge` | 48 | entries length exceeds MAX_BATCH | reachable |
 | `ContractFrozen` | `create_stream`, `create_streams`, `withdraw`, `withdraw_max`, `cancel_stream`, `top_up` | `ContractFrozen` | 36 | the contract is frozen for maintenance or upgrade | reachable |
 | `MigrationNotFrozen` | `migrate_storage` | `ContractNotFrozen` | 37 | storage migration requires the contract to be frozen | reachable |
 | `ExecuteUpgradeNoPending` | `execute_upgrade` | `NoPendingUpgrade` | 38 | execute_upgrade called with no upgrade pending | reachable |

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/toast";
+import NetworkBadge from "@/components/NetworkBadge";
 
 export const metadata: Metadata = {
   title: "StreamPay — streaming payments on Stellar",
@@ -19,6 +20,7 @@ export default function RootLayout({
           Skip to main content
         </a>
         <ToastProvider>
+          <NetworkBadge />
           <div id="main-content">{children}</div>
         </ToastProvider>
       </body>

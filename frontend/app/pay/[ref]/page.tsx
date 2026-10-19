@@ -15,6 +15,7 @@ import {
   describeError,
 } from "@/lib/stellar";
 import { computeAccruedAt } from "@/lib/accrual";
+import { checkWalletNetwork } from "@/lib/network";
 
 function formatUnits(amountStroops: string | bigint): string {
   const n = Number(amountStroops) / 10_000_000;
@@ -114,6 +115,7 @@ export default function PaymentLinkPage({
         return;
       }
       setAddress(addr);
+      await checkWalletNetwork();
     } catch (e: unknown) {
       setClaimError(String(e));
     }
