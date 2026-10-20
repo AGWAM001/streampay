@@ -28,6 +28,11 @@ against the 120 KB budget the size gate was set at (issue #35), the binary is
 now **under half that budget**; the budget itself is lowered to 60 KB here so
 any regression fails CI.
 
+> **These two rows were measured on the tree before `main` was merged in.**
+> After the merge the contract is 64,143 B — see
+> [Re-baseline after merging `main`](#re-baseline-after-merging-main) for the
+> attribution and the deliberate gate decision.
+
 ### Section breakdown (baseline → final)
 
 | Section | Baseline | Final | Δ |
@@ -111,6 +116,71 @@ per-stream `StreamCreated` events, so it keeps its own leg and was not merged.
 (`create_streams_batch` 1,086 → 795, `execute_scheduled` 914 → 773) now call
 the shared helper. Final binary: **60,386 B (59.0 KiB)**.
 
+## Re-baseline after merging `main` (ownership transfer + vault)
+
+`main` has grown since this branch was cut: it now carries the two-step
+ownership transfer surface (`propose_ownership_transfer`,
+`accept_ownership_transfer`, `cancel_ownership_transfer`,
+`pending_ownership_transfer`, the `OwnershipRole` / `PendingOwnership` types
+and two events, 11 new `StreamError` codes), the separate `contracts/vault`
+crate, and the ADR / generated-file gates. This branch merges `main`
+(`0f80df3`) and re-applies Technique 1 to the new interface items, so the
+size numbers above are re-baselined:
+
+| Section | Branch final (pre-merge) | Merged with `main` | Δ from upstream |
+|---|---|---|---|
+| `code` | 37,288 | 39,312 | +2,024 |
+| `contractspecv0` | 16,711 | 18,011 | +1,300 |
+| `data` | 3,963 | 4,251 | +288 |
+| `export` | 1,278 | 1,396 | +118 |
+| headers/other | 886 | 913 | +27 |
+| **Total** | **60,386** | **64,143 (62.6 KiB)** | **+3,757** |
+
+Top `code` functions on the merged build (`scripts/wasm-report.mjs`, run
+against the artifact in `target/wasm32v1-none/release/`):
+
+| Function | Bytes |
+|---|---|
+| `sponsored_withdraw` | 1,589 |
+| `create_streams` | 1,413 |
+| `schedule_stream` | 1,268 |
+| `create_streams_batch` | 795 |
+| `execute_scheduled` | 773 |
+| `top_up` | 756 |
+| `cancel_stream` | 672 |
+| `migrate_storage` | 567 |
+| `propose_ownership_transfer` | 466 |
+| `accept_ownership_transfer` | 426 |
+
+The two techniques' deltas are unchanged in kind: upstream's new interface
+items were doc-gated the same way (`lib.rs`, `errors.rs`, `events.rs`,
+`stream.rs` re-converted by `shrink_docs`-style idempotent conversion), and
+`persist_new_stream` is untouched by the merge. The +1,300 B of spec is the
+new entrypoints' *structural* spec entries (names, types, param docs are now
+empty) plus 11 error codes — not documentation, so Technique 1 cannot recover
+it; without it the merged build would be ~94 KB instead of 64 KB.
+
+### Size gate status: intentionally left at 60 KB, so CI shows the breach
+
+The merged binary is **64,143 B > the 61,440 B gate** (`WASM_SIZE_BUDGET_KB: 60`).
+The budget is deliberately **not** raised on this branch and the contract is
+deliberately **not** split here: the breach is upstream's *feature* growth, not
+a regression of the size work, and the gate's own comment says it should be
+"raised deliberately in a PR with justification if the contract grows". That
+justification call — raise the budget to e.g. 70 KB, or shed bytes first — is
+a maintainer decision, so this branch pushes with the gate intact and lets the
+"Wasm size budget check" step fail with the explicit `64143 > 61440` line
+rather than hiding it behind an unreviewed number change. Every other CI job
+is expected to stay green.
+
+Options, measured:
+
+| Option | Effect |
+|---|---|
+| Raise `WASM_SIZE_BUDGET_KB` to 70 | Green immediately; loses 10 KB of regression headroom against the real 120 KB deploy budget. |
+| Move `withdraw_treasury` / `verify_treasury` / `treasury_status` / `set_stream_policy` / policy* admin entrypoints to a second contract | ~−2.5 KB `code` plus their spec entries, but breaks the single-contract storage/upgrade model (admin state shares instance storage with streams) — same rejection as before. |
+| Trim remaining spec (46+ entrypoints, 18 KB) | Only by dropping the spec section, already rejected above. |
+
 ## Categories investigated and rejected (with measurements)
 
 | Candidate | Verdict |
@@ -141,8 +211,10 @@ expected and is **not** a supply-chain signal. Operators must:
    upgraded; `canary_check.sh` skips comparison when no baseline exists, and a
    wrong-Wasm deploy still fails on the new baseline.
 3. Functionally nothing changes: storage layout, event topics, error codes and
-   entrypoint signatures are untouched (verified by the unchanged
-   `docs/ERRORS.md` regeneration and the differential/model tests), so the
+   entrypoint signatures are untouched (verified by the regenerated
+   `docs/errors.md` catalog and `docs/ERROR_SURFACE.md` being byte-identical
+   apart from the catalog's `schema_fingerprint` line, which changes because
+   `errors.rs` text changed, and by the differential/model tests), so the
    upgrade can follow the standard rehearsal → canary → promote flow in
    `docs/CANARY_RUNBOOK.md` with the ack steps above added.
 

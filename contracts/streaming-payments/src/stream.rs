@@ -44,6 +44,15 @@ pub const MIN_BATCH: u32 = 1;
 /// and consumes ~16.2M CPU instructions (~16% of the 100M transaction budget).
 pub const MAX_BATCH: u32 = 25;
 
+/// Lifetime of a pending ownership proposal, in seconds (7 days).
+///
+/// A proposal that is not accepted within this window becomes stale: it can no
+/// longer be accepted (the target must ask the current role holder to propose
+/// again), but the current holder can still cancel it explicitly or replace it
+/// with a fresh proposal. Expiry is enforced against the ledger timestamp, not
+/// storage TTL, so the semantics are identical on every network.
+pub const OWNERSHIP_PROPOSAL_TTL_SECONDS: u64 = 7 * 24 * 60 * 60;
+
 /// TTL maintenance, in ledgers (~5 seconds per ledger on Stellar mainnet).
 ///
 /// Streams live in persistent storage: entries that go untouched are
@@ -53,28 +62,49 @@ pub const MAX_BATCH: u32 = 25;
 pub(crate) const TTL_THRESHOLD_LEDGERS: u32 = 200_000; // extend when TTL drops below ~11.5 days
 pub(crate) const TTL_EXTEND_LEDGERS: u32 = 500_000; // extend to ~29 days
 
-#[cfg_attr(not(target_family = "wasm"), doc = " Lifecycle state of a stream.")]
+/// The role being handed over by a two-step ownership transfer.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum OwnershipRole {
+    /// The payer: may top up and cancel, and receives cancellation refunds.
+    Sender,
+    /// The claimant: may withdraw accrued funds.
+    Recipient,
+}
+
+/// A pending two-step ownership proposal for one stream.
+///
+/// Proposals live under their own storage key ([`DataKey::PendingOwnership`])
+/// rather than inside [`Stream`], so accepting or cancelling one leaves the
+/// stream's accounting fields untouched and the dedicated key can be given its
+/// own TTL treatment.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingOwnership {
+    pub stream_id: u64,
+    /// The current role holder that created the proposal (and the only address
+    /// allowed to cancel it).
+    pub proposed_by: Address,
+    /// The address that must accept the role before it takes effect.
+    pub new_owner: Address,
+    pub role: OwnershipRole,
+    /// Ledger timestamp at or after which the proposal is stale.
+    pub expires_at: u64,
+}
+
+/// Lifecycle state of a stream.
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum StreamStatus {
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Running; funds accrue and can be withdrawn or topped up."
-    )]
+    /// Running; funds accrue and can be withdrawn or topped up.
     Active,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Cancelled; remaining funds were split at cancellation. Terminal."
-    )]
+    /// Cancelled; remaining funds were split at cancellation. Terminal.
     Cancelled,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Fully streamed and fully withdrawn. Terminal."
-    )]
+    /// Fully streamed and fully withdrawn. Terminal.
     Depleted,
 }
 
-#[cfg_attr(not(target_family = "wasm"), doc = " Full state of a payment stream.")]
+/// Full state of a payment stream.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stream {
@@ -82,28 +112,16 @@ pub struct Stream {
     pub sender: Address,
     pub recipient: Address,
     pub token: Address,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Total amount funded into the stream (original deposit + top-ups)."
-    )]
+    /// Total amount funded into the stream (original deposit + top-ups).
     pub deposit: i128,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Total amount paid to the recipient so far (withdrawals + cancel payout)."
-    )]
+    /// Total amount paid to the recipient so far (withdrawals + cancel payout).
     pub withdrawn: i128,
     pub start_time: u64,
     pub end_time: u64,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " If true, the recipient may also cancel and reclaim their accrued balance."
-    )]
+    /// If true, the recipient may also cancel and reclaim their accrued balance.
     pub cancelable: bool,
     pub status: StreamStatus,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " If true, settles against external oracle time feed instead of ledger time."
-    )]
+    /// If true, settles against external oracle time feed instead of ledger time.
     pub use_oracle: bool,
 }
 
@@ -115,10 +133,7 @@ impl Stream {
     }
 }
 
-#[cfg_attr(
-    not(target_family = "wasm"),
-    doc = " Parameters for creating a single stream within a batch creation call."
-)]
+/// Parameters for creating a single stream within a batch creation call.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BatchEntry {
@@ -131,10 +146,7 @@ pub struct BatchEntry {
     pub cancelable: bool,
 }
 
-#[cfg_attr(
-    not(target_family = "wasm"),
-    doc = " Proposed contract upgrade pending timelock expiration."
-)]
+/// Proposed contract upgrade pending timelock expiration.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingUpgrade {
@@ -142,10 +154,7 @@ pub struct PendingUpgrade {
     pub unlock_time: u64,
 }
 
-#[cfg_attr(
-    not(target_family = "wasm"),
-    doc = " Progress report for on-chain storage migration."
-)]
+/// Progress report for on-chain storage migration.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationStatus {
@@ -156,133 +165,58 @@ pub struct MigrationStatus {
     pub is_complete: bool,
 }
 
-#[cfg_attr(not(target_family = "wasm"), doc = " Storage keys for the contract.")]
+/// Storage keys for the contract.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Next stream id to hand out; ids start at 1."
-    )]
+    /// Next stream id to hand out; ids start at 1.
     NextStreamId,
-    #[cfg_attr(not(target_family = "wasm"), doc = " The stream with the given id.")]
+    /// The stream with the given id.
     Stream(u64),
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Append-only index of stream ids where the given address is the"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " recipient. Advisory (discovery) data: the `Stream` entries remain the"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " source of truth, and terminal streams keep their place in the index."
-    )]
+    /// Append-only index of stream ids where the given address is the
+    /// recipient. Advisory (discovery) data: the `Stream` entries remain the
+    /// source of truth, and terminal streams keep their place in the index.
     RecipientStreams(Address),
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Append-only index of stream ids created (as sender) by the given"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " address. Same advisory semantics as [`DataKey::RecipientStreams`]."
-    )]
+    /// Append-only index of stream ids created (as sender) by the given
+    /// address. Same advisory semantics as [`DataKey::RecipientStreams`].
     SenderStreams(Address),
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Next scheduled-intent id to hand out; ids start at 1."
-    )]
+    /// Next scheduled-intent id to hand out; ids start at 1.
     NextIntentId,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The scheduled intent with the given id."
-    )]
+    /// The scheduled intent with the given id.
     Intent(u64),
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Append-only index of scheduled-intent ids created (as sender) by the"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " given address. Same advisory semantics as [`DataKey::SenderStreams`]."
-    )]
+    /// Append-only index of scheduled-intent ids created (as sender) by the
+    /// given address. Same advisory semantics as [`DataKey::SenderStreams`].
     SenderIntents(Address),
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Treasury governor address (instance storage; set once by the"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " contract constructor, later by two-step nomination/acceptance)."
-    )]
+    /// Treasury governor address (instance storage; set once by the
+    /// contract constructor, later by two-step nomination/acceptance).
     Governor,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Pending governor nominee (instance storage; set by"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `nominate_governor`, cleared by `accept_governor`)."
-    )]
+    /// Pending governor nominee (instance storage; set by
+    /// `nominate_governor`, cleared by `accept_governor`).
     PendingGovernor,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Configured protocol fee in basis points (instance storage; absent"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " means 0 — fees disabled, the v0.3 behavior)."
-    )]
+    /// Configured protocol fee in basis points (instance storage; absent
+    /// means 0 — fees disabled, the v0.3 behavior).
     FeeBps,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Per-token fee accounting: fees charged minus fees withdrawn"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " (persistent storage; written only by fee-affecting entrypoints)."
-    )]
+    /// Per-token fee accounting: fees charged minus fees withdrawn
+    /// (persistent storage; written only by fee-affecting entrypoints).
     Treasury(Address),
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Fee charged for one stream at creation time (persistent storage;"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " written only when the fee rounds above zero, so absent == 0)."
-    )]
+    /// Fee charged for one stream at creation time (persistent storage;
+    /// written only when the fee rounds above zero, so absent == 0).
     StreamFee(u64),
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Schema version for storage layout evolution (instance storage)."
-    )]
+    /// Schema version for storage layout evolution (instance storage).
     SchemaVersion,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Freeze state: when true, all state-mutating entrypoints revert (instance storage)."
-    )]
+    /// Freeze state: when true, all state-mutating entrypoints revert (instance storage).
     ContractFrozen,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Proposed contract upgrade pending timelock expiration (instance storage)."
-    )]
+    /// Proposed contract upgrade pending timelock expiration (instance storage).
     PendingUpgrade,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Highest stream id processed by storage migration (instance storage)."
-    )]
+    /// Highest stream id processed by storage migration (instance storage).
     MigrationCursor,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Global oracle configuration (instance storage)."
-    )]
+    /// Global oracle configuration (instance storage).
     OracleConfig,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Most recent timestamp report from a publisher (persistent storage)."
-    )]
+    /// Most recent timestamp report from a publisher (persistent storage).
     OracleReport(Address),
+    /// The pending two-step ownership proposal for the given stream, if any.
+    /// At most one proposal exists per stream at a time.
+    PendingOwnership(u64),
 }
 
 /// Seconds elapsed of the stream window at the given timestamp `now`.
@@ -303,11 +237,11 @@ pub fn elapsed_seconds_at(now: u64, start_time: u64, end_time: u64) -> u64 {
     }
 }
 
-#[allow(dead_code)]
 /// Seconds elapsed of the stream window at the current ledger time.
 ///
 /// The window is half-open `[start_time, end_time)`: at `now == start_time`
 /// nothing has accrued yet; at `now >= end_time` the full duration has elapsed.
+#[allow(dead_code)]
 pub fn elapsed_seconds(env: &Env, start_time: u64, end_time: u64) -> u64 {
     elapsed_seconds_at(env.ledger().timestamp(), start_time, end_time)
 }
@@ -350,10 +284,10 @@ pub fn streamed_amount_at(stream: &Stream, now: u64) -> Result<i128, StreamError
     streamed_at(stream.deposit, stream.duration(), elapsed)
 }
 
-#[allow(dead_code)]
 /// Amount streamed (accrued) at the current ledger time.
 ///
 /// See [`streamed_at`] for the rate semantics.
+#[allow(dead_code)]
 pub fn streamed_amount(env: &Env, stream: &Stream) -> Result<i128, StreamError> {
     streamed_amount_at(stream, env.ledger().timestamp())
 }
@@ -370,9 +304,9 @@ pub fn available_amount_at(stream: &Stream, now: u64) -> Result<i128, StreamErro
         .ok_or_else(|| surface::reject(Branch::AvailableBalanceOverflow))
 }
 
-#[allow(dead_code)]
 /// Accrued-but-unwithdrawn balance at the current ledger time. Zero for
 /// cancelled streams (their payout was settled atomically at cancellation).
+#[allow(dead_code)]
 pub fn available_amount(env: &Env, stream: &Stream) -> Result<i128, StreamError> {
     available_amount_at(stream, env.ledger().timestamp())
 }
@@ -390,11 +324,11 @@ pub fn cancel_amounts_at(stream: &Stream, now: u64) -> Result<(i128, i128), Stre
     Ok((recipient_amount, sender_amount))
 }
 
-#[allow(dead_code)]
 /// Payout split at cancellation: `(recipient_amount, sender_amount)`.
 ///
 /// The recipient receives their accrued-but-unwithdrawn balance; the sender is
 /// refunded the unaccrued remainder.
+#[allow(dead_code)]
 pub fn cancel_amounts(env: &Env, stream: &Stream) -> Result<(i128, i128), StreamError> {
     cancel_amounts_at(stream, env.ledger().timestamp())
 }
@@ -451,16 +385,49 @@ pub fn put_stream(env: &Env, stream: &Stream) {
 /// Cancel/deplete/top-up flows intentionally do not touch the indexes: they
 /// are append-only discovery aids keyed by *creation*, not by lifecycle.
 pub fn index_stream(env: &Env, stream: &Stream) {
-    push_to_index(
-        env,
-        &DataKey::SenderStreams(stream.sender.clone()),
-        stream.id,
-    );
-    push_to_index(
-        env,
-        &DataKey::RecipientStreams(stream.recipient.clone()),
-        stream.id,
-    );
+    index_sender(env, &stream.sender, stream.id);
+    index_recipient(env, &stream.recipient, stream.id);
+}
+
+/// Appends `id` to the sender's discovery index. Called on creation and when
+/// an accepted ownership transfer installs a new sender.
+pub fn index_sender(env: &Env, sender: &Address, id: u64) {
+    push_to_index(env, &DataKey::SenderStreams(sender.clone()), id);
+}
+
+/// Appends `id` to the recipient's discovery index. Called on creation and
+/// when an accepted ownership transfer installs a new recipient.
+pub fn index_recipient(env: &Env, recipient: &Address, id: u64) {
+    push_to_index(env, &DataKey::RecipientStreams(recipient.clone()), id);
+}
+
+/// Loads the pending ownership proposal for `id`, if one exists, and extends
+/// its storage TTL.
+///
+/// The `Some` check matters: `extend_ttl` on a key that was never written (or
+/// was removed) fails, so we only extend after a successful read.
+pub fn get_pending_ownership(env: &Env, id: u64) -> Option<PendingOwnership> {
+    let key = DataKey::PendingOwnership(id);
+    let storage = env.storage().persistent();
+    let pending: PendingOwnership = storage.get(&key)?;
+    storage.extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+    Some(pending)
+}
+
+/// Persists a pending ownership proposal and extends its storage TTL.
+pub fn put_pending_ownership(env: &Env, pending: &PendingOwnership) {
+    let key = DataKey::PendingOwnership(pending.stream_id);
+    env.storage().persistent().set(&key, pending);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+}
+
+/// Removes a pending ownership proposal. No-op if none exists.
+pub fn remove_pending_ownership(env: &Env, id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::PendingOwnership(id));
 }
 
 pub(crate) fn push_to_index(env: &Env, key: &DataKey, id: u64) {
@@ -494,15 +461,7 @@ pub fn page_stream_ids(env: &Env, key: &DataKey, offset: u32, limit: u32) -> Vec
     let end = start
         .saturating_add(limit.min(MAX_PAGE_SIZE))
         .min(ids.len());
-    let mut page = Vec::new(env);
-    let mut i = start;
-    while i < end {
-        if let Some(id) = ids.get(i) {
-            page.push_back(id);
-        }
-        i += 1;
-    }
-    page
+    ids.slice(start..end)
 }
 
 /// Returns the current schema version (defaults to INITIAL_SCHEMA_VERSION if unset).

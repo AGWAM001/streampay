@@ -28,397 +28,164 @@
 
 use soroban_sdk::contracterror;
 
-#[cfg_attr(
-    not(target_family = "wasm"),
-    doc = " Errors returned by the StreamPay contract."
-)]
+/// Errors returned by the StreamPay contract.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum StreamError {
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " No stream exists with the provided id."
-    )]
+    /// No stream exists with the provided id.
     StreamNotFound = 1,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " **Retired — never produced.** Reserved role check; retained so the"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " numeric code is never reused. See `docs/ERRORS.md`."
-    )]
+    /// **Retired — never produced.** Reserved role check; retained so the
+    /// numeric code is never reused. See `docs/ERROR_SURFACE.md`.
     NotStreamSender = 2,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " **Retired — never produced.** Reserved role check; retained so the"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " numeric code is never reused. See `docs/ERRORS.md`."
-    )]
+    /// **Retired — never produced.** Reserved role check; retained so the
+    /// numeric code is never reused. See `docs/ERROR_SURFACE.md`.
     NotStreamRecipient = 3,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The stream is not `cancelable`, so the recipient cannot cancel it."
-    )]
+    /// The stream is not `cancelable`, so the recipient cannot cancel it.
     StreamNotCancellable = 4,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The stream is cancelled or depleted; the operation is not permitted."
-    )]
+    /// The stream is cancelled or depleted; the operation is not permitted.
     StreamNotActive = 5,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `start_time` is before the current ledger timestamp."
-    )]
+    /// `start_time` is before the current ledger timestamp.
     StartTimeInPast = 6,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `end_time` is not strictly after `start_time`."
-    )]
+    /// `end_time` is not strictly after `start_time`.
     InvalidTimeRange = 7,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The stream duration exceeds the maximum supported duration."
-    )]
+    /// The stream duration exceeds the maximum supported duration.
     DurationTooLong = 8,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " A provided amount (deposit, top-up, or withdrawal) is zero or negative."
-    )]
+    /// A provided amount (deposit, top-up, or withdrawal) is zero or negative.
     ZeroAmount = 9,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The requested withdrawal exceeds the accrued, unwithdrawn balance."
-    )]
+    /// The requested withdrawal exceeds the accrued, unwithdrawn balance.
     AmountExceedsAvailable = 10,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " An intermediate computation would overflow; all math is checked."
-    )]
+    /// An intermediate computation would overflow; all math is checked.
     MathOverflow = 11,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The caller is not permitted to perform this action."
-    )]
+    /// The caller is not permitted to perform this action.
     NotAuthorized = 12,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `withdraw_max` found nothing accrued-but-unwithdrawn to pay out."
-    )]
+    /// `withdraw_max` found nothing accrued-but-unwithdrawn to pay out.
     NothingToWithdraw = 13,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The requested fee rate exceeds the protocol cap (`MAX_FEE_BPS`)."
-    )]
+    /// The requested fee rate exceeds the protocol cap (`MAX_FEE_BPS`).
     FeeRateTooHigh = 14,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The caller is not the treasury governor."
-    )]
+    /// The caller is not the treasury governor.
     NotGovernor = 15,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `accept_governor` was called but no governor nomination is pending."
-    )]
+    /// `accept_governor` was called but no governor nomination is pending.
     NoPendingGovernor = 16,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " A treasury withdrawal exceeds the fees collected minus fees already"
-    )]
-    #[cfg_attr(not(target_family = "wasm"), doc = " withdrawn for that token.")]
+    /// A treasury withdrawal exceeds the fees collected minus fees already
+    /// withdrawn for that token.
     InsufficientTreasuryBalance = 17,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " No sponsor budget is registered for the provided sponsor address."
-    )]
+    /// No sponsor budget is registered for the provided sponsor address.
     SponsorNotFound = 49,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The sponsor's budget exists but is currently paused (inactive)."
-    )]
+    /// The sponsor's budget exists but is currently paused (inactive).
     SponsorInactive = 50,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The beneficiary has no registered ed25519 consent key; they must"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " enroll once before a claim can be sponsored on their behalf."
-    )]
+    /// The beneficiary has no registered ed25519 consent key; they must
+    /// enroll once before a claim can be sponsored on their behalf.
     BeneficiaryNotEnrolled = 51,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " A sponsored claim was relayed after its signed `deadline`."
-    )]
+    /// A sponsored claim was relayed after its signed `deadline`.
     ClaimExpired = 52,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The claim's nonce was already spent by this sponsor for this"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " beneficiary — a replay of a previously sponsored call."
-    )]
+    /// The claim's nonce was already spent by this sponsor for this
+    /// beneficiary — a replay of a previously sponsored call.
     ClaimNonceReplay = 53,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Paying this claim would exceed the sponsor's per-period budget cap."
-    )]
+    /// Paying this claim would exceed the sponsor's per-period budget cap.
     SponsorBudgetExceeded = 54,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Paying this claim would exceed the per-beneficiary cap within the"
-    )]
-    #[cfg_attr(not(target_family = "wasm"), doc = " sponsor's current budget window.")]
+    /// Paying this claim would exceed the per-beneficiary cap within the
+    /// sponsor's current budget window.
     BeneficiaryBudgetExceeded = 55,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " No scheduled intent exists with the provided id."
-    )]
+    /// No scheduled intent exists with the provided id.
     IntentNotFound = 18,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The scheduled intent is not pending (already executed, cancelled, or"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " expired), so the operation is not permitted."
-    )]
+    /// The scheduled intent is not pending (already executed, cancelled, or
+    /// expired), so the operation is not permitted.
     IntentNotPending = 19,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Execution was attempted before the intent's `execute_after` (for the"
-    )]
-    #[cfg_attr(not(target_family = "wasm"), doc = " next outstanding occurrence).")]
+    /// Execution was attempted before the intent's `execute_after` (for the
+    /// next outstanding occurrence).
     IntentNotYetExecutable = 20,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Execution or cancellation was attempted at/after the intent's"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `expires_at`; the funds are reclaimable via `reclaim_expired`."
-    )]
+    /// Execution or cancellation was attempted at/after the intent's
+    /// `expires_at`; the funds are reclaimable via `reclaim_expired`.
     IntentExpired = 21,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The sender tried to cancel an intent whose execution window has already"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " opened; cancellation is only allowed before `execute_after`."
-    )]
+    /// The sender tried to cancel an intent whose execution window has already
+    /// opened; cancellation is only allowed before `execute_after`.
     IntentNotCancellable = 22,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The scheduling parameters are inconsistent (bad occurrence/interval"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " combination, negative fee budget, ordering of `execute_after` /"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `start_time` / `expires_at`, or an overflowing recurrence window)."
-    )]
+    /// The scheduling parameters are inconsistent (bad occurrence/interval
+    /// combination, negative fee budget, ordering of `execute_after` /
+    /// `start_time` / `expires_at`, or an overflowing recurrence window).
     InvalidScheduleParameters = 23,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " A defensive integrity check failed: the stored intent's parameters no"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " longer hash to the commitment recorded when it was scheduled."
-    )]
+    /// A defensive integrity check failed: the stored intent's parameters no
+    /// longer hash to the commitment recorded when it was scheduled.
     IntentParamsMismatch = 24,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `reclaim_expired` was called before the intent's `expires_at`."
-    )]
+    /// `reclaim_expired` was called before the intent's `expires_at`.
     IntentNotExpired = 25,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The token pull in `create_stream` failed: the sender's balance or"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " allowance was insufficient (the pull covers `deposit_amount + fee`),"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " or the asset refused the transfer (frozen/unauthorized/deauthorized"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " holder, or any non-compliant token). Nothing is persisted when it"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " fails, so no stream id is consumed."
-    )]
+    /// The token pull in `create_stream` failed: the sender's balance or
+    /// allowance was insufficient (the pull covers `deposit_amount + fee`),
+    /// or the asset refused the transfer (frozen/unauthorized/deauthorized
+    /// holder, or any non-compliant token). Nothing is persisted when it
+    /// fails, so no stream id is consumed.
     DepositTransferFailed = 26,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The token pull in `top_up` failed (see"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " [`StreamError::DepositTransferFailed`]; the stream's deposit is left"
-    )]
-    #[cfg_attr(not(target_family = "wasm"), doc = " untouched).")]
+    /// The token pull in `top_up` failed (see
+    /// [`StreamError::DepositTransferFailed`]; the stream's deposit is left
+    /// untouched).
     TopUpTransferFailed = 27,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The payout of accrued funds to the stream recipient failed — from"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `withdraw`, `withdraw_max`, or the recipient leg of `cancel_stream`."
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " State changes made before the transfer are rolled back with the error."
-    )]
+    /// The payout of accrued funds to the stream recipient failed — from
+    /// `withdraw`, `withdraw_max`, or the recipient leg of `cancel_stream`.
+    /// State changes made before the transfer are rolled back with the error.
     RecipientPayoutFailed = 28,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The refund of unaccrued funds back to the sender failed during"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " `cancel_stream` (the recipient leg, if any, was already paid)."
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The cancellation is rolled back in full, so the stream stays active."
-    )]
+    /// The refund of unaccrued funds back to the sender failed during
+    /// `cancel_stream` (the recipient leg, if any, was already paid).
+    /// The cancellation is rolled back in full, so the stream stays active.
     SenderRefundFailed = 29,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The payout of collected protocol fees failed in `withdraw_treasury`."
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The recorded withdrawal and the `FeeWithdrawn` event are rolled back"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " with it, so the fee ledger stays unchanged."
-    )]
+    /// The payout of collected protocol fees failed in `withdraw_treasury`.
+    /// The recorded withdrawal and the `FeeWithdrawn` event are rolled back
+    /// with it, so the fee ledger stays unchanged.
     TreasuryPayoutFailed = 30,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The asset is not permitted by the policy module allowlist."
-    )]
+    /// The asset is not permitted by the policy module allowlist.
     PolicyAssetNotAllowed = 31,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The timelock delay has not elapsed for this queued policy change."
-    )]
+    /// The timelock delay has not elapsed for this queued policy change.
     PolicyTimelockNotElapsed = 32,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " No policy change is queued for the specified asset."
-    )]
+    /// No policy change is queued for the specified asset.
     PolicyNoQueuedChange = 33,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The policy module has not been initialized."
-    )]
+    /// The policy module has not been initialized.
     PolicyNotInitialized = 34,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " No admin handoff proposal is pending."
-    )]
+    /// No admin handoff proposal is pending.
     PolicyNoPendingHandoff = 35,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The contract is currently frozen for maintenance or upgrade."
-    )]
+    /// The contract is currently frozen for maintenance or upgrade.
     ContractFrozen = 36,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The operation requires the contract to be frozen."
-    )]
+    /// The operation requires the contract to be frozen.
     ContractNotFrozen = 37,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " An upgrade operation was attempted but no upgrade is pending."
-    )]
+    /// An upgrade operation was attempted but no upgrade is pending.
     NoPendingUpgrade = 38,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The upgrade timelock delay has not yet expired."
-    )]
+    /// The upgrade timelock delay has not yet expired.
     TimelockNotExpired = 39,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The proposed upgrade delay is shorter than the minimum timelock."
-    )]
+    /// The proposed upgrade delay is shorter than the minimum timelock.
     UpgradeDelayTooShort = 40,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The storage migration has already been completed."
-    )]
+    /// The storage migration has already been completed.
     AlreadyMigrated = 41,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Stream rate is below the governance policy floor."
-    )]
+    /// Stream rate is below the governance policy floor.
     PolicyRateBelowFloor = 42,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Stream rate exceeds the governance policy ceiling."
-    )]
+    /// Stream rate exceeds the governance policy ceiling.
     PolicyRateAboveCeiling = 43,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Stream duration is below the governance policy floor."
-    )]
+    /// Stream duration is below the governance policy floor.
     PolicyDurationBelowFloor = 44,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Stream duration exceeds the governance policy ceiling."
-    )]
+    /// Stream duration exceeds the governance policy ceiling.
     PolicyDurationAboveCeiling = 45,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Stream deposit is below the governance policy floor."
-    )]
+    /// Stream deposit is below the governance policy floor.
     PolicyDepositBelowFloor = 46,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Batch creation was requested with zero entries."
-    )]
+    /// Batch creation was requested with zero entries.
     BatchEmpty = 47,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Batch creation was requested with more entries than MAX_BATCH."
-    )]
+    /// Batch creation was requested with more entries than MAX_BATCH.
     BatchTooLarge = 48,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Oracle threshold is invalid (e.g., zero or exceeds publisher count)."
-    )]
+    /// Oracle threshold is invalid (e.g., zero or exceeds publisher count).
     InvalidOracleThreshold = 56,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Oracle publishers are not configured."
-    )]
+    /// Oracle publishers are not configured.
     OraclePublishersNotConfigured = 57,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Oracle report timestamp is too far in the past or future."
-    )]
+    /// Oracle report timestamp is too far in the past or future.
     OracleReportTooOld = 58,
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " The caller is not an authorized oracle publisher."
-    )]
+    /// The caller is not an authorized oracle publisher.
     NotOraclePublisher = 59,
+    /// No two-step ownership proposal exists for this stream.
+    NoPendingOwnership = 60,
+    /// The pending ownership proposal's acceptance window has elapsed; the
+    /// target must be proposed again by the current role holder.
+    OwnershipProposalExpired = 61,
+    /// The proposed new owner is already the current holder of that role.
+    InvalidTransferTarget = 62,
+    /// An unexpired ownership proposal already exists for this stream; cancel
+    /// or accept it before proposing another.
+    OwnershipProposalPending = 63,
 }
 
 impl StreamError {
@@ -485,6 +252,10 @@ impl StreamError {
         StreamError::OraclePublishersNotConfigured,
         StreamError::OracleReportTooOld,
         StreamError::NotOraclePublisher,
+        StreamError::NoPendingOwnership,
+        StreamError::OwnershipProposalExpired,
+        StreamError::InvalidTransferTarget,
+        StreamError::OwnershipProposalPending,
     ];
 
     /// The stable numeric value carried across the contract boundary

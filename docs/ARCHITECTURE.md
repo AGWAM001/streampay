@@ -17,8 +17,10 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 │              execute_scheduled / cancel_scheduled / reclaim_expired │
 │              set_fee_bps / nominate_governor / accept_governor /    │
 │              withdraw_treasury / treasury_status / stream_fee /     │
-│              verify_treasury / total_streams                        │
-│  stream.rs   Stream type, storage, checked accrual math            │
+│              verify_treasury / total_streams /                      │
+│              propose_ownership_transfer / accept_ownership_transfer │
+│              cancel_ownership_transfer / pending_ownership_transfer │
+│  stream.rs   Stream + PendingOwnership types, storage, accrual math│
 │  schedule.rs ScheduledIntent type, validation, timing, escrow      │
 │  treasury.rs protocol-fee math, per-token accounting, governor,    │
 │              verification scan (see §11)                           │
@@ -27,7 +29,7 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 │              StreamToppedUp / StreamScheduled /                    │
 │              ScheduledStreamExecuted / ScheduledIntentCancelled /  │
 │              ScheduledIntentExpired / FeeCharged / StreamsCreated /│
-│              FeeWithdrawn                                          │
+│              FeeWithdrawn / OwnershipProposed / OwnershipAccepted  │
 └──────────────────────────┬─────────────────────────────────────────┘
                            │ token interface (SAC-compatible)
                            ▼
@@ -50,6 +52,7 @@ reentrancy, TTL strategy, and the design decisions behind the v1 API. Read the
 | `DataKey::FeeBps` *(instance)* | `u32` | fee rate in basis points; absent = 0 (disabled) |
 | `DataKey::Treasury(token)` | `Treasury` | per-token fee accounting (`charged_total`, `withdrawn_total`) |
 | `DataKey::StreamFee(id)` | `StreamFeeRecord` | fee charged at creation: amount + token; absent = 0 |
+| `DataKey::PendingOwnership(id)` | `PendingOwnership` | at most one unexpired role-proposal per stream |
 
 Streams live in **persistent** storage. Every mutating entrypoint that touches
 a stream extends its TTL (`TTL_THRESHOLD_LEDGERS = 200_000`, extend to
@@ -70,7 +73,8 @@ There is still **no global registry** of all streams (no contract-wide
 `Vec<u64>`): that would make `create_stream` cost grow with total stream count.
 Instead, discovery is **per-address**: `create_stream` appends the new id to
 the sender's and the recipient's own index lists — each bounded by that one
-user's activity, written only at creation, and paginated on read
+user's activity, written at creation and on an accepted role transfer, and
+paginated on read
 (`recipient_streams` / `sender_streams`, `limit` clamped to
 `MAX_PAGE_SIZE = 50`). `create_streams` reserves its contiguous id range with
 one counter write and groups token pulls by token; stream records and address
@@ -82,35 +86,38 @@ the fee ledger independently auditable.
 
 ### Storage layout decision & read/write profiling
 
-A gas optimization evaluation (`scripts/benchmark_storage.sh`, benchmark harness at `contracts/streaming-payments/examples/storage_benchmark.rs`) profiled resource consumption across stream lifecycle operations and evaluated splitting hot mutable fields (`withdrawn`, `status`) from cold immutable fields (`sender`, `recipient`, `token`, `deposit`, `start_time`, `end_time`, `cancelable`).
+A gas optimization evaluation (`contracts/streaming-payments/examples/storage_benchmark.rs`; detailed report in [`docs/FOOTPRINT.md`](FOOTPRINT.md)) profiled resource consumption across stream lifecycle operations and evaluated candidate optimizations including splitting hot mutable fields (`withdrawn`, `status`) from cold immutable fields (`sender`, `recipient`, `token`, `deposit`, `start_time`, `end_time`, `cancelable`).
 
 #### Lifecycle Resource Costs (Monolithic Layout)
 
-| Operation | Type | Storage Footprint | CPU Instructions | Memory (Bytes) |
-|---|---|---|---:|---:|
-| `create_stream` | Write | 1 Stream + 2 Indexes | 509,718 | 201,404 |
-| `get_stream` | Read | 1 Stream Entry | 61,239 | 38,379 |
-| `available` | Read | 1 Stream Entry | 54,361 | 37,727 |
-| `withdraw` | RMW | 1 Stream Entry | 333,895 | 135,533 |
-| `top_up` | RMW | 1 Stream Entry | 419,382 | 159,563 |
-| `cancel_stream` | RMW | 1 Stream Entry | 504,711 | 167,915 |
-| `withdraw_max` | RMW | 1 Stream Entry | 330,953 | 131,167 |
+| Operation | Type | Storage Footprint | CPU Instructions | Memory (Bytes) | Event Bytes (XDR) |
+|---|---|---|---:|---:|---:|
+| `create_stream` | Write | 1 Stream + 2 Indexes | 541,598 | 210,434 | 396 B |
+| `get_stream` | Read | 1 Stream Entry | 66,664 | 40,243 | 0 B |
+| `available` | Read | 1 Stream Entry | 58,284 | 39,461 | 0 B |
+| `withdraw` | RMW | 1 Stream Entry | 347,082 | 138,899 | 236 B |
+| `top_up` | RMW | 1 Stream Entry | 447,290 | 167,390 | ~76 B |
+| `cancel_stream` | RMW | 1 Stream Entry | 523,563 | 171,201 | 248 B |
+| `withdraw_max` | RMW | 1 Stream Entry | 338,663 | 134,329 | 236 B |
+| `sender_streams (5 ids)` | Read | 1 Index Entry | 52,369 | 25,006 | 0 B |
 
 #### Architecture Comparison: Monolithic vs Split (Hot/Cold)
 
 | Storage Pattern | Entry Count | Keys Written/Read | CPU Instructions | Memory (Bytes) |
 |---|:---:|:---:|---:|---:|
-| Monolithic `Stream` Write | 1 | 1 key | 54,004 | 39,817 |
-| Split (Cold + Hot) Write | 2 | 2 keys | 90,988 *(+68.5%)* | 57,315 |
-| Monolithic `Stream` Read | 1 | 1 key | 45,094 | 34,207 |
-| Split Read (Both: required by `withdraw`/`cancel`) | 2 | 2 keys | 71,030 *(+57.5%)* | 47,314 |
-| Split Read (Hot-only: status check) | 1 | 1 key | 39,009 | 25,013 |
+| Monolithic `Stream` Write | 1 | 1 key | 60,956 | 43,537 |
+| Split (Cold + Hot) Write | 2 | 2 keys | 98,480 *(+61.6%)* | 60,375 |
+| Monolithic `Stream` Read | 1 | 1 key | 48,319 | 36,485 |
+| Split Read (Both: required by `withdraw`/`cancel`) | 2 | 2 keys | 73,200 *(+51.5%)* | 47,926 |
+| Split Read (Hot-only: status check) | 1 | 1 key | 41,123 | 25,625 |
 
-#### Storage Layout Decision & Negative Result
+#### Storage Layout Decision & Tradeoff Evaluation
 
-1. **Monolithic Layout Retained:** Stream state remains in a single `DataKey::Stream(u64)` persistent entry (~188 bytes XDR).
-2. **Negative Result for Hot/Cold Splitting:** In Soroban's storage and metering architecture, ledger entry overhead, storage keys, and per-entry footprint fees heavily outweigh minor payload byte differences. Every mutating entrypoint (`withdraw`, `withdraw_max`, `cancel_stream`, `top_up`) strictly requires both configuration fields (token, deposit, window, recipient/sender authorization) and state fields (`withdrawn`, `status`). Splitting state forces two ledger reads and one write across two keys, incurring a **+57.5% CPU read penalty** and a **+68.5% CPU write penalty** without saving gas on any mutation path.
-3. **Double-Read Elimination:** The contract avoids double reads in `withdraw`: `authorize_withdrawal` loads `s` once and passes `&mut s` directly to `pay_out`, preventing redundant re-reads.
+1. **Monolithic Layout Retained:** Stream state remains in a single `DataKey::Stream(u64)` persistent entry (444 bytes XDR payload + 40 bytes key = 484 bytes total).
+2. **Negative Result for Hot/Cold Splitting:** In Soroban's storage and metering architecture, ledger entry overhead, storage keys, and per-entry footprint fees heavily outweigh minor payload byte differences. Every mutating entrypoint (`withdraw`, `withdraw_max`, `cancel_stream`, `top_up`) strictly requires both configuration fields (token, deposit, window, recipient/sender authorization) and state fields (`withdrawn`, `status`). Splitting state forces two ledger reads and one write across two keys, incurring a **+51.5% CPU read penalty** and a **+61.6% CPU write penalty** without saving gas on any mutation path.
+3. **Double-Read & Host Resolution Elimination:** The contract avoids double reads in `withdraw`: `authorize_withdrawal` loads `s` once and passes `&mut s` directly to `pay_out`. In `pull` and `cancel_stream`, `env.current_contract_address()` is resolved once and cached across transfers, saving 548 CPU instructions and 80 memory bytes.
+4. **Native Index Slicing:** In `page_stream_ids`, pagination utilizes native `ids.slice(start..end)`, eliminating manual looping and intermediate allocation overhead.
+
 
 
 ## 3. Accrual math
@@ -157,6 +164,9 @@ nothing has accrued, at `now ≥ end_time` the full duration has elapsed.
 | `withdraw` | recipient only | recipient |
 | `cancel_stream` | sender always; recipient iff `cancelable` | caller |
 | `top_up` | sender only | sender |
+| `propose_ownership_transfer` | current sender or recipient | caller |
+| `accept_ownership_transfer` | named pending `new_owner` only | new owner |
+| `cancel_ownership_transfer` | pending proposer only | proposer |
 | `schedule_stream` | anyone; `sender` must authorize | sender |
 | `execute_scheduled` | anyone (keeper) | keeper (the caller) |
 | `cancel_scheduled` | intent sender, before the window opens | sender |
@@ -246,6 +256,9 @@ is never part of any stream's `deposit`, so no payout path can reach it.
   nothing left to split.
 - Cancelling a not-yet-started stream is a 100 % refund to the sender.
 - `top_up` on a cancelled/depleted stream reverts.
+- Ownership transfers are proposed and accepted only on `Active` streams; a
+  pending proposal for a stream that later becomes terminal can never move a
+  role (the failed call reverts, and a later proposal is rejected).
 
 ### 6.1 Withdraw / cancel race semantics
 
@@ -317,6 +330,13 @@ the public interface:
 | 28 | `RecipientPayoutFailed` | token refused a payout to the recipient (`withdraw`, `withdraw_max`, or the recipient leg of `cancel_stream`) |
 | 29 | `SenderRefundFailed` | token refused the sender's refund at cancellation; the cancellation rolls back |
 | 30 | `TreasuryPayoutFailed` | token refused the payout of collected protocol fees in `withdraw_treasury`; the withdrawal record and event roll back |
+| 60 | `NoPendingOwnership` | accept/cancel called with no proposal stored |
+| 61 | `OwnershipProposalExpired` | accept after the proposal's seven-day window |
+| 62 | `InvalidTransferTarget` | proposing to the role's current holder |
+| 63 | `OwnershipProposalPending` | proposing while an unexpired proposal exists |
+
+Codes 31–59 (policy, upgrades, batch limits, sponsorship, and oracle) are
+catalogued in [`docs/errors.md`](./errors.md).
 
 Codes 26–30 are *transfer-failure* codes: a token's own error number is
 deliberately never propagated (see §5), so clients can always branch on these
@@ -328,7 +348,7 @@ reserved role checks that no entrypoint ever produced, so they are kept (never
 renumbered or reused) but marked unreachable.
 
 The authoritative, machine-generated view of this surface lives in
-[`docs/ERRORS.md`](./ERRORS.md): a per-branch table mapping every
+[`docs/ERROR_SURFACE.md`](./ERROR_SURFACE.md): a per-branch table mapping every
 `(entrypoint, condition)` decision to its code, emitted from the contract's own
 instrumentation (`src/surface.rs`) by `cargo run -p streampay-contract --example
 error_surface_doc`, with a CI step that regenerates it and fails on drift. Each
@@ -363,6 +383,18 @@ and re-reads everything on every query; per-address lists keep writes O(1)
 for the one user involved and reads paginated. Discovery remains safe because
 the indexes are advisory only — auth and payouts always read the `Stream`
 entry itself.
+
+**Two-step ownership transfer with a single pending slot.** A one-step
+`transfer_ownership(new_owner)` is rejected: a typo or a compromised signer
+could redirect all future claims irreversibly, and the target might not
+control the address. Requiring the target's authorization makes acceptance a
+positive confirmation. One slot per stream (rather than one per role) keeps the
+state machine small and prevents either party from stacking proposals;
+proposing is cheap to retry after cancel/expiry. Proposals expire after seven
+days so a forgotten target cannot block a stream forever — the owner can
+cancel or replace — while the target cannot accept a stale offer. Indexes stay
+append-only (see §2) instead of removing the old holder's id: the removal cost
+grows with that address's stream count and would break replay-based readers.
 
 **Terminal states are terminal.** No reactivation, no partial cancellation.
 Simplicity is a security feature; richer flows belong in composing contracts
@@ -422,11 +454,18 @@ griefing) is in [`SCHEDULED_INTENTS.md`](./SCHEDULED_INTENTS.md).
 - **Error surface** (`error_surface_test.rs`): the branch registry in
   `surface.rs` is walked by generated tests — one probe per branch asserts the
   exact branch fires its declared code — plus coverage tests proving no code is
-  dead and no branch uncoded. `docs/ERRORS.md` is generated from the same table
+  dead and no branch uncoded. `docs/ERROR_SURFACE.md` is generated from the same table
   and diffed in CI.
 - **`withdraw_max`** shares the `withdraw` payout tail (`pay_out`) so both
   paths inherit the same CEI ordering and reentrancy proof; index pagination
   and TTL behavior have dedicated tests in `test.rs`.
+- **Ownership transfer** tests cover propose → accept for both roles,
+  propose → cancel → re-propose, expiry at the exact seven-day boundary
+  (including lazy replacement and explicit cancellation), rejection of
+  strangers/non-targets/self-targets, terminal-stream rejection, mid-accrual
+  transfers with exact balance and `withdrawn` assertions, and index contents
+  for both the old and new holders. The unknown-key read test pins the
+  `extend_ttl` existence check.
 - **Scheduled intents** (`schedule_test.rs`) cover the full lifecycle:
   one-shot and recurring execution, double-execution rejection, the
   cancel/execute race, expired-auth replay, permissionless reclaim, refund
@@ -767,7 +806,7 @@ which surface and how each one may evolve.
   `StreamError::ALL`, an exhaustive-match test forces new variants into that
   list in the same change, the `surface.rs` branch registry ties each variant
   to reachable `(entrypoint, condition)` branches, and CI diffs the generated
-  `docs/ERRORS.md` for drift (§7).
+  `docs/ERROR_SURFACE.md` for drift (§7).
 
 ### 13.2 Storage keys
 
@@ -951,3 +990,72 @@ StreamPay supports an optional external oracle reference clock (`create_stream_w
 - **Active Stream Invariance Under Config / Threshold Changes**: Modifying publisher sets or raising quorum threshold mid-stream cannot brick existing streams: any shortfall in quorum simply triggers the automatic fallback to ledger time.
 - **Accrual Pure Function & CEI Invariance**: Time resolution is executed as an effect step strictly prior to state mutation. The accrual math (`streamed_at`, `available_amount_at`, `cancel_amounts_at`) remains a pure function parameterized by `now: u64`.
 
+## 17. Two-step ownership transfer
+
+Either party can hand their role to a new address. The handoff is always
+propose → accept; a unilateral reassignment is impossible.
+
+```text
+propose(caller, id, new_owner)
+        │  caller must be the current sender or recipient
+        │  stores PendingOwnership { proposed_by, new_owner, role, expires_at }
+        │  emits OwnershipProposed
+        ▼
+   pending proposal ──── cancel(proposer) ──▶ (removed)
+        │
+        │  now >= expires_at
+        ├──────────────▶ accept reverts OwnershipProposalExpired
+        │                (stale entry ignored; a new proposal replaces it)
+        ▼
+accept(new_owner, id)
+        │  caller must equal pending.new_owner
+        │  stream must still be Active
+        │  moves only `sender` or `recipient`
+        │  appends id to the new holder's index
+        │  removes the pending key, emits OwnershipAccepted
+        ▼
+   new role holder
+```
+
+**Storage and TTL.** The proposal lives under `DataKey::PendingOwnership(id)`,
+not inside `Stream`, so a proposal does not rewrite the stream entry and the
+key gets its own TTL maintenance. Writes extend the key's TTL; reads check
+existence *before* calling `extend_ttl` (extending a missing key fails). There
+is at most one proposal per stream; an unexpired proposal blocks another
+(`OwnershipProposalPending`), while an expired one is removed and replaced by
+a successful `propose` call. A failed `accept` reverts its own storage writes,
+so the stale key survives until a later successful proposal or cancel — stale
+entries are harmless because acceptance checks `expires_at` before applying.
+
+**Accounting invariance (proof sketch for mid-stream transfer).** Let a stream
+have `(deposit, withdrawn, start_time, end_time, token, status, use_oracle)`
+before an accepted transfer `T`, and let
+`streamed(t) = floor(deposit · elapsed/duration)`. `T` writes only the role
+address (`sender` or `recipient`) plus append-only index data; it moves no
+tokens and does not read or modify any accounting field. Therefore after `T`,
+every accounting field is definitionally unchanged, so for all `t`:
+`streamed_T(t) = streamed_before(t)`, and
+`available_T(t) = streamed_T(t) − withdrawn = available_before(t)`.
+
+1. **Per-stream invariant.** `withdrawn` and `deposit` are unchanged, and
+   `withdrawn ≤ streamed_before(t) ≤ deposit` held before `T`; substituting the
+   equal `streamed_T(t)` gives `0 ≤ withdrawn ≤ streamed_T(t) ≤ deposit`.
+2. **Conservation.** The contract's token balance covers
+   `Σ(deposit − withdrawn)` over live streams plus the independent treasury
+   ledger. `T` changes neither term for any stream and never touches the fee
+   ledger, so global coverage is unchanged. Proposals and acceptances perform
+   no token interaction at all, hence no reentrancy surface.
+3. **Claims.** Recipient transfer redirects all *future* payouts of the same
+   `available` balance: the new recipient can withdraw it once, and `withdrawn`
+   advances exactly as if the old recipient had withdrawn. No double claim is
+   possible because both recipients read and write the same `withdrawn`
+   counter. Sender transfer redirects future top-up pulls and cancellation
+   refunds; cancellation still splits `streamed − withdrawn` to the recipient
+   and `deposit − streamed` to the current sender.
+4. **Terminal safety.** Transfer is limited to `Active` streams, so a
+   cancelled/depleted stream can never acquire a new claimant or payer.
+
+The test suite exercises each step: recipient transfer mid-accrual followed by
+a withdrawal, sender transfer followed by top-up + cancel with exact balance
+assertions, expiry at the exact TTL boundary, proposal cancellation, and index
+contents for both old and new holders.
