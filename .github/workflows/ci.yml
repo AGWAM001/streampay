@@ -17,11 +17,14 @@ jobs:
     name: Contract — test / fmt / clippy / wasm
     runs-on: ubuntu-latest
     env:
-      # Single source of truth for the Wasm size budget (KB). The 60 KB cap
-      # is the acceptance target of issue #58 (docs/WASM_SIZE.md); the
-      # current build is 59.0 KiB. Raise deliberately in a PR with
-      # justification if the contract grows.
-      WASM_SIZE_BUDGET_KB: 60
+      # Single source of truth for the Wasm size budget (KB). The rule is:
+      # the smallest whole KB that the current public interface fits, so the
+      # ratchet stays as tight as the interface allows. 63 KB = the merged
+      # build's 64,143 B + 369 B of headroom; issue #58's techniques took the
+      # contract from 91,004 B to 60,386 B and upstream's ownership-transfer +
+      # vault surface added 3,757 B on top (docs/WASM_SIZE.md). The next
+      # entrypoint addition should trigger the split discussion, not a bump.
+      WASM_SIZE_BUDGET_KB: 63
     steps:
       - uses: actions/checkout@v7
 
