@@ -73,7 +73,9 @@ lint/typecheck/build when frontend files are touched) are the minimum gate.
   overflow, return `StreamError::MathOverflow` — don't wrap, don't panic.
 - **Errors are append-only.** Add new `StreamError` variants at the bottom with
   the next free code; never renumber or reuse codes (they are part of the
-  client-facing API).
+  client-facing API). The next free code is counted from the code *main* has
+  reached, not from your branch — if `npm run codes:check` says your branch is
+  behind, bring main into it before you pick a number.
 - **Checks-Effects-Interactions.** All storage writes and event emissions
   happen before any token transfer. New entrypoints must preserve this — add a
   test that proves it if you add a new payout path.
@@ -190,11 +192,14 @@ renumbered, reused, or deleted, and an unreachable variant is *retired* in place
 rather than removed. The two mistakes this causes are appending a code another
 merged PR already took (`E0081: discriminant value assigned to multiple variants`)
 and deleting a variant, which silently invalidates existing clients.
-`npm run codes:check` reads the enum and prints the highest code in use plus the
-next free one, so you never have to guess; CI runs it as the *first* step of the
+`npm run codes:check` reads your tree's enum *and* the base branch's, and prints
+the next free code above whichever is higher — labelled with where the number
+came from — so you never have to guess; CI runs it as the *first* step of the
 Contract job, before the toolchain even installs, so a collision is a
 file/line annotation within seconds instead of a compile error four minutes
-later in two jobs at once.
+later in two jobs at once. A branch that is behind main gets a warning instead
+of advice, because "the highest code I can see plus one" is exactly how two PRs
+pick the same number.
 
 The same script then checks the registry in `contracts/streaming-payments/src/surface.rs`,
 which maps every rejection branch to the code it returns: a code no branch
