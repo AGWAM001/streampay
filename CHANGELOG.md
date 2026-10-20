@@ -200,6 +200,14 @@ interface: they are only ever appended to, never renumbered or reused.
   build`). Linked from the README and CONTRIBUTING.
 
 ### Changed
+- **Contract Wasm size (#58):** the deployed binary shrinks from 91,004 B to
+  60,386 B (59.0 KiB, under the new 60 KB CI budget). Doc comments on
+  interface items are no longer embedded into `contractspecv0` on-chain
+  (kept 1:1 for host rustdoc via `cfg_attr`), and the duplicated
+  stream-creation effects leg is consolidated into one helper. No storage,
+  event, error-code or signature change; the deploy digest and the
+  canonical interface hash do change — see `docs/WASM_SIZE.md` for the
+  operator notification procedure.
 - **Deployment interface:** the contract now has a constructor. Deploy with
   the governor address as a constructor argument
   (`stellar contract deploy … -- --governor G…`); `scripts/deploy_testnet.sh`

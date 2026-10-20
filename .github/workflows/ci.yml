@@ -17,9 +17,11 @@ jobs:
     name: Contract — test / fmt / clippy / wasm
     runs-on: ubuntu-latest
     env:
-      # Single source of truth for the Wasm size budget (KB, issue #35).
-      # Raise deliberately in a PR with justification if the contract grows.
-      WASM_SIZE_BUDGET_KB: 120
+      # Single source of truth for the Wasm size budget (KB). The 60 KB cap
+      # is the acceptance target of issue #58 (docs/WASM_SIZE.md); the
+      # current build is 59.0 KiB. Raise deliberately in a PR with
+      # justification if the contract grows.
+      WASM_SIZE_BUDGET_KB: 60
     steps:
       - uses: actions/checkout@v7
 
