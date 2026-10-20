@@ -180,6 +180,7 @@ npm run eol:check         # committed CRLF: the usual cause of a whole-file fmt 
 cargo clippy --all-targets -- -D warnings
 npm run generated:check
 npm run links:check       # every internal link and #anchor in the docs resolves
+npm run json:check        # no key declared twice in any tracked JSON file
 cd frontend && npm run lint && npx tsc --noEmit && npm test && npm run build
 ```
 
@@ -216,6 +217,28 @@ anchor that does not resolve, and every failure is emitted as a CI annotation
 with the file, the line, and the closest existing paths — because the usual
 cause is a document that was renamed on `main`. (If your branch predates the
 rename, `docs/ERRORS.md` is now `docs/ERROR_SURFACE.md`.)
+
+**Duplicate JSON keys.** `npm run json:check` walks every tracked `.json` file and
+fails when one object declares the same key twice. This needs a gate because the
+file stays *valid*: `JSON.parse` and npm keep the last occurrence and drop the
+earlier one without a word, so the first line is dead and nothing ever errors.
+It is a merge shape, not a typo — two branches that append a key at the same spot
+both keep their line when they merge. `frontend/package.json` carried `"test"`
+that way, which is why 23 scheduler and fee-series specs stopped running in every
+CI job while the step named after them stayed green. (The same event once left
+duplicate *dependency* keys in the file, which npm rejects outright — at least
+that failed loudly.) The scanner is annotated with both line numbers and the key
+path, tolerates `tsconfig.json` comments and npm's trailing commas, and reports a
+key repeated in two sibling objects as what it is: legitimate JSON.
+
+`frontend` tests are collected by two runners that cannot see each other's files
+— `node --test` discovers `*.test.ts`, while `vitest run` (scoped by
+`frontend/vitest.config.mts`) discovers `lib/**/*.spec.ts` — so `npm test` chains
+both, and CI additionally runs a dedicated `npm run test:scheduler` step. The
+separate step exists because `scripts.test` is an ordinary string that any merge
+can rewrite: the suite needs an owner whose check fails when a runner stops being
+collected, rather than coverage that depends on one aggregate script staying
+correct.
 
 If `cargo fmt --all -- --check` fails with a diff covering **every line** of a
 file, that file was committed with CRLF (Windows editors and `core.autocrlf=true`
