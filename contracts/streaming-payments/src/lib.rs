@@ -408,53 +408,21 @@ impl StreamingPayments {
             Branch::CreateDepositTransferFailed,
         )?;
 
-        // Effects: persist the stream and announce it.
-        let id = stream::next_stream_id(&env);
-        let s = Stream {
-            id,
-            sender: sender.clone(),
-            recipient: recipient.clone(),
-            token: token.clone(),
-            deposit: deposit_amount,
-            withdrawn: 0,
-            start_time,
-            end_time,
-            cancelable,
-            status: StreamStatus::Active,
-            use_oracle,
-        };
-        stream::put_stream(&env, &s);
-        stream::index_stream(&env, &s);
-        if fee > 0 {
-            // Effects: accumulate the fee in the token's treasury and store
-            // the per-stream fee before any event announces it.
-            treasury::apply_fee(&env, &token, id, fee)?;
-        }
-
-        StreamCreated {
-            stream_id: id,
+        // Effects: persist the stream and announce it (shared leg with the
+        // batch and scheduled paths below).
+        Self::persist_new_stream(
+            &env,
             sender,
             recipient,
             token,
-            deposit: deposit_amount,
+            deposit_amount,
             start_time,
             end_time,
             cancelable,
-        }
-        .publish(&env);
-
-        if fee > 0 {
-            FeeCharged {
-                stream_id: id,
-                token: s.token.clone(),
-                payer: s.sender.clone(),
-                amount: fee,
-                fee_bps,
-            }
-            .publish(&env);
-        }
-
-        Ok(id)
+            use_oracle,
+            fee,
+            fee_bps,
+        )
     }
 
     fn validate_stream_creation(
@@ -480,25 +448,15 @@ impl StreamingPayments {
         stream::validate_capacity(deposit_amount, duration)
     }
 
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " Allocates the next stream id, persists the stream, indexes it under both"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " parties, and emits [`StreamCreated`]. No authorization and no token"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " movement: callers are responsible for the checks and for having the"
-    )]
-    #[cfg_attr(
-        not(target_family = "wasm"),
-        doc = " deposit escrowed in the contract (scheduled execution uses an intent's"
-    )]
-    #[cfg_attr(not(target_family = "wasm"), doc = " already-escrowed deposit).")]
+    /// Shared effects leg for every creation path: allocates the next stream
+    /// id, persists the stream, indexes it under both parties, applies the
+    /// protocol fee when one is owed, then emits [`StreamCreated`] (and
+    /// [`FeeCharged`] after it when a fee was charged). No authorization and
+    /// no token movement: callers are responsible for the checks and for
+    /// having the deposit escrowed in the contract (scheduled execution uses
+    /// an intent's already-escrowed deposit and passes `fee = 0`).
     #[allow(clippy::too_many_arguments)]
-    fn create_stream_internal(
+    fn persist_new_stream(
         env: &Env,
         sender: Address,
         recipient: Address,
@@ -507,9 +465,12 @@ impl StreamingPayments {
         start_time: u64,
         end_time: u64,
         cancelable: bool,
-    ) -> u64 {
+        use_oracle: bool,
+        fee: i128,
+        fee_bps: u32,
+    ) -> Result<u64, StreamError> {
         let id = stream::next_stream_id(env);
-        let stream = Stream {
+        let s = Stream {
             id,
             sender: sender.clone(),
             recipient: recipient.clone(),
@@ -520,10 +481,15 @@ impl StreamingPayments {
             end_time,
             cancelable,
             status: StreamStatus::Active,
-            use_oracle: false,
+            use_oracle,
         };
-        stream::put_stream(env, &stream);
-        stream::index_stream(env, &stream);
+        stream::put_stream(env, &s);
+        stream::index_stream(env, &s);
+        if fee > 0 {
+            // Effects: accumulate the fee in the token's treasury and store
+            // the per-stream fee before any event announces it.
+            treasury::apply_fee(env, &token, id, fee)?;
+        }
 
         #[cfg(test)]
         cei_trace::record("event StreamCreated");
@@ -539,7 +505,18 @@ impl StreamingPayments {
         }
         .publish(env);
 
-        id
+        if fee > 0 {
+            FeeCharged {
+                stream_id: id,
+                token: s.token.clone(),
+                payer: s.sender.clone(),
+                amount: fee,
+                fee_bps,
+            }
+            .publish(env);
+        }
+
+        Ok(id)
     }
 
     #[cfg_attr(
@@ -790,50 +767,19 @@ impl StreamingPayments {
             _ => return Err(StreamError::AmountExceedsAvailable),
         }
 
-        let id = stream::next_stream_id(env);
-        let s = Stream {
-            id,
-            sender: entry.sender.clone(),
-            recipient: entry.recipient.clone(),
-            token: entry.token.clone(),
-            deposit: entry.deposit,
-            withdrawn: 0,
-            start_time: entry.start_time,
-            end_time: entry.end_time,
-            cancelable: entry.cancelable,
-            status: StreamStatus::Active,
-            use_oracle: false,
-        };
-        stream::put_stream(env, &s);
-        stream::index_stream(env, &s);
-        if fee > 0 {
-            treasury::apply_fee(env, &entry.token, id, fee)?;
-        }
-
-        StreamCreated {
-            stream_id: id,
-            sender: entry.sender.clone(),
-            recipient: entry.recipient.clone(),
-            token: entry.token.clone(),
-            deposit: entry.deposit,
-            start_time: entry.start_time,
-            end_time: entry.end_time,
-            cancelable: entry.cancelable,
-        }
-        .publish(env);
-
-        if fee > 0 {
-            FeeCharged {
-                stream_id: id,
-                token: s.token.clone(),
-                payer: s.sender.clone(),
-                amount: fee,
-                fee_bps,
-            }
-            .publish(env);
-        }
-
-        Ok(id)
+        Self::persist_new_stream(
+            env,
+            entry.sender.clone(),
+            entry.recipient.clone(),
+            entry.token.clone(),
+            entry.deposit,
+            entry.start_time,
+            entry.end_time,
+            entry.cancelable,
+            false,
+            fee,
+            fee_bps,
+        )
     }
 
     #[cfg_attr(
@@ -1679,7 +1625,7 @@ impl StreamingPayments {
         schedule::put_intent(&env, &intent);
 
         // The stream deposit is already escrowed; only bookkeeping is required.
-        let stream_id = Self::create_stream_internal(
+        let stream_id = Self::persist_new_stream(
             &env,
             intent.sender.clone(),
             intent.recipient.clone(),
@@ -1688,7 +1634,10 @@ impl StreamingPayments {
             start_time,
             end_time,
             intent.cancelable,
-        );
+            false,
+            0,
+            0,
+        )?;
 
         // Pay the keeper its escrowed fee for this occurrence.
         let fee_paid = intent.fee_budget;

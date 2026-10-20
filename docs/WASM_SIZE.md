@@ -20,6 +20,7 @@ node scripts/wasm-report.mjs ../../target/wasm32v1-none/release/streampay_contra
 |---|---|---|---|
 | Baseline | commit `09516fe` (post oracle-time + sponsor merge) | **91,004** | — |
 | 1 | Doc strings removed from the on-chain spec | 60,852 | −30,152 |
+| 2 | Creation effects-leg dedup (`persist_new_stream`) | 60,386 | −466 |
 
 ### Baseline section breakdown
 
@@ -88,3 +89,19 @@ documentation is preserved 1:1; only its duplication into the binary stops.
 
 After this step the binary is **60,852 B (59.4 KiB)** — under the 60 KB
 target, sections: `code` 37,770 · `contractspecv0` 16,711 · `data` 3,963.
+
+## Technique 2 — dedup the stream-creation effects leg (−466 B)
+
+`create_stream_with_oracle`, `create_stream_internal` (scheduled execution)
+and `create_single_batch_entry` each contained the same id → persist → index →
+optional fee → `StreamCreated` → optional `FeeCharged` leg, with only the fee
+and oracle flag differing. They now share one private helper,
+`StreamingPayments::persist_new_stream`, keeping the exact effect order (the
+CEI operation-order goldens for the scheduled paths are byte-identical).
+
+The atomic `create_streams` batch loop intentionally does **not** emit
+per-stream `StreamCreated` events, so it keeps its own leg and was not merged.
+
+`code` shrinks 37,770 → 37,288; the two call sites that inlined the leg
+(`create_streams_batch` 1,086 → 795, `execute_scheduled` 914 → 773) now call
+the shared helper. Final binary: **60,386 B (59.0 KiB)**.
