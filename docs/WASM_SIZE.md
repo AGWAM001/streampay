@@ -30,8 +30,8 @@ any regression fails CI.
 
 > **These two rows were measured on the tree before `main` was merged in.**
 > After the merge the contract is 64,143 B — see
-> [Re-baseline after merging `main`](#re-baseline-after-merging-main) for the
-> attribution and the deliberate gate decision.
+> [Re-baseline after merging `main`](#re-baseline-after-merging-main-ownership-transfer--vault)
+> for the attribution and the deliberate gate decision.
 
 ### Section breakdown (baseline → final)
 
@@ -116,7 +116,7 @@ per-stream `StreamCreated` events, so it keeps its own leg and was not merged.
 (`create_streams_batch` 1,086 → 795, `execute_scheduled` 914 → 773) now call
 the shared helper. Final binary: **60,386 B (59.0 KiB)**.
 
-## Re-baseline after merging `main` (ownership transfer + vault)
+## Re-baseline after merging main (ownership transfer + vault)
 
 `main` has grown since this branch was cut: it now carries the two-step
 ownership transfer surface (`propose_ownership_transfer`,
