@@ -53,19 +53,28 @@ pub const MAX_BATCH: u32 = 25;
 pub(crate) const TTL_THRESHOLD_LEDGERS: u32 = 200_000; // extend when TTL drops below ~11.5 days
 pub(crate) const TTL_EXTEND_LEDGERS: u32 = 500_000; // extend to ~29 days
 
-/// Lifecycle state of a stream.
+#[cfg_attr(not(target_family = "wasm"), doc = " Lifecycle state of a stream.")]
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum StreamStatus {
-    /// Running; funds accrue and can be withdrawn or topped up.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Running; funds accrue and can be withdrawn or topped up."
+    )]
     Active,
-    /// Cancelled; remaining funds were split at cancellation. Terminal.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Cancelled; remaining funds were split at cancellation. Terminal."
+    )]
     Cancelled,
-    /// Fully streamed and fully withdrawn. Terminal.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Fully streamed and fully withdrawn. Terminal."
+    )]
     Depleted,
 }
 
-/// Full state of a payment stream.
+#[cfg_attr(not(target_family = "wasm"), doc = " Full state of a payment stream.")]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stream {
@@ -73,16 +82,28 @@ pub struct Stream {
     pub sender: Address,
     pub recipient: Address,
     pub token: Address,
-    /// Total amount funded into the stream (original deposit + top-ups).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Total amount funded into the stream (original deposit + top-ups)."
+    )]
     pub deposit: i128,
-    /// Total amount paid to the recipient so far (withdrawals + cancel payout).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Total amount paid to the recipient so far (withdrawals + cancel payout)."
+    )]
     pub withdrawn: i128,
     pub start_time: u64,
     pub end_time: u64,
-    /// If true, the recipient may also cancel and reclaim their accrued balance.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " If true, the recipient may also cancel and reclaim their accrued balance."
+    )]
     pub cancelable: bool,
     pub status: StreamStatus,
-    /// If true, settles against external oracle time feed instead of ledger time.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " If true, settles against external oracle time feed instead of ledger time."
+    )]
     pub use_oracle: bool,
 }
 
@@ -94,7 +115,10 @@ impl Stream {
     }
 }
 
-/// Parameters for creating a single stream within a batch creation call.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Parameters for creating a single stream within a batch creation call."
+)]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BatchEntry {
@@ -107,7 +131,10 @@ pub struct BatchEntry {
     pub cancelable: bool,
 }
 
-/// Proposed contract upgrade pending timelock expiration.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Proposed contract upgrade pending timelock expiration."
+)]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingUpgrade {
@@ -115,7 +142,10 @@ pub struct PendingUpgrade {
     pub unlock_time: u64,
 }
 
-/// Progress report for on-chain storage migration.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Progress report for on-chain storage migration."
+)]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MigrationStatus {
@@ -126,54 +156,132 @@ pub struct MigrationStatus {
     pub is_complete: bool,
 }
 
-/// Storage keys for the contract.
+#[cfg_attr(not(target_family = "wasm"), doc = " Storage keys for the contract.")]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    /// Next stream id to hand out; ids start at 1.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Next stream id to hand out; ids start at 1."
+    )]
     NextStreamId,
-    /// The stream with the given id.
+    #[cfg_attr(not(target_family = "wasm"), doc = " The stream with the given id.")]
     Stream(u64),
-    /// Append-only index of stream ids where the given address is the
-    /// recipient. Advisory (discovery) data: the `Stream` entries remain the
-    /// source of truth, and terminal streams keep their place in the index.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Append-only index of stream ids where the given address is the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " recipient. Advisory (discovery) data: the `Stream` entries remain the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " source of truth, and terminal streams keep their place in the index."
+    )]
     RecipientStreams(Address),
-    /// Append-only index of stream ids created (as sender) by the given
-    /// address. Same advisory semantics as [`DataKey::RecipientStreams`].
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Append-only index of stream ids created (as sender) by the given"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " address. Same advisory semantics as [`DataKey::RecipientStreams`]."
+    )]
     SenderStreams(Address),
-    /// Next scheduled-intent id to hand out; ids start at 1.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Next scheduled-intent id to hand out; ids start at 1."
+    )]
     NextIntentId,
-    /// The scheduled intent with the given id.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The scheduled intent with the given id."
+    )]
     Intent(u64),
-    /// Append-only index of scheduled-intent ids created (as sender) by the
-    /// given address. Same advisory semantics as [`DataKey::SenderStreams`].
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Append-only index of scheduled-intent ids created (as sender) by the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " given address. Same advisory semantics as [`DataKey::SenderStreams`]."
+    )]
     SenderIntents(Address),
-    /// Treasury governor address (instance storage; set once by the
-    /// contract constructor, later by two-step nomination/acceptance).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Treasury governor address (instance storage; set once by the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " contract constructor, later by two-step nomination/acceptance)."
+    )]
     Governor,
-    /// Pending governor nominee (instance storage; set by
-    /// `nominate_governor`, cleared by `accept_governor`).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Pending governor nominee (instance storage; set by"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `nominate_governor`, cleared by `accept_governor`)."
+    )]
     PendingGovernor,
-    /// Configured protocol fee in basis points (instance storage; absent
-    /// means 0 — fees disabled, the v0.3 behavior).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Configured protocol fee in basis points (instance storage; absent"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " means 0 — fees disabled, the v0.3 behavior)."
+    )]
     FeeBps,
-    /// Per-token fee accounting: fees charged minus fees withdrawn
-    /// (persistent storage; written only by fee-affecting entrypoints).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Per-token fee accounting: fees charged minus fees withdrawn"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " (persistent storage; written only by fee-affecting entrypoints)."
+    )]
     Treasury(Address),
-    /// Fee charged for one stream at creation time (persistent storage;
-    /// written only when the fee rounds above zero, so absent == 0).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Fee charged for one stream at creation time (persistent storage;"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " written only when the fee rounds above zero, so absent == 0)."
+    )]
     StreamFee(u64),
-    /// Schema version for storage layout evolution (instance storage).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Schema version for storage layout evolution (instance storage)."
+    )]
     SchemaVersion,
-    /// Freeze state: when true, all state-mutating entrypoints revert (instance storage).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Freeze state: when true, all state-mutating entrypoints revert (instance storage)."
+    )]
     ContractFrozen,
-    /// Proposed contract upgrade pending timelock expiration (instance storage).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Proposed contract upgrade pending timelock expiration (instance storage)."
+    )]
     PendingUpgrade,
-    /// Highest stream id processed by storage migration (instance storage).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Highest stream id processed by storage migration (instance storage)."
+    )]
     MigrationCursor,
-    /// Global oracle configuration (instance storage).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Global oracle configuration (instance storage)."
+    )]
     OracleConfig,
-    /// Most recent timestamp report from a publisher (persistent storage).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Most recent timestamp report from a publisher (persistent storage)."
+    )]
     OracleReport(Address),
 }
 
@@ -195,11 +303,11 @@ pub fn elapsed_seconds_at(now: u64, start_time: u64, end_time: u64) -> u64 {
     }
 }
 
+#[allow(dead_code)]
 /// Seconds elapsed of the stream window at the current ledger time.
 ///
 /// The window is half-open `[start_time, end_time)`: at `now == start_time`
 /// nothing has accrued yet; at `now >= end_time` the full duration has elapsed.
-#[allow(dead_code)]
 pub fn elapsed_seconds(env: &Env, start_time: u64, end_time: u64) -> u64 {
     elapsed_seconds_at(env.ledger().timestamp(), start_time, end_time)
 }
@@ -242,10 +350,10 @@ pub fn streamed_amount_at(stream: &Stream, now: u64) -> Result<i128, StreamError
     streamed_at(stream.deposit, stream.duration(), elapsed)
 }
 
+#[allow(dead_code)]
 /// Amount streamed (accrued) at the current ledger time.
 ///
 /// See [`streamed_at`] for the rate semantics.
-#[allow(dead_code)]
 pub fn streamed_amount(env: &Env, stream: &Stream) -> Result<i128, StreamError> {
     streamed_amount_at(stream, env.ledger().timestamp())
 }
@@ -262,9 +370,9 @@ pub fn available_amount_at(stream: &Stream, now: u64) -> Result<i128, StreamErro
         .ok_or_else(|| surface::reject(Branch::AvailableBalanceOverflow))
 }
 
+#[allow(dead_code)]
 /// Accrued-but-unwithdrawn balance at the current ledger time. Zero for
 /// cancelled streams (their payout was settled atomically at cancellation).
-#[allow(dead_code)]
 pub fn available_amount(env: &Env, stream: &Stream) -> Result<i128, StreamError> {
     available_amount_at(stream, env.ledger().timestamp())
 }
@@ -282,11 +390,11 @@ pub fn cancel_amounts_at(stream: &Stream, now: u64) -> Result<(i128, i128), Stre
     Ok((recipient_amount, sender_amount))
 }
 
+#[allow(dead_code)]
 /// Payout split at cancellation: `(recipient_amount, sender_amount)`.
 ///
 /// The recipient receives their accrued-but-unwithdrawn balance; the sender is
 /// refunded the unaccrued remainder.
-#[allow(dead_code)]
 pub fn cancel_amounts(env: &Env, stream: &Stream) -> Result<(i128, i128), StreamError> {
     cancel_amounts_at(stream, env.ledger().timestamp())
 }

@@ -19,6 +19,7 @@ node scripts/wasm-report.mjs ../../target/wasm32v1-none/release/streampay_contra
 | Stage | Technique | Total (bytes) | Δ |
 |---|---|---|---|
 | Baseline | commit `09516fe` (post oracle-time + sponsor merge) | **91,004** | — |
+| 1 | Doc strings removed from the on-chain spec | 60,852 | −30,152 |
 
 ### Baseline section breakdown
 
@@ -55,3 +56,35 @@ added by its own commit.
 
 (Regenerable in full with `scripts/wasm-report.mjs` against any build
 artifact.)
+
+## Technique 1 — stop embedding doc strings in the deployed spec (−30,152 B)
+
+`soroban-sdk-macros` copies every `///` doc comment of the contract interface
+(`#[contractimpl]` entrypoints, `#[contracttype]` fields/variants,
+`#[contracterror]` variants, `#[contractevent]` structs — events ship in the
+spec as UDT entries) into `contractspecv0`. On this contract that prose was
+**30,152 B of the 46,863 B spec section** — a third of the whole binary —
+paid on every deploy and baked into the on-chain interface.
+
+The fix is purely mechanical: each such doc comment becomes
+
+```rust
+#[cfg_attr(not(target_family = "wasm"), doc = " …the original text… ")]
+```
+
+Proc-macro attributes are token-matched **before** `cfg_attr` expansion, so on
+the `wasm32v1-none` build the spec macros see no `#[doc]` attributes at all
+and emit empty doc strings; on host builds (tests, rustdoc, analytics
+tooling) the attribute expands back into the identical `#[doc]` items. Source
+documentation is preserved 1:1; only its duplication into the binary stops.
+
+- No signature, name, arity, event-topic, or error-code change: `stellar
+  contract invoke`, the frontend SDK typings pipeline, `canary_check.sh` and
+  `schema_diff.sh` all keep working. The canonical interface hash does change
+  (doc strings were part of the hashed spec) — see the operator-notification
+  section at the end of this document.
+- Module-internal docs (helpers, storage math) were never embedded and are
+  left as plain `///`.
+
+After this step the binary is **60,852 B (59.4 KiB)** — under the 60 KB
+target, sections: `code` 37,770 · `contractspecv0` 16,711 · `data` 3,963.
