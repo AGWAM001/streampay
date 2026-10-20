@@ -471,13 +471,34 @@ impl StreamingPayments {
         stream::validate_capacity(deposit_amount, duration)
     }
 
-    /// Shared effects leg for every creation path: allocates the next stream
-    /// id, persists the stream, indexes it under both parties, applies the
-    /// protocol fee when one is owed, then emits [`StreamCreated`] (and
-    /// [`FeeCharged`] after it when a fee was charged). No authorization and
-    /// no token movement: callers are responsible for the checks and for
-    /// having the deposit escrowed in the contract (scheduled execution uses
-    /// an intent's already-escrowed deposit and passes `fee = 0`).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Shared effects leg for every creation path: allocates the next stream"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " id, persists the stream, indexes it under both parties, applies the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " protocol fee when one is owed, then emits [`StreamCreated`] (and"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " [`FeeCharged`] after it when a fee was charged). No authorization and"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " no token movement: callers are responsible for the checks and for"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " having the deposit escrowed in the contract (scheduled execution uses"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " an intent's already-escrowed deposit and passes `fee = 0`)."
+    )]
     #[allow(clippy::too_many_arguments)]
     fn persist_new_stream(
         env: &Env,
@@ -1324,24 +1345,69 @@ impl StreamingPayments {
         Ok(())
     }
 
-    /// Proposes handing the caller's stream role (sender or recipient) to
-    /// `new_owner`. The role does not move until `new_owner` calls
-    /// [`StreamingPayments::accept_ownership_transfer`].
-    ///
-    /// * Only the current sender or recipient may propose; their authorization
-    ///   is required. A stranger is rejected with [`StreamError::NotAuthorized`].
-    /// * The stream must be `Active`: ownership of a cancelled or depleted
-    ///   stream has no future claims and cannot be transferred.
-    /// * Proposing to the current holder of the same role is rejected with
-    ///   [`StreamError::InvalidTransferTarget`].
-    /// * At most one unexpired proposal exists per stream. Proposing again
-    ///   while one is pending reverts with
-    ///   [`StreamError::OwnershipProposalPending`]; an expired proposal is
-    ///   removed and replaced.
-    ///
-    /// No tokens move and no accounting field changes at proposal time. The
-    /// target is recorded under its own storage key with a seven-day
-    /// acceptance window ([`OWNERSHIP_PROPOSAL_TTL_SECONDS`]).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Proposes handing the caller's stream role (sender or recipient) to"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `new_owner`. The role does not move until `new_owner` calls"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " [`StreamingPayments::accept_ownership_transfer`]."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " * Only the current sender or recipient may propose; their authorization"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   is required. A stranger is rejected with [`StreamError::NotAuthorized`]."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " * The stream must be `Active`: ownership of a cancelled or depleted"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   stream has no future claims and cannot be transferred."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " * Proposing to the current holder of the same role is rejected with"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   [`StreamError::InvalidTransferTarget`]."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " * At most one unexpired proposal exists per stream. Proposing again"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   while one is pending reverts with"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   [`StreamError::OwnershipProposalPending`]; an expired proposal is"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "   removed and replaced.")]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " No tokens move and no accounting field changes at proposal time. The"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " target is recorded under its own storage key with a seven-day"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " acceptance window ([`OWNERSHIP_PROPOSAL_TTL_SECONDS`])."
+    )]
     pub fn propose_ownership_transfer(
         env: Env,
         caller: Address,
@@ -1395,23 +1461,65 @@ impl StreamingPayments {
         Ok(())
     }
 
-    /// Accepts a pending ownership proposal. Only the proposal's `new_owner`
-    /// may call this, and their authorization is required.
-    ///
-    /// On success the sender or recipient role moves to the caller. The
-    /// stream's accounting fields (`deposit`, `withdrawn`, `start_time`,
-    /// `end_time`, `token`, `status`, `use_oracle`) are untouched, so accrual
-    /// and the `0 <= withdrawn <= streamed <= deposit` invariant are unchanged:
-    /// what moves is the right to future payouts (recipient) or future top-ups
-    /// / cancellation refunds (sender). The stream id is appended to the new
-    /// holder's discovery index; the previous holder's append-only index keeps
-    /// its historical entry.
-    ///
-    /// Expired proposals cannot be accepted: the call reverts with
-    /// [`StreamError::OwnershipProposalExpired`]. Reverts roll back storage
-    /// writes, so the stale entry stays stored but is ignored forever after
-    /// its window; a later proposal replaces it (see
-    /// [`StreamingPayments::propose_ownership_transfer`]).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Accepts a pending ownership proposal. Only the proposal's `new_owner`"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " may call this, and their authorization is required."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " On success the sender or recipient role moves to the caller. The"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " stream's accounting fields (`deposit`, `withdrawn`, `start_time`,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `end_time`, `token`, `status`, `use_oracle`) are untouched, so accrual"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " and the `0 <= withdrawn <= streamed <= deposit` invariant are unchanged:"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " what moves is the right to future payouts (recipient) or future top-ups"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " / cancellation refunds (sender). The stream id is appended to the new"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " holder's discovery index; the previous holder's append-only index keeps"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " its historical entry.")]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Expired proposals cannot be accepted: the call reverts with"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " [`StreamError::OwnershipProposalExpired`]. Reverts roll back storage"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " writes, so the stale entry stays stored but is ignored forever after"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " its window; a later proposal replaces it (see"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " [`StreamingPayments::propose_ownership_transfer`])."
+    )]
     pub fn accept_ownership_transfer(
         env: Env,
         caller: Address,
@@ -1466,13 +1574,31 @@ impl StreamingPayments {
         Ok(())
     }
 
-    /// Cancels a pending ownership proposal. Only the current role holder that
-    /// created the proposal may cancel it; their authorization is required.
-    ///
-    /// Cancelling is allowed after the proposal's acceptance window has
-    /// elapsed (it simply clears the stale entry). It emits no event: the
-    /// proposal never changed the stream, and `OwnershipProposed` remains the
-    /// permanent record that a proposal once existed.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Cancels a pending ownership proposal. Only the current role holder that"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " created the proposal may cancel it; their authorization is required."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Cancelling is allowed after the proposal's acceptance window has"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " elapsed (it simply clears the stale entry). It emits no event: the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " proposal never changed the stream, and `OwnershipProposed` remains the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " permanent record that a proposal once existed."
+    )]
     pub fn cancel_ownership_transfer(
         env: Env,
         caller: Address,
@@ -1490,14 +1616,23 @@ impl StreamingPayments {
         Ok(())
     }
 
-    /// Read-only view of a stream's pending ownership proposal, if any.
-    /// Reading extends the proposal's storage TTL; unknown streams simply
-    /// return `None`.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Read-only view of a stream's pending ownership proposal, if any."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Reading extends the proposal's storage TTL; unknown streams simply"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " return `None`.")]
     pub fn pending_ownership_transfer(env: Env, stream_id: u64) -> Option<PendingOwnership> {
         stream::get_pending_ownership(&env, stream_id)
     }
 
-    /// Resolves which role `caller` currently holds on `s`.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Resolves which role `caller` currently holds on `s`."
+    )]
     fn role_of(s: &Stream, caller: &Address) -> Result<OwnershipRole, StreamError> {
         if caller == &s.sender {
             Ok(OwnershipRole::Sender)
@@ -1508,7 +1643,10 @@ impl StreamingPayments {
         }
     }
 
-    /// Read-only view of a stream's full state.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Read-only view of a stream's full state."
+    )]
     pub fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError> {
         stream::get_stream(&env, stream_id)
     }
