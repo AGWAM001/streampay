@@ -19,14 +19,10 @@ permissions:
   contents: read
 
 jobs:
-  fuzz:
-    name: fuzz ${{ matrix.target }}
+  streamed_at:
+    name: fuzz streamed_at
     runs-on: ubuntu-latest
     continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [streamed_at, dispute_bond]
     steps:
       - uses: actions/checkout@v7
 
@@ -38,7 +34,26 @@ jobs:
       - name: Run fuzz session
         working-directory: fuzz
         run: |
-          cargo +nightly fuzz run ${{ matrix.target }} -- \
+          cargo +nightly fuzz run streamed_at -- \
+            -max_total_time=${{ github.event.inputs.max_total_time || '60' }} \
+            -rss_limit_mb=4096
+
+  dispute_bond:
+    name: fuzz dispute_bond
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install nightly toolchain + cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz
+
+      - name: Run dispute bond fuzz session
+        working-directory: fuzz
+        run: |
+          cargo +nightly fuzz run dispute_bond -- \
             -max_total_time=${{ github.event.inputs.max_total_time || '60' }} \
             -rss_limit_mb=4096
 
