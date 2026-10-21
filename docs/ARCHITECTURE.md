@@ -200,7 +200,7 @@ streamed_amount_at_segments(stream, now, segments)
   change, which is what keeps `withdraw_max`, `cancel_stream` and the
   conservation fuzz oracle exact at the endpoint.
 - **Bounded.** `MAX_RATE_SEGMENTS = 32` windows; past the cap acceptance reverts
-  with `TooManyRateSegments` (67) and the offer survives, so the worst-case
+  with `TooManyRateSegments` (83) and the offer survives, so the worst-case
   pricing cost is measurable rather than assumed
   (`full_schedule_pricing_is_bounded`, `docs/FOOTPRINT.md`).
 
@@ -398,13 +398,13 @@ the public interface:
 | 61 | `OwnershipProposalExpired` | accept after the proposal's seven-day window |
 | 62 | `InvalidTransferTarget` | proposing to the role's current holder |
 | 63 | `OwnershipProposalPending` | proposing while an unexpired proposal exists |
-| 64 | `NoPendingRateChange` | accept/cancel called with no rate offer stored |
-| 65 | `RateProposalExpired` | accept after the offer's seven-day window |
-| 66 | `RateProposalPending` | proposing while an unexpired offer exists |
-| 67 | `TooManyRateSegments` | acceptance would exceed `MAX_RATE_SEGMENTS` (32) windows; the offer survives |
+| 80 | `NoPendingRateChange` | accept/cancel called with no rate offer stored |
+| 81 | `RateProposalExpired` | accept after the offer's seven-day window |
+| 82 | `RateProposalPending` | proposing while an unexpired offer exists |
+| 83 | `TooManyRateSegments` | acceptance would exceed `MAX_RATE_SEGMENTS` (32) windows; the offer survives |
 
-Codes 31–59 (policy, upgrades, batch limits, sponsorship, and oracle) are
-catalogued in [`docs/errors.md`](./errors.md).
+Codes 31–59 (policy, upgrades, batch limits, sponsorship, and oracle) and the
+two-key governance codes 64–79 are catalogued in [`docs/errors.md`](./errors.md).
 
 Codes 26–30 are *transfer-failure* codes: a token's own error number is
 deliberately never propagated (see §5), so clients can always branch on these

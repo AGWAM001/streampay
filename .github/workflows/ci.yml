@@ -19,7 +19,11 @@ jobs:
     env:
       # Single source of truth for the Wasm size budget (KB, issue #35).
       # Raise deliberately in a PR with justification if the contract grows.
-      WASM_SIZE_BUDGET_KB: 120
+      # 120 -> 132 (issue #54): mid-stream rate renegotiation adds 5 entrypoints,
+      # 2 events and 2 stored structs. Measured build: 131,638 B, up 13,343 B over
+      # main's 118,295 B — +8,508 B in `contractspecv0` (entry/event/struct specs
+      # and their doc strings) and +4,162 B in `CODE`.
+      WASM_SIZE_BUDGET_KB: 132
     steps:
       - uses: actions/checkout@v7
 
