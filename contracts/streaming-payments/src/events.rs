@@ -5,6 +5,8 @@
 
 use soroban_sdk::{contractevent, Address, BytesN, Vec};
 
+use crate::stream::OwnershipRole;
+
 /// Emitted when a new stream is created and its deposit pulled in.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -226,6 +228,73 @@ pub struct DisputeExpired {
     /// The remainder of the bond refunded to the recipient.
     pub recipient_share: i128,
 }
+/// Emitted when a sponsor registers (or reconfigures) a gas-sponsorship
+/// budget. Keyed by the sponsor address; the `registered` symbol lets indexers
+/// separate budget setup from sponsored claims.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SponsorRegistered {
+    #[topic]
+    pub sponsor: Address,
+    #[topic]
+    pub kind: soroban_sdk::Symbol,
+    pub token: Address,
+    pub per_period_limit: i128,
+    pub per_beneficiary_limit: i128,
+    pub window_seconds: u64,
+}
+
+/// Emitted when a sponsor pauses or resumes its budget.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SponsorActiveSet {
+    #[topic]
+    pub sponsor: Address,
+    #[topic]
+    pub kind: soroban_sdk::Symbol,
+    pub active: bool,
+}
+
+/// Emitted when a beneficiary binds an ed25519 consent key, and again whenever
+/// they rotate it. Keyed by the beneficiary address.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BeneficiaryEnrolled {
+    #[topic]
+    pub beneficiary: Address,
+    #[topic]
+    pub kind: soroban_sdk::Symbol,
+    pub public_key: BytesN<32>,
+}
+
+/// Emitted when a sponsor rotates its authorized operator (relayer) key. The
+/// previous operator key stops validating relay signatures immediately.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperatorKeyRotated {
+    #[topic]
+    pub sponsor: Address,
+    #[topic]
+    pub kind: soroban_sdk::Symbol,
+    pub new_operator_key: BytesN<32>,
+}
+
+/// Emitted when a claim is sponsored and paid out: the operator relayed the
+/// beneficiary's withdrawal and the sponsor's budget absorbed the gas. The
+/// payout still flows from the stream, exactly as in an unsponsored withdraw.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SponsorClaim {
+    #[topic]
+    pub sponsor: Address,
+    #[topic]
+    pub kind: soroban_sdk::Symbol,
+    #[topic]
+    pub stream_id: u64,
+    pub beneficiary: Address,
+    pub amount: i128,
+    pub nonce: u64,
+}
 
 /// Emitted when the policy module is initialized with its initial admin.
 #[contractevent]
@@ -335,4 +404,130 @@ pub struct StreamPolicySet {
     pub token: Option<Address>,
     pub old_policy: Option<crate::policy::StreamPolicy>,
     pub new_policy: crate::policy::StreamPolicy,
+}
+
+/// Emitted when the oracle configuration is updated by governance.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleConfigUpdated {
+    pub threshold: u32,
+    pub max_stale_seconds: u64,
+}
+
+/// Emitted when an authorized oracle publisher reports a reference timestamp.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleTimeReported {
+    #[topic]
+    pub publisher: Address,
+    pub reported_time: u64,
+    pub ledger_time: u64,
+}
+
+/// Emitted when oracle time resolution falls back to native ledger time due to
+/// stale feed, insufficient reports, or unconfigured registry.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleStaleFallback {
+    #[topic]
+    pub stream_id: u64,
+    pub ledger_time: u64,
+}
+
+/// Emitted when a current sender or recipient proposes handing their role to a
+/// new address. The handoff takes effect only when the target accepts.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnershipProposed {
+    #[topic]
+    pub stream_id: u64,
+    /// The current role holder (must be the stream's sender or recipient).
+    pub current_owner: Address,
+    /// Address that must accept before the role moves.
+    pub new_owner: Address,
+    pub role: OwnershipRole,
+    /// Ledger timestamp at or after which the proposal is stale.
+    pub expires_at: u64,
+}
+
+/// Emitted when a proposed ownership handoff is accepted by its target. The
+/// stream's accounting fields (`deposit`, `withdrawn`, time window) are
+/// unchanged; only the role address moves.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnershipAccepted {
+    #[topic]
+    pub stream_id: u64,
+    /// The role holder before the transfer.
+    pub previous_owner: Address,
+    /// The new role holder (the accepting address).
+    pub new_owner: Address,
+    pub role: OwnershipRole,
+}
+
+// --------------------------------------------------------------- governance --
+//
+// The lifecycle of a timelocked admin action (issue #119). These events wrap the
+// action's own legacy event rather than replacing it: `FeeWithdrawn`,
+// `UpgradeProposed` and friends still fire from the same helper they always
+// fired from, so an indexer built before the timelock keeps reading the same
+// trail and simply gains the proposal id alongside it.
+
+/// Emitted when the signer set is established or rotated, and when the veto
+/// window changes. The set is emitted in full because "which keys govern this
+/// contract" is only auditable from the transcript, not from a delta.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceSignersSet {
+    #[topic]
+    pub set_by: Address,
+    pub signers: Vec<Address>,
+    pub veto_window: u64,
+}
+
+/// Emitted when a signer proposes an admin action. `executable_at` is the end of
+/// the veto window: from that timestamp the proposal is executable by anyone and
+/// is never voided by time.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceActionProposed {
+    #[topic]
+    pub proposal_id: u64,
+    pub proposed_by: Address,
+    pub executable_at: u64,
+    pub action: crate::governance::GovernanceAction,
+}
+
+/// Emitted for each distinct signature. A second signature from an address that
+/// already signed is refused before this event can fire, so `signature_count`
+/// here is always a count of distinct keys.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceActionSigned {
+    #[topic]
+    pub proposal_id: u64,
+    pub signer: Address,
+    pub signature_count: u32,
+}
+
+/// Emitted when a signer vetoes a proposal inside its veto window.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceActionVetoed {
+    #[topic]
+    pub proposal_id: u64,
+    pub vetoed_by: Address,
+}
+
+/// Emitted when a matured, multiply-signed proposal is applied. `executed_by` is
+/// whoever submitted the transaction — execution is permissionless — while
+/// `signers` names the keys that actually authorized it.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovernanceActionExecuted {
+    #[topic]
+    pub proposal_id: u64,
+    pub action: crate::governance::GovernanceAction,
+    pub signers: Vec<Address>,
+    pub executed_by: Address,
 }

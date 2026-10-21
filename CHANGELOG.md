@@ -10,6 +10,19 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- Two-step stream ownership transfer: `propose_ownership_transfer`,
+  `accept_ownership_transfer`, `cancel_ownership_transfer`, and the
+  `pending_ownership_transfer` read view. Either the sender (payer) or the
+  recipient (claimant) can hand their role to a new address; the target must
+  accept within a seven-day window. Accounting fields and token balances are
+  untouched — only future claim/refund destinations move.
+- `PendingOwnership` storage key (`DataKey::PendingOwnership(id)`, appended),
+  one proposal per stream, with dedicated TTL maintenance.
+- Append-only `OwnershipProposed` / `OwnershipAccepted` events
+  (`stream_id` topic).
+- New `StreamError` variants (appended): `NoPendingOwnership` (60),
+  `OwnershipProposalExpired` (61), `InvalidTransferTarget` (62), and
+  `OwnershipProposalPending` (63).
 - Frontend (opt-in) **fee-aware claim scheduling**: a recipient can queue a
   signed `withdraw_max` intent and have the client submit it when the Soroban
   inclusion-fee percentile drops under a budget, with a deadline fallback so a
@@ -112,7 +125,7 @@ interface: they are only ever appended to, never renumbered or reused.
   registered in `src/surface.rs`, probed for its declared `StreamError`, and
   checked for coverage — CI fails on any error code with zero reachable
   branches or any branch without a code.
-- Generated [`docs/ERRORS.md`](./docs/ERRORS.md) (entrypoint × branch → code
+- Generated [`docs/ERROR_SURFACE.md`](./docs/ERROR_SURFACE.md) (entrypoint × branch → code
   table) with a CI step that regenerates it and diffs the committed artifact.
 - Recipient-initiated dispute flow (#55): `raise_dispute` (bonded flag that
   freezes `cancel_stream`/`top_up` for a 7-day timelock), sender-only
@@ -122,12 +135,41 @@ interface: they are only ever appended to, never renumbered or reused.
   `required_dispute_bond` views. Anti-griefing bond = 5% of the deposit
   scaling linearly per dispute round on the stream; accrued withdrawals and
   accrual are never frozen. New events `DisputeRaised` / `DisputeResolved` /
-  `DisputeExpired`; new `StreamError` codes `DisputeActive` (18),
-  `DisputeNotFound` (19), `DisputeNotExpired` (20), each wired into the
+  `DisputeExpired`; new `StreamError` codes `DisputeActive` (80),
+  `DisputeNotFound` (81), `DisputeNotExpired` (82), each wired into the
   `surface.rs` branch registry with matrix probes. Covered by unit/property
   tests (incl. the locks-plus-outstanding-bonds balance invariant) and a new
   `dispute_bond` fuzz target. `docs/ARCHITECTURE.md` §8 documents the freeze
   policy and griefing-threshold math.
+- **Gas sponsorship** (`sponsor.rs`, issue #57): sponsors pay transaction
+  costs for recipients claiming accrued funds. Soroban has no mempool
+  relayer, so authorization is carried *inside* the call: any account
+  submits `sponsored_withdraw` and pays the network fee, while consent is
+  two ed25519 signatures (sponsor operator key + enrolled beneficiary key)
+  over the SHA-256 digest of a canonical XDR message (domain tag
+  `StreamPay/sponsored-withdraw/v1`, contract, sponsor, beneficiary, token,
+  stream id, amount, nonce, deadline). Per-sponsor period caps,
+  per-beneficiary caps with rolling windows, one-shot nonces, sponsor
+  pause/resume and instant operator-key rotation; an invalid signature
+  traps before any nonce or budget state is consumed.
+- Sponsor entrypoints: `register_sponsor`, `set_sponsor_active`,
+  `rotate_operator_key`, `enroll_beneficiary`, `sponsored_withdraw`, plus
+  open reads `get_sponsor`, `get_beneficiary_public_key`,
+  `sponsor_period_spend`, `beneficiary_spend`. New `StreamError` variants
+  (appended): `SponsorNotFound` (21), `SponsorInactive` (22),
+  `BeneficiaryNotEnrolled` (23), `ClaimExpired` (24), `ClaimNonceReplay`
+  (25), `SponsorBudgetExceeded` (26), `BeneficiaryBudgetExceeded` (27);
+  the dispute-flow codes append at 80–82 after the governance block.
+- Frontend "Claim for free" path (`frontend/lib/sponsor.ts` + stream detail
+  page): builds and signs the exact intent the contract verifies, posts it
+  to the sponsor relay, and discloses who pays and how much budget remains;
+  falls back to a self-paid claim when no sponsor covers the stream's
+  token. JS ↔ Rust wire parity is pinned by frozen vectors on both sides
+  (`canonical_relay_message_has_a_frozen_wire_form` / `lib/sponsor.test.ts`).
+- Sponsorship docs: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §13
+  (mechanism, message layout, check order, relay contract, rejected
+  alternatives) and [`docs/THREAT_MODEL.md`](./docs/THREAT_MODEL.md) §12
+  (budget-drain griefing, signature interception, replay).
 - Distinct `StreamError` codes for token-transfer failures, appended after
   the scheduled-intent codes (18–25): `DepositTransferFailed` (26),
   `TopUpTransferFailed` (27), `RecipientPayoutFailed` (28),
@@ -144,7 +186,7 @@ interface: they are only ever appended to, never renumbered or reused.
   (`CreateDepositTransferFailed`, `TopUpTransferFailed`,
   `RecipientPayoutFailed`, `SenderRefundFailed`, `TreasuryPayoutFailed`), so
   the generated error-surface matrix probes every one of them and
-  `docs/ERRORS.md` documents them like every other branch.
+  `docs/ERROR_SURFACE.md` documents them like every other branch.
 - Non-native asset tests, end to end: full lifecycle
   (create → top-up → withdraw → withdraw_max → cancel) against a registered
   Stellar Asset Contract with supply conservation, allowance/balance pull
@@ -193,10 +235,79 @@ interface: they are only ever appended to, never renumbered or reused.
 - Retired `StreamError::NotStreamSender` (2) and `NotStreamRecipient` (3) as
   unreachable under the append-only policy: the numeric codes are kept and
   reserved, never reused or renumbered.
+- **Generated-artifact gates:** the three "committed output matches its source"
+  CI checks now all call `scripts/check_generated.sh`, which regenerates and
+  then fails on drift *including newly created untracked files*. The
+  differential-vector step previously regenerated the corpus without diffing
+  it, so a stale committed corpus passed. Locally: `npm run generated:check`.
+- `docs/ERRORS.md` → `docs/ERROR_SURFACE.md`. It differed from the generated
+  `docs/errors.md` by case alone, which is invisible on macOS/Windows
+  filesystems and made renames and checkouts ambiguous. No on-chain surface
+  changed; the error catalog regenerated accordingly (content-derived
+  `schema_fingerprint` moved with the doc-comment references).
+- `.gitattributes` pins `.rs/.md/.ts/.tsx/.mjs/.json` to LF so generated
+  artifacts and their sources are byte-stable on a `core.autocrlf=true`
+  checkout (CRLF in committed blobs has already broken the catalog's content
+  hash once — `a3af379`), and `scripts/check_line_endings.sh` + a CI step fail
+  on any blob committed with CRLF, naming the files and the fix.
+- **Failure actionability.** The gates that fail most often now say what to do
+  instead of just exiting 1:
+  - `scripts/check_error_codes.sh` (Contract job, *first* step, no toolchain
+    needed) reads the `StreamError` enum and reports duplicated codes, duplicate
+    variant names, and gaps as `file`/`line` annotations, printing the highest
+    code in use and the next free one. The collision two contributor PRs hit when
+    both append "the next free code" is `E0081` four minutes into a build; here it
+    is a one-line message in seconds — and on a PR event the merge ref already
+    contains both sides. It then checks the `surface.rs` registry the same way the
+    contract's matrix test does: a code no `Branch` maps to (and that is not in
+    `RETIRED_CODES`) and a `Branch::…` name used without being declared — the two
+    shapes of the otherwise-unexplained red `Devcontainer — wasm build` check.
+  - `scripts/check_docs_links.mjs` emits each broken link/anchor as a workflow
+    annotation that names the closest existing paths (`did you mean
+    ./ERROR_SURFACE.md?`) and flags case-only matches, which resolve on
+    macOS/Windows checkouts and fail on Linux CI.
+  - The Contract job's Format check regenerates the formatting and uploads it as
+    the `fmt-fix-*` artifact, so a contributor without a local Rust toolchain can
+    `git apply fmt-fix.patch` instead of guessing at rustfmt's diff.
+  - The devcontainer Wasm step explains that it runs no fmt, clippy or test steps, so
+    its failure is the *compile* signal even when the Contract job stopped at a
+    formatting complaint.
+  - `cargo-deny` and the frontend `npm audit` steps each gained a follow-up step
+    that fires only on their own outcome (`steps.<id>.outcome`) and says how to
+    tell "a dependency you added" from "an advisory main already carries" —
+    the second case has turned every open PR red before (`d282de1`) and invites a
+    force-downgrade of a package the contributor never came to change.
+- `npm run codes:check` and `npm run links:check` were added and are chained into
+  `npm run matrix`, so the CI gate list and the local pre-flight are the same
+  commands (CONTRIBUTING and the PR template name them).
 
 ### Fixed
+- Error-catalog pages linked their "Regression / Coverage Probe" to test function
+  names that do not exist (`error_surface_test.rs::stream_not_found` and ~50
+  others), so auditors followed dead links and the docs lint warned on every CI
+  run. Probes are now *derived* from `surface.rs::Branch::error()` — the registry
+  the coverage test itself walks — with the reachability proof linked separately,
+  and generation fails if any emitted symbol does not resolve, so a catalog
+  cannot ship a dead link again.
 - Create-form failures decode to `StreamError` names like every other path
   (they were surfaced as raw error strings).
+- `follow-redirects` 1.16.0 → 1.16.1 in `frontend/package-lock.json`. Two
+  high-severity advisories published 2026-10-20 (`GHSA-q3jh-wrc6-jgq8`,
+  `GHSA-8r9p-f939-6h3c`) cover `>= 1.16.0, < 1.16.1`, which turned
+  `npm audit --omit=dev --audit-level=high` red on every open pull request —
+  including the ones that touched no dependency. The package is transitive
+  (`@stellar/stellar-sdk` → `axios` → `follow-redirects`) and 1.16.1 already
+  satisfies the `^1.16.0` range axios declares, so this is a re-resolve of the
+  lockfile rather than an upgrade, and unlike the 0.3.0 `postcss`/`toml` case it
+  needed no `overrides` pin.
+- `rustls-webpki` 0.103.15 → 0.103.16 and `webpki-roots` 1.0.9 → 1.0.10 in
+  `Cargo.lock`. `RUSTSEC-2026-0382` and `RUSTSEC-2026-0381` (both published
+  2026-10-20) cover the emSign roots whose private keys are now public, and they
+  reach the workspace transitively through `reqwest` from `streampay-state`, so
+  the Security job's `cargo deny check` went red on every open pull request.
+  Both patches are in-range, so `cargo update -p` for each is a four-line lock
+  re-resolve — no crate added, no other crate moved, and no `deny.toml` ignore
+  entry needed.
 
 ## [0.3.0] - 2026-10-04
 

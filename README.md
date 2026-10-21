@@ -59,6 +59,8 @@ How it works in depth, including the design invariants and the Soroban-specific 
 
 Deep dive (storage model, checked math, reentrancy, TTL strategy, design decisions): [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
+Historical architecture decision records (ADRs) and trade-off rationales: [`docs/adr/`](./docs/adr/README.md).
+
 Incident response drills and procedures: [`docs/INCIDENT_RUNBOOK.md`](./docs/INCIDENT_RUNBOOK.md).
 
 Metrics, alerting stack, and operational diagnosis: [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) and [`infra/observability`](./infra/observability/README.md).
@@ -76,10 +78,14 @@ Metrics, alerting stack, and operational diagnosis: [`docs/RUNBOOK.md`](./docs/R
 | `raise_dispute(stream_id)` | recipient | pulls escalating anti-griefing bond in | `DisputeRaised` |
 | `resolve_dispute(caller, stream_id, accept)` | sender | accept: bond back + pro-rata unwind; reject: bond slashed to sender | `DisputeResolved` (+ `StreamCancelled` on accept) |
 | `expire_dispute(stream_id)` | anyone after 7 d | bond split 50/50 (sender rounds up), stream resumes | `DisputeExpired` |
+| `propose_ownership_transfer(caller, stream_id, new_owner)` | sender or recipient | — (records a pending target) | `OwnershipProposed` |
+| `accept_ownership_transfer(caller, stream_id)` | named `new_owner` only | — (moves the role) | `OwnershipAccepted` |
+| `cancel_ownership_transfer(caller, stream_id)` | proposer only | — (clears the pending target) | — |
 | `get_stream(stream_id) → Stream` | — (read-only) | — | — |
 | `get_dispute(stream_id) → Dispute` | — (read-only) | — | — |
 | `required_dispute_bond(stream_id) → i128` | — (read-only) | — | — |
 | `available(stream_id) → i128` | — (read-only) | — | — |
+| `pending_ownership_transfer(stream_id) → Option<PendingOwnership>` | — (read-only) | — | — |
 | `recipient_streams(address, offset, limit) → Vec<u64>` | — (read-only) | — | — |
 | `sender_streams(address, offset, limit) → Vec<u64>` | — (read-only) | — | — |
 | `schedule_stream(sender, recipient, token, deposit, start, end, cancelable, interval, occurrences, fee_budget, execute_after, expires_at) → u64` | anyone (sender auth required) | pulls `(deposit+fee)×occurrences` in | `StreamScheduled` |
@@ -96,6 +102,15 @@ Metrics, alerting stack, and operational diagnosis: [`docs/RUNBOOK.md`](./docs/R
 | `stream_fee(stream_id) → i128` | — (read-only) | — | — |
 | `verify_treasury(token, start_id, count) → FeeScan` | — (read-only) | — | — |
 | `total_streams() → u64` | — (read-only) | — | — |
+| `register_sponsor(sponsor, token, per_period_limit, per_beneficiary_limit, window_seconds, operator_key)` | sponsor | — | `SponsorRegistered` |
+| `set_sponsor_active(sponsor, active)` | sponsor | — | `SponsorActiveSet` |
+| `rotate_operator_key(sponsor, new_operator_key)` | sponsor | — | `OperatorKeyRotated` |
+| `enroll_beneficiary(beneficiary, public_key)` | beneficiary | — | `BeneficiaryEnrolled` |
+| `sponsored_withdraw(sponsor, beneficiary, stream_id, amount, nonce, deadline, operator_sig, beneficiary_sig)` | anyone (gas paid by submitter; consent via two ed25519 sigs) | pays out ≤ accrued | `SponsorClaim` |
+| `get_sponsor(sponsor) → Option<SponsorConfig>` | — (read-only) | — | — |
+| `get_beneficiary_public_key(beneficiary) → Option<BytesN<32>>` | — (read-only) | — | — |
+| `sponsor_period_spend(sponsor) → PeriodSpend` | — (read-only) | — | — |
+| `beneficiary_spend(sponsor, beneficiary) → PeriodSpend` | — (read-only) | — | — |
 
 `create_stream` emits `FeeCharged` when a protocol fee applies. `create_streams`
 validates and creates the full batch atomically: if one input fails, none of
@@ -110,7 +125,28 @@ limits bound the practical maximum batch size.
 `recipient_streams` / `sender_streams` are on-chain discovery indexes:
 append-only, creation-ordered stream-id lists per address, paginated
 (`limit` clamped to `MAX_PAGE_SIZE = 50`). Terminal streams keep their ids —
-read each stream's `status` for lifecycle state.
+read each stream's `status` for lifecycle state. Ownership transfers follow
+the same append-only rule: the new holder's index gains the id on acceptance
+and the previous holder keeps its historical entry, so readers must check the
+current `sender` / `recipient` fields on `get_stream` before acting on an
+indexed id.
+
+### Two-step ownership transfer
+
+Either party can hand their role to a new address without moving funds:
+
+1. The current sender (payer) or recipient (claimant) calls
+   `propose_ownership_transfer`, which records the target and a 7-day
+   acceptance window. The stream is unchanged.
+2. The named target calls `accept_ownership_transfer`; only then does the role
+   move. The proposer can cancel a pending proposal at any time.
+
+Deposit, withdrawn amount, and the time window are untouched, so accrual and
+the `0 ≤ withdrawn ≤ streamed ≤ deposit` invariant are identical before and
+after a transfer — only the destination of future claims (recipient) or future
+top-ups/cancellation refunds (sender) changes. See
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §17 for the full invariant
+proof sketch.
 
 Any SEP-41-compatible asset can fund a stream: an issued asset via its
 Stellar Asset Contract id (e.g. USDC on testnet) or **native XLM** via its
@@ -174,6 +210,35 @@ griefing escalate: blocking the stream costs the recipient ~2.5 % of the
 deposit per week, growing every round (`docs/ARCHITECTURE.md` has the full
 threshold math). Raising a dispute needs a prior `token.approve(recipient,
 <contract id>, bond, exp)`.
+## Gas sponsorship (claim for free)
+
+Recipients can withdraw accrued funds without holding XLM for the
+transaction fee: a **sponsor** (a sender, the dApp operator, or any funded
+account) registers a budget — token, per-period cap, per-beneficiary cap,
+window, and an ed25519 operator (relayer) key — and beneficiaries enroll
+their own ed25519 consent key once. A claim is then a fully-specified
+intent (contract, sponsor, beneficiary, token, stream, amount, one-time
+nonce, short deadline) signed by **both** keys; any account may submit
+`sponsored_withdraw` and pays the network fee, while the contract verifies
+both signatures over the SHA-256 digest of the canonical message before
+spending anything. Soroban has no mempool relayer, so this dual-signature
+inner-authorization pattern replaces one — the exact mechanism, message
+layout and check order are documented in
+[`docs/ARCHITECTURE.md` §13](./docs/ARCHITECTURE.md), and the JS ↔ Rust
+wire parity is pinned by frozen test vectors on both sides.
+
+Budgets are hard caps: the period spend and per-beneficiary spend roll
+forward with the window, nonces are one-shot, and an invalid-signature
+attempt traps before any nonce or budget state is consumed — a failed relay
+leaves no trace to wear down.
+Sponsor key rotation is instant — `rotate_operator_key` makes old operator
+signatures stop validating with the next ledger. The frontend exposes the
+whole path as **"Claim for free"** with explicit disclosure of who pays and
+what remains in the budget.
+
+Threat model for this surface (budget-drain griefing, signature
+interception, replay, clock manipulation):
+[`docs/THREAT_MODEL.md` §12](./docs/THREAT_MODEL.md).
 
 ## Getting started (clean machine)
 

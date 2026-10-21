@@ -24,8 +24,18 @@
 //!   refund bond) or rejects as bad-faith (bond slashed, stream resumes)
 //! - [`StreamingPayments::expire_dispute`] — anyone, after the timelock:
 //!   bond split, stream resumes
-//! - [`StreamingPayments::get_stream`] / [`StreamingPayments::available`] —
-//!   read-only views
+//! - [`StreamingPayments::propose_ownership_transfer`] /
+//!   [`StreamingPayments::accept_ownership_transfer`] /
+//!   [`StreamingPayments::cancel_ownership_transfer`] — two-step handoff of
+//!   the sender (payer) or recipient (claimant) role
+//! - [`StreamingPayments::sponsored_withdraw`] — an operator relays a
+//!   recipient’s claim and a sponsor absorbs the gas, guarded by a budget
+//!   ledger and nonce replay protection (see the `sponsor` module docs)
+//! - [`StreamingPayments::register_sponsor`] /
+//!   [`StreamingPayments::enroll_beneficiary`] /
+//!   [`StreamingPayments::rotate_operator_key`] — sponsorship setup
+//! - [`StreamingPayments::get_stream`] / [`StreamingPayments::available`] /
+//!   [`StreamingPayments::pending_ownership_transfer`] — read-only views
 //! - [`StreamingPayments::get_dispute`] /
 //!   [`StreamingPayments::required_dispute_bond`] — dispute read-only views
 //! - [`StreamingPayments::recipient_streams`] /
@@ -73,10 +83,17 @@ mod error_surface_test;
 mod dispute;
 mod errors;
 mod events;
+mod governance;
+#[cfg(test)]
+mod governance_test;
+mod oracle;
 mod policy;
 mod schedule;
 #[cfg(test)]
 mod schedule_test;
+pub(crate) mod sponsor;
+#[cfg(test)]
+mod sponsor_test;
 mod stream;
 pub mod surface;
 #[cfg(test)]
@@ -99,21 +116,32 @@ pub use dispute::{
 };
 pub use errors::StreamError;
 pub use events::{
-    ContractFrozenStateChanged, ContractUpgraded, DisputeExpired, DisputeRaised, DisputeResolved,
-    FeeCharged, FeeWithdrawn, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
-    PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized, ScheduledIntentCancelled,
-    ScheduledIntentExpired, ScheduledStreamExecuted, StorageMigrated, StreamCancelled,
-    StreamCreated, StreamPolicySet, StreamScheduled, StreamToppedUp, StreamsCreated,
-    UpgradeCancelled, UpgradeProposed, Withdrawn,
+    BeneficiaryEnrolled, ContractFrozenStateChanged, ContractUpgraded, DisputeExpired,
+    DisputeRaised, DisputeResolved, FeeCharged, FeeWithdrawn, GovernanceActionExecuted,
+    GovernanceActionProposed, GovernanceActionSigned, GovernanceActionVetoed, GovernanceSignersSet,
+    OperatorKeyRotated, OracleConfigUpdated, OracleStaleFallback, OracleTimeReported,
+    OwnershipAccepted, OwnershipProposed, PolicyAssetExecuted, PolicyAssetQueued,
+    PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized,
+    ScheduledIntentCancelled, ScheduledIntentExpired, ScheduledStreamExecuted, SponsorActiveSet,
+    SponsorClaim, SponsorRegistered, StorageMigrated, StreamCancelled, StreamCreated,
+    StreamPolicySet, StreamScheduled, StreamToppedUp, StreamsCreated, UpgradeCancelled,
+    UpgradeProposed, Withdrawn,
 };
+pub use governance::{
+    GovernanceAction, Proposal, DEFAULT_VETO_WINDOW_SECONDS, MAX_SIGNERS, MIN_VETO_WINDOW_SECONDS,
+    REQUIRED_SIGNATURES, ROTATION_WINDOW_MULTIPLIER,
+};
+pub use oracle::{OracleConfig, OracleReport, ResolvedTime, DEFAULT_MAX_STALE_SECONDS};
 pub use policy::{validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
+pub use sponsor::{PeriodSpend, SponsorConfig};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
 pub use stream::{
-    streamed_at, BatchEntry, MigrationStatus, PendingUpgrade, Stream, StreamStatus,
-    INITIAL_SCHEMA_VERSION, MAX_BATCH, MAX_DURATION_SECONDS, MAX_MIGRATION_BATCH_SIZE,
-    MAX_PAGE_SIZE, MIN_BATCH, MIN_UPGRADE_DELAY_SECONDS, TARGET_SCHEMA_VERSION,
+    streamed_at, BatchEntry, MigrationStatus, OwnershipRole, PendingOwnership, PendingUpgrade,
+    Stream, StreamStatus, INITIAL_SCHEMA_VERSION, MAX_BATCH, MAX_DURATION_SECONDS,
+    MAX_MIGRATION_BATCH_SIZE, MAX_PAGE_SIZE, MIN_BATCH, MIN_UPGRADE_DELAY_SECONDS,
+    OWNERSHIP_PROPOSAL_TTL_SECONDS, TARGET_SCHEMA_VERSION,
 };
 pub use treasury::{fee_amount, FeeScan, Treasury, TreasuryStatus, BPS_DENOMINATOR, MAX_FEE_BPS};
 
@@ -173,12 +201,34 @@ fn pull(
 ) -> Result<(), StreamError> {
     #[cfg(test)]
     cei_trace::record("transfer_from token");
+    let current_contract = env.current_contract_address();
     let res = TokenClient::new(env, token).try_transfer_from(
-        &env.current_contract_address(),
+        &current_contract,
         payer,
-        &env.current_contract_address(),
+        &current_contract,
         &amount,
     );
+    token_result(res, on_failure)
+}
+
+/// Sends `amount` of `token` held by `from` to `recipient` via
+/// `transfer`, mapping a token-side failure to the code `on_failure` declares.
+fn push_from(
+    env: &Env,
+    token: &Address,
+    from: &Address,
+    recipient: &MuxedAddress,
+    amount: i128,
+    on_failure: Branch,
+) -> Result<(), StreamError> {
+    #[cfg(test)]
+    cei_trace::record(match on_failure {
+        Branch::RecipientPayoutFailed => "transfer recipient payout",
+        Branch::SenderRefundFailed => "transfer sender refund",
+        Branch::TreasuryPayoutFailed => "transfer treasury payout",
+        _ => "transfer token",
+    });
+    let res = TokenClient::new(env, token).try_transfer(from, recipient, &amount);
     token_result(res, on_failure)
 }
 
@@ -191,19 +241,14 @@ fn push(
     amount: i128,
     on_failure: Branch,
 ) -> Result<(), StreamError> {
-    #[cfg(test)]
-    cei_trace::record(match on_failure {
-        Branch::RecipientPayoutFailed => "transfer recipient payout",
-        Branch::SenderRefundFailed => "transfer sender refund",
-        Branch::TreasuryPayoutFailed => "transfer treasury payout",
-        _ => "transfer token",
-    });
-    let res = TokenClient::new(env, token).try_transfer(
+    push_from(
+        env,
+        token,
         &env.current_contract_address(),
         recipient,
-        &amount,
-    );
-    token_result(res, on_failure)
+        amount,
+        on_failure,
+    )
 }
 
 #[contractimpl]
@@ -267,6 +312,32 @@ impl StreamingPayments {
         end_time: u64,
         cancelable: bool,
     ) -> Result<u64, StreamError> {
+        Self::create_stream_with_oracle(
+            env,
+            sender,
+            recipient,
+            token,
+            deposit_amount,
+            start_time,
+            end_time,
+            cancelable,
+            false,
+        )
+    }
+
+    /// Creates a payment stream with optional oracle reference time source.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_stream_with_oracle(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+        use_oracle: bool,
+    ) -> Result<u64, StreamError> {
         Self::require_not_frozen(&env)?;
         sender.require_auth();
 
@@ -314,6 +385,7 @@ impl StreamingPayments {
             end_time,
             cancelable,
             status: StreamStatus::Active,
+            use_oracle,
         };
         stream::put_stream(&env, &s);
         stream::index_stream(&env, &s);
@@ -400,6 +472,7 @@ impl StreamingPayments {
             end_time,
             cancelable,
             status: StreamStatus::Active,
+            use_oracle: false,
         };
         stream::put_stream(env, &stream);
         stream::index_stream(env, &stream);
@@ -539,6 +612,7 @@ impl StreamingPayments {
                 end_time: input.end_time,
                 cancelable: input.cancelable,
                 status: StreamStatus::Active,
+                use_oracle: false,
             };
             stream::put_stream(&env, &created);
             stream::index_stream(&env, &created);
@@ -638,6 +712,7 @@ impl StreamingPayments {
             end_time: entry.end_time,
             cancelable: entry.cancelable,
             status: StreamStatus::Active,
+            use_oracle: false,
         };
         stream::put_stream(env, &s);
         stream::index_stream(env, &s);
@@ -713,7 +788,8 @@ impl StreamingPayments {
         }
         let mut s = Self::authorize_withdrawal(&env, stream_id)?;
 
-        let available = stream::available_amount(&env, &s)?;
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        let available = stream::available_amount_at(&s, resolved.timestamp)?;
         if amount > available {
             return Err(surface::reject(Branch::WithdrawAmountExceedsAvailable));
         }
@@ -736,7 +812,8 @@ impl StreamingPayments {
         Self::require_not_frozen(&env)?;
         let mut s = Self::authorize_withdrawal(&env, stream_id)?;
 
-        let amount = stream::available_amount(&env, &s)?;
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        let amount = stream::available_amount_at(&s, resolved.timestamp)?;
         if amount <= 0 {
             return Err(surface::reject(Branch::WithdrawMaxNothingToWithdraw));
         }
@@ -844,7 +921,8 @@ impl StreamingPayments {
             }
         }
 
-        let (recipient_amount, sender_amount) = stream::cancel_amounts(&env, &s)?;
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        let (recipient_amount, sender_amount) = stream::cancel_amounts_at(&s, resolved.timestamp)?;
 
         // Effects first (CEI): finalise state before moving tokens.
         s.status = StreamStatus::Cancelled;
@@ -869,28 +947,28 @@ impl StreamingPayments {
         // cancel_at_exact_start_pays_sender_everything verifies correct behavior
         // without the transfer. The >= mutation would only add a no-op transfer of
         // 0 tokens, which is functionally equivalent but unnecessary.
-        if recipient_amount > 0 {
-            push(
-                &env,
-                &s.token,
-                &stream::muxed(&s.recipient),
-                recipient_amount,
-                Branch::RecipientPayoutFailed,
-            )?;
-        }
-        // MUTANT-SUPPRESS: replace > with >= is acceptable because sender_amount
-        // is only 0 when cancel_amounts computes 0 (cancel after end). The test
-        // cancel_after_end_pays_recipient_everything verifies correct behavior
-        // without the transfer. The >= mutation would only add a no-op transfer of
-        // 0 tokens, which is functionally equivalent but unnecessary.
-        if sender_amount > 0 {
-            push(
-                &env,
-                &s.token,
-                &stream::muxed(&s.sender),
-                sender_amount,
-                Branch::SenderRefundFailed,
-            )?;
+        if recipient_amount > 0 || sender_amount > 0 {
+            let current_contract = env.current_contract_address();
+            if recipient_amount > 0 {
+                push_from(
+                    &env,
+                    &s.token,
+                    &current_contract,
+                    &stream::muxed(&s.recipient),
+                    recipient_amount,
+                    Branch::RecipientPayoutFailed,
+                )?;
+            }
+            if sender_amount > 0 {
+                push_from(
+                    &env,
+                    &s.token,
+                    &current_contract,
+                    &stream::muxed(&s.sender),
+                    sender_amount,
+                    Branch::SenderRefundFailed,
+                )?;
+            }
         }
 
         Ok(())
@@ -1150,6 +1228,190 @@ impl StreamingPayments {
         Ok(())
     }
 
+    /// Proposes handing the caller's stream role (sender or recipient) to
+    /// `new_owner`. The role does not move until `new_owner` calls
+    /// [`StreamingPayments::accept_ownership_transfer`].
+    ///
+    /// * Only the current sender or recipient may propose; their authorization
+    ///   is required. A stranger is rejected with [`StreamError::NotAuthorized`].
+    /// * The stream must be `Active`: ownership of a cancelled or depleted
+    ///   stream has no future claims and cannot be transferred.
+    /// * Proposing to the current holder of the same role is rejected with
+    ///   [`StreamError::InvalidTransferTarget`].
+    /// * At most one unexpired proposal exists per stream. Proposing again
+    ///   while one is pending reverts with
+    ///   [`StreamError::OwnershipProposalPending`]; an expired proposal is
+    ///   removed and replaced.
+    ///
+    /// No tokens move and no accounting field changes at proposal time. The
+    /// target is recorded under its own storage key with a seven-day
+    /// acceptance window ([`OWNERSHIP_PROPOSAL_TTL_SECONDS`]).
+    pub fn propose_ownership_transfer(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+        new_owner: Address,
+    ) -> Result<(), StreamError> {
+        Self::require_not_frozen(&env)?;
+        caller.require_auth();
+
+        let s = stream::get_stream(&env, stream_id)?;
+        if s.status != StreamStatus::Active {
+            return Err(surface::reject(Branch::StreamNotActive));
+        }
+        let role = Self::role_of(&s, &caller)?;
+        let current_owner = match role {
+            OwnershipRole::Sender => &s.sender,
+            OwnershipRole::Recipient => &s.recipient,
+        };
+        if new_owner == *current_owner {
+            return Err(surface::reject(Branch::ProposeInvalidTarget));
+        }
+
+        let now = env.ledger().timestamp();
+        if let Some(existing) = stream::get_pending_ownership(&env, stream_id) {
+            if now < existing.expires_at {
+                return Err(surface::reject(Branch::ProposeAlreadyPending));
+            }
+            // Stale proposals are cleared lazily so a fresh target can be
+            // proposed without a separate cleanup transaction.
+            stream::remove_pending_ownership(&env, stream_id);
+        }
+
+        let pending = PendingOwnership {
+            stream_id,
+            proposed_by: caller.clone(),
+            new_owner: new_owner.clone(),
+            role,
+            expires_at: now.saturating_add(OWNERSHIP_PROPOSAL_TTL_SECONDS),
+        };
+        stream::put_pending_ownership(&env, &pending);
+
+        OwnershipProposed {
+            stream_id,
+            current_owner: caller,
+            new_owner,
+            role,
+            expires_at: pending.expires_at,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// Accepts a pending ownership proposal. Only the proposal's `new_owner`
+    /// may call this, and their authorization is required.
+    ///
+    /// On success the sender or recipient role moves to the caller. The
+    /// stream's accounting fields (`deposit`, `withdrawn`, `start_time`,
+    /// `end_time`, `token`, `status`, `use_oracle`) are untouched, so accrual
+    /// and the `0 <= withdrawn <= streamed <= deposit` invariant are unchanged:
+    /// what moves is the right to future payouts (recipient) or future top-ups
+    /// / cancellation refunds (sender). The stream id is appended to the new
+    /// holder's discovery index; the previous holder's append-only index keeps
+    /// its historical entry.
+    ///
+    /// Expired proposals cannot be accepted: the call reverts with
+    /// [`StreamError::OwnershipProposalExpired`]. Reverts roll back storage
+    /// writes, so the stale entry stays stored but is ignored forever after
+    /// its window; a later proposal replaces it (see
+    /// [`StreamingPayments::propose_ownership_transfer`]).
+    pub fn accept_ownership_transfer(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+    ) -> Result<(), StreamError> {
+        Self::require_not_frozen(&env)?;
+        caller.require_auth();
+
+        let pending = stream::get_pending_ownership(&env, stream_id)
+            .ok_or_else(|| surface::reject(Branch::NoPendingOwnership))?;
+        if caller != pending.new_owner {
+            return Err(surface::reject(Branch::AcceptNotTarget));
+        }
+        if env.ledger().timestamp() >= pending.expires_at {
+            return Err(surface::reject(Branch::OwnershipProposalExpired));
+        }
+
+        let mut s = stream::get_stream(&env, stream_id)?;
+        if s.status != StreamStatus::Active {
+            return Err(surface::reject(Branch::StreamNotActive));
+        }
+
+        // The proposal could only have been created by the address currently
+        // holding `role`, and role transfers always clear the pending key, so
+        // `proposed_by` is the previous owner by construction.
+        let previous_owner = match pending.role {
+            OwnershipRole::Sender => {
+                s.sender = caller.clone();
+                pending.proposed_by.clone()
+            }
+            OwnershipRole::Recipient => {
+                s.recipient = caller.clone();
+                pending.proposed_by.clone()
+            }
+        };
+
+        stream::put_stream(&env, &s);
+        match pending.role {
+            OwnershipRole::Sender => stream::index_sender(&env, &caller, stream_id),
+            OwnershipRole::Recipient => stream::index_recipient(&env, &caller, stream_id),
+        }
+        stream::remove_pending_ownership(&env, stream_id);
+
+        OwnershipAccepted {
+            stream_id,
+            previous_owner,
+            new_owner: caller,
+            role: pending.role,
+        }
+        .publish(&env);
+
+        Ok(())
+    }
+
+    /// Cancels a pending ownership proposal. Only the current role holder that
+    /// created the proposal may cancel it; their authorization is required.
+    ///
+    /// Cancelling is allowed after the proposal's acceptance window has
+    /// elapsed (it simply clears the stale entry). It emits no event: the
+    /// proposal never changed the stream, and `OwnershipProposed` remains the
+    /// permanent record that a proposal once existed.
+    pub fn cancel_ownership_transfer(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+    ) -> Result<(), StreamError> {
+        Self::require_not_frozen(&env)?;
+        caller.require_auth();
+
+        let pending = stream::get_pending_ownership(&env, stream_id)
+            .ok_or_else(|| surface::reject(Branch::NoPendingOwnership))?;
+        if caller != pending.proposed_by {
+            return Err(surface::reject(Branch::CancelProposalNotProposer));
+        }
+        stream::remove_pending_ownership(&env, stream_id);
+        Ok(())
+    }
+
+    /// Read-only view of a stream's pending ownership proposal, if any.
+    /// Reading extends the proposal's storage TTL; unknown streams simply
+    /// return `None`.
+    pub fn pending_ownership_transfer(env: Env, stream_id: u64) -> Option<PendingOwnership> {
+        stream::get_pending_ownership(&env, stream_id)
+    }
+
+    /// Resolves which role `caller` currently holds on `s`.
+    fn role_of(s: &Stream, caller: &Address) -> Result<OwnershipRole, StreamError> {
+        if caller == &s.sender {
+            Ok(OwnershipRole::Sender)
+        } else if caller == &s.recipient {
+            Ok(OwnershipRole::Recipient)
+        } else {
+            Err(surface::reject(Branch::ProposeNotAuthorized))
+        }
+    }
+
     /// Read-only view of a stream's full state.
     pub fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError> {
         stream::get_stream(&env, stream_id)
@@ -1175,7 +1437,8 @@ impl StreamingPayments {
     /// full remainder at or after `end_time`.
     pub fn available(env: Env, stream_id: u64) -> Result<i128, StreamError> {
         let s = stream::get_stream(&env, stream_id)?;
-        stream::available_amount(&env, &s)
+        let resolved = oracle::resolve_stream_time(&env, stream_id, s.use_oracle);
+        stream::available_amount_at(&s, resolved.timestamp)
     }
 
     /// A page of stream ids where `recipient` is the recipient, in creation
@@ -1545,12 +1808,22 @@ impl StreamingPayments {
     /// Changes apply only to streams created afterwards: fees are a
     /// property of the deposit boundary a stream actually crossed, never
     /// retroactively.
+    ///
+    /// Once the governance signer set is bootstrapped this path closes and the
+    /// action must arrive as an executed proposal ([`StreamError::GovernanceTimelockRequired`]).
     pub fn set_fee_bps(env: Env, caller: Address, new_fee_bps: u32) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
+        governance::require_direct_call(&env)?;
+        Self::apply_set_fee_bps(&env, new_fee_bps)
+    }
+
+    /// The effect half of [`Self::set_fee_bps`], shared with the governance
+    /// dispatcher so a timelocked proposal and a direct call cannot drift apart.
+    fn apply_set_fee_bps(env: &Env, new_fee_bps: u32) -> Result<(), StreamError> {
         if new_fee_bps > MAX_FEE_BPS {
             return Err(surface::reject(Branch::SetFeeRateTooHigh));
         }
-        treasury::set_fee_bps(&env, new_fee_bps);
+        treasury::set_fee_bps(env, new_fee_bps);
         env.storage()
             .instance()
             .extend_ttl(stream::TTL_THRESHOLD_LEDGERS, stream::TTL_EXTEND_LEDGERS);
@@ -1567,6 +1840,11 @@ impl StreamingPayments {
         new_governor: Address,
     ) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
+        governance::require_direct_call(&env)?;
+        Self::apply_nominate_governor(&env, new_governor)
+    }
+
+    fn apply_nominate_governor(env: &Env, new_governor: Address) -> Result<(), StreamError> {
         env.storage()
             .instance()
             .set(&stream::DataKey::PendingGovernor, &new_governor);
@@ -1618,10 +1896,21 @@ impl StreamingPayments {
         amount: i128,
     ) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
+        governance::require_direct_call(&env)?;
+        Self::apply_withdraw_treasury(&env, &caller, token, recipient, amount)
+    }
+
+    fn apply_withdraw_treasury(
+        env: &Env,
+        actor: &Address,
+        token: Address,
+        recipient: Address,
+        amount: i128,
+    ) -> Result<(), StreamError> {
         if amount <= 0 {
             return Err(surface::reject(Branch::WithdrawTreasuryAmountNonPositive));
         }
-        let mut t = treasury::get_treasury(&env, &token);
+        let mut t = treasury::get_treasury(env, &token);
         if amount > t.collectible()? {
             return Err(surface::reject(Branch::WithdrawTreasuryExceedsBalance));
         }
@@ -1632,23 +1921,23 @@ impl StreamingPayments {
             .withdrawn_total
             .checked_add(amount)
             .ok_or(StreamError::MathOverflow)?;
-        treasury::put_treasury(&env, &token, &t);
+        treasury::put_treasury(env, &token, &t);
 
         #[cfg(test)]
         cei_trace::record("event FeeWithdrawn");
         FeeWithdrawn {
             token: token.clone(),
-            governor: caller,
+            governor: actor.clone(),
             recipient: recipient.clone(),
             amount,
             withdrawn_total: t.withdrawn_total,
         }
-        .publish(&env);
+        .publish(env);
 
         // Interaction: a token-side failure maps to its own code and rolls
         // the recorded withdrawal and the `FeeWithdrawn` event back with it.
         push(
-            &env,
+            env,
             &token,
             &stream::muxed(&recipient),
             amount,
@@ -1709,6 +1998,112 @@ impl StreamingPayments {
         next.saturating_sub(1)
     }
 
+    // ------------------------------------------------------- sponsorship ------
+    // Thin delegators onto the `sponsor` module, which holds the budget ledger,
+    // the replay/nonce bookkeeping, and the ed25519 inner-authorization checks.
+
+    /// Registers (or reconfigures) a sponsor budget and its authorized operator
+    /// (relayer) key. See [`sponsor`].
+    #[allow(clippy::too_many_arguments)] // mirrors sponsor::register_sponsor's surface
+    pub fn register_sponsor(
+        env: Env,
+        sponsor: Address,
+        token: Address,
+        per_period_limit: i128,
+        per_beneficiary_limit: i128,
+        window_seconds: u64,
+        operator_key: soroban_sdk::BytesN<32>,
+    ) -> Result<(), StreamError> {
+        sponsor::register_sponsor(
+            env,
+            sponsor,
+            token,
+            per_period_limit,
+            per_beneficiary_limit,
+            window_seconds,
+            operator_key,
+        )
+    }
+
+    /// Pauses or resumes a sponsor's budget.
+    pub fn set_sponsor_active(env: Env, sponsor: Address, active: bool) -> Result<(), StreamError> {
+        sponsor::set_sponsor_active(env, sponsor, active)
+    }
+
+    /// Rotates a sponsor's authorized operator (relayer) key.
+    pub fn rotate_operator_key(
+        env: Env,
+        sponsor: Address,
+        new_operator_key: soroban_sdk::BytesN<32>,
+    ) -> Result<(), StreamError> {
+        sponsor::rotate_operator_key(env, sponsor, new_operator_key)
+    }
+
+    /// Binds (or rotates) a beneficiary's ed25519 consent key.
+    pub fn enroll_beneficiary(
+        env: Env,
+        beneficiary: Address,
+        public_key: soroban_sdk::BytesN<32>,
+    ) -> Result<(), StreamError> {
+        sponsor::enroll_beneficiary(env, beneficiary, public_key)
+    }
+
+    /// Relays a beneficiary's withdrawal with a sponsor absorbing the gas. See
+    /// [`sponsor`] for the inner-authorization and budget semantics.
+    #[allow(clippy::too_many_arguments)] // the full relay surface is the intended client API
+    pub fn sponsored_withdraw(
+        env: Env,
+        sponsor: Address,
+        beneficiary: Address,
+        stream_id: u64,
+        amount: i128,
+        nonce: u64,
+        deadline: u64,
+        operator_sig: soroban_sdk::BytesN<64>,
+        beneficiary_sig: soroban_sdk::BytesN<64>,
+    ) -> Result<(), StreamError> {
+        sponsor::sponsored_withdraw(
+            env,
+            sponsor,
+            beneficiary,
+            stream_id,
+            amount,
+            nonce,
+            deadline,
+            operator_sig,
+            beneficiary_sig,
+        )
+    }
+
+    /// Reads a sponsor's budget configuration, if any.
+    pub fn get_sponsor(env: Env, sponsor: Address) -> Option<sponsor::SponsorConfig> {
+        sponsor::get_config(&env, &sponsor)
+    }
+
+    /// Reads a beneficiary's enrolled consent key, if any.
+    pub fn get_beneficiary_public_key(
+        env: Env,
+        beneficiary: Address,
+    ) -> Option<soroban_sdk::BytesN<32>> {
+        sponsor::get_beneficiary_key(&env, &beneficiary)
+    }
+
+    /// The sponsor's current-window spend.
+    pub fn sponsor_period_spend(env: Env, sponsor: Address) -> sponsor::PeriodSpend {
+        sponsor::get_period(&env, &sponsor::SponsorKey::SponsorPeriod(sponsor))
+    }
+
+    /// A beneficiary's spend within a sponsor's current window.
+    pub fn beneficiary_spend(
+        env: Env,
+        sponsor: Address,
+        beneficiary: Address,
+    ) -> sponsor::PeriodSpend {
+        sponsor::get_period(
+            &env,
+            &sponsor::SponsorKey::BeneficiarySpend(sponsor, beneficiary),
+        )
+    }
     // ------------------------------------------------------------- policy --
     //
     // The optional asset allowlist and governance layer: restricts which assets
@@ -1790,8 +2185,9 @@ impl StreamingPayments {
     /// Sets governance policy floors and ceilings for streams of `token`, or global default if `token` is None.
     /// Governor-only.
     ///
-    /// Governance timelock hook: this setter gates via `treasury::require_governor` and will route
-    /// through the timelocked proposal queue once governance timelocks are enabled across all operations.
+    /// Gated by the governance timelock once the signer set is bootstrapped: the
+    /// action then arrives as `GovernanceAction::SetStreamPolicy` on an executed
+    /// proposal (see `governance.rs`).
     pub fn set_stream_policy(
         env: Env,
         caller: Address,
@@ -1800,6 +2196,7 @@ impl StreamingPayments {
     ) -> Result<(), StreamError> {
         Self::require_not_frozen(&env)?;
         treasury::require_governor(&env, &caller)?;
+        governance::require_direct_call(&env)?;
         policy::set_stream_policy(&env, token, policy)
     }
 
@@ -1825,15 +2222,27 @@ impl StreamingPayments {
     /// When frozen, mutating stream entrypoints (create, withdraw, withdraw_max,
     /// cancel, top_up) revert with [`StreamError::ContractFrozen`], but read views
     /// remain accessible.
+    ///
+    /// Freezing stays immediate even after governance is bootstrapped: a
+    /// timelock that delays the break-glass is worse than no break-glass.
+    /// *Unfreezing* reopens the contract to activity, so it requires an executed
+    /// proposal.
     pub fn set_frozen(env: Env, caller: Address, frozen: bool) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
-        stream::set_frozen(&env, frozen);
+        if !frozen {
+            governance::require_direct_call(&env)?;
+        }
+        Self::apply_set_frozen(&env, &caller, frozen)
+    }
+
+    fn apply_set_frozen(env: &Env, actor: &Address, frozen: bool) -> Result<(), StreamError> {
+        stream::set_frozen(env, frozen);
 
         ContractFrozenStateChanged {
             frozen,
-            changed_by: caller,
+            changed_by: actor.clone(),
         }
-        .publish(&env);
+        .publish(env);
 
         Ok(())
     }
@@ -1849,6 +2258,16 @@ impl StreamingPayments {
         delay_seconds: u64,
     ) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
+        governance::require_direct_call(&env)?;
+        Self::apply_propose_upgrade(&env, &caller, new_wasm_hash, delay_seconds)
+    }
+
+    fn apply_propose_upgrade(
+        env: &Env,
+        actor: &Address,
+        new_wasm_hash: BytesN<32>,
+        delay_seconds: u64,
+    ) -> Result<(), StreamError> {
         if delay_seconds < stream::MIN_UPGRADE_DELAY_SECONDS {
             return Err(surface::reject(Branch::UpgradeDelayTooShort));
         }
@@ -1861,14 +2280,14 @@ impl StreamingPayments {
             new_wasm_hash: new_wasm_hash.clone(),
             unlock_time,
         };
-        stream::set_pending_upgrade(&env, &pending);
+        stream::set_pending_upgrade(env, &pending);
 
         UpgradeProposed {
             new_wasm_hash,
             unlock_time,
-            proposer: caller,
+            proposer: actor.clone(),
         }
-        .publish(&env);
+        .publish(env);
 
         Ok(())
     }
@@ -1876,6 +2295,10 @@ impl StreamingPayments {
     /// Cancels a pending upgrade proposal. Governor-only.
     ///
     /// Reverts with [`StreamError::NoPendingUpgrade`] if no proposal is pending.
+    ///
+    /// Like freezing, this is a risk-reducing action and so stays immediate: a
+    /// maliciously proposed upgrade must be cancellable the second it is seen,
+    /// not two days later.
     pub fn cancel_upgrade(env: Env, caller: Address) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
         let pending = stream::pending_upgrade(&env)
@@ -1897,7 +2320,12 @@ impl StreamingPayments {
     /// and clears the pending upgrade.
     pub fn execute_upgrade(env: Env, caller: Address) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
-        let pending = stream::pending_upgrade(&env)
+        governance::require_direct_call(&env)?;
+        Self::apply_execute_upgrade(&env, &caller)
+    }
+
+    fn apply_execute_upgrade(env: &Env, actor: &Address) -> Result<(), StreamError> {
+        let pending = stream::pending_upgrade(env)
             .ok_or_else(|| surface::reject(Branch::ExecuteUpgradeNoPending))?;
         let now = env.ledger().timestamp();
         if now < pending.unlock_time {
@@ -1908,13 +2336,13 @@ impl StreamingPayments {
             .update_current_contract(soroban_sdk::ContractExecutable::Wasm(
                 pending.new_wasm_hash.clone(),
             ));
-        stream::remove_pending_upgrade(&env);
+        stream::remove_pending_upgrade(env);
 
         ContractUpgraded {
             new_wasm_hash: pending.new_wasm_hash,
-            executed_by: caller,
+            executed_by: actor.clone(),
         }
-        .publish(&env);
+        .publish(env);
 
         Ok(())
     }
@@ -1938,6 +2366,14 @@ impl StreamingPayments {
         count: u32,
     ) -> Result<MigrationStatus, StreamError> {
         treasury::require_governor(&env, &caller)?;
+        governance::require_direct_call(&env)?;
+        Self::migrate_batch(env, start_id, count)
+    }
+
+    /// The migration itself, shared by the direct entry point and the governance
+    /// dispatcher. Frozen-ness is a precondition of the *action*, not of the
+    /// caller, so it lives here rather than in the wrapper.
+    fn migrate_batch(env: Env, start_id: u64, count: u32) -> Result<MigrationStatus, StreamError> {
         if !stream::is_frozen(&env) {
             return Err(surface::reject(Branch::MigrationNotFrozen));
         }
@@ -2028,5 +2464,209 @@ impl StreamingPayments {
             total_streams: total,
             is_complete,
         }
+    }
+
+    // ----------------------------------------------------------- oracle ----
+
+    /// Configures the oracle publisher set, threshold, and staleness bound.
+    /// Authorized by the treasury governor.
+    pub fn set_oracle_config(
+        env: Env,
+        caller: Address,
+        publishers: Vec<Address>,
+        threshold: u32,
+        max_stale_seconds: u64,
+    ) -> Result<(), StreamError> {
+        Self::require_not_frozen(&env)?;
+        treasury::require_governor(&env, &caller)?;
+        governance::require_direct_call(&env)?;
+        Self::apply_set_oracle_config(&env, publishers, threshold, max_stale_seconds)
+    }
+
+    fn apply_set_oracle_config(
+        env: &Env,
+        publishers: Vec<Address>,
+        threshold: u32,
+        max_stale_seconds: u64,
+    ) -> Result<(), StreamError> {
+        oracle::set_oracle_config(env, publishers, threshold, max_stale_seconds)
+    }
+
+    /// Records an authorized external time feed report.
+    pub fn submit_oracle_time(
+        env: Env,
+        publisher: Address,
+        timestamp: u64,
+    ) -> Result<(), StreamError> {
+        Self::require_not_frozen(&env)?;
+        oracle::submit_oracle_time(&env, publisher, timestamp)
+    }
+
+    /// Resolves reference timestamp for a given stream id and oracle flag.
+    pub fn resolve_time(env: Env, stream_id: u64, use_oracle: bool) -> ResolvedTime {
+        oracle::resolve_stream_time(&env, stream_id, use_oracle)
+    }
+
+    /// Reads current oracle configuration.
+    pub fn oracle_config(env: Env) -> Option<OracleConfig> {
+        oracle::get_oracle_config(&env)
+    }
+
+    /// Reads latest report from a publisher.
+    pub fn oracle_report(env: Env, publisher: Address) -> Option<OracleReport> {
+        oracle::get_oracle_report(&env, publisher)
+    }
+
+    // -------------------------------------------------------- governance ---
+    //
+    // Issue #119: the two-key timelock that admin actions route through. The
+    // design and the security argument live in `governance.rs`; these are the
+    // surface.
+
+    /// Establishes the governance signer set and its veto window. Governor-only,
+    /// and one-time: after bootstrap the set can only change by executing a
+    /// `GovernanceAction::SetSigners` proposal, so no key can ever re-establish
+    /// governance over an existing one.
+    ///
+    /// Until this is called every admin entry point behaves exactly as it did
+    /// before the timelock existed, which makes adoption an explicit, auditable
+    /// act rather than a side effect of a wasm upgrade.
+    ///
+    /// Reverts with [`StreamError::GovernanceDuplicateSigner`] when the set lists
+    /// the same address twice and [`StreamError::GovernanceSignersNotDistinct`]
+    /// when it holds fewer than two distinct keys — the invariant is two
+    /// *independent* signatures, not two slots.
+    pub fn governance_bootstrap(
+        env: Env,
+        caller: Address,
+        signers: Vec<Address>,
+        veto_window: u64,
+    ) -> Result<(), StreamError> {
+        treasury::require_governor(&env, &caller)?;
+        governance::bootstrap(&env, &caller, &signers, veto_window)
+    }
+
+    /// Proposes an admin action for the timelock. Signer-only; returns the
+    /// proposal id.
+    pub fn governance_propose(
+        env: Env,
+        caller: Address,
+        action: GovernanceAction,
+    ) -> Result<u64, StreamError> {
+        governance::propose(&env, &caller, &action)
+    }
+
+    /// Adds the caller's signature to a proposal. Reverts with
+    /// [`StreamError::GovernanceDuplicateSignature`] if they already signed.
+    pub fn governance_sign(
+        env: Env,
+        caller: Address,
+        proposal_id: u64,
+    ) -> Result<u32, StreamError> {
+        governance::sign(&env, &caller, proposal_id)
+    }
+
+    /// Vetoes a proposal while its window is open. One signer is enough: vetoing
+    /// removes risk, so it should never be the action that requires a quorum.
+    pub fn governance_veto(env: Env, caller: Address, proposal_id: u64) -> Result<(), StreamError> {
+        governance::veto(&env, &caller, proposal_id)
+    }
+
+    /// Applies a matured, multiply-signed proposal.
+    ///
+    /// Permissionless on purpose: a proposal that only a particular keyholder
+    /// can submit is one that keyholder can suppress. `executor` is recorded in
+    /// the audit trail but authorizes nothing — the authority is the two
+    /// signatures on the proposal.
+    pub fn governance_execute(
+        env: Env,
+        executor: Address,
+        proposal_id: u64,
+    ) -> Result<(), StreamError> {
+        let record = governance::ready(&env, proposal_id)?;
+        // Effects before the action: the proposal is consumed first, so a
+        // dispatch that fails partway rolls the flag back with it and a
+        // successful one can never run twice.
+        governance::mark_executed(&env, &record);
+        // The proposer is always a signer, so they are the honest attribution
+        // for the legacy events the action emits (`FeeWithdrawn.governor`,
+        // `UpgradeProposed.proposer`, …). The full set of authorizing keys is on
+        // the `GovernanceActionExecuted` event.
+        let actor = record.proposed_by.clone();
+        Self::apply_governance_action(&env, &actor, &record.action)?;
+        governance::record_execution(&env, &record, &executor);
+        Ok(())
+    }
+
+    /// Dispatches an executed proposal's action through the same helper the
+    /// direct entry point uses, so the two paths cannot drift apart and the
+    /// legacy audit trail is preserved unchanged.
+    fn apply_governance_action(
+        env: &Env,
+        actor: &Address,
+        action: &GovernanceAction,
+    ) -> Result<(), StreamError> {
+        match action {
+            GovernanceAction::SetFeeBps(new_fee_bps) => Self::apply_set_fee_bps(env, *new_fee_bps),
+            GovernanceAction::SetStreamPolicy(token, new_policy) => {
+                policy::set_stream_policy(env, token.clone(), new_policy.clone())
+            }
+            GovernanceAction::SetFrozen(frozen) => Self::apply_set_frozen(env, actor, *frozen),
+            GovernanceAction::WithdrawTreasury(token, recipient, amount) => {
+                Self::apply_withdraw_treasury(env, actor, token.clone(), recipient.clone(), *amount)
+            }
+            GovernanceAction::NominateGovernor(next) => {
+                Self::apply_nominate_governor(env, next.clone())
+            }
+            GovernanceAction::ProposeUpgrade(new_wasm_hash, delay_seconds) => {
+                Self::apply_propose_upgrade(env, actor, new_wasm_hash.clone(), *delay_seconds)
+            }
+            GovernanceAction::ExecuteUpgrade => Self::apply_execute_upgrade(env, actor),
+            GovernanceAction::MigrateStorage(start_id, count) => {
+                Self::migrate_batch(env.clone(), *start_id, *count).map(|_| ())
+            }
+            GovernanceAction::SetOracleConfig(publishers, threshold, max_stale_seconds) => {
+                Self::apply_set_oracle_config(
+                    env,
+                    publishers.clone(),
+                    *threshold,
+                    *max_stale_seconds,
+                )
+            }
+            GovernanceAction::SetSigners(candidate) => {
+                governance::apply_signer_set(env, candidate, actor)
+            }
+            GovernanceAction::SetVetoWindow(window) => {
+                governance::apply_veto_window(env, *window, actor)
+            }
+        }
+    }
+
+    /// Whether the timelock has taken over the admin entry points.
+    pub fn governance_is_initialized(env: Env) -> bool {
+        governance::is_initialized(&env)
+    }
+
+    /// The current signer set.
+    pub fn governance_signers(env: Env) -> Vec<Address> {
+        governance::signers(&env)
+    }
+
+    /// The configured veto window in seconds.
+    pub fn governance_veto_window(env: Env) -> u64 {
+        governance::veto_window(&env)
+    }
+
+    /// Reads a proposal: its window, recorded signatures and terminal flags.
+    pub fn governance_proposal(env: Env, proposal_id: u64) -> Option<Proposal> {
+        governance::proposal(&env, proposal_id)
+    }
+
+    /// The next proposal id, for clients that want to follow the queue.
+    pub fn governance_proposal_count(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&governance::GovernanceDataKey::ProposalCount)
+            .unwrap_or(0)
     }
 }

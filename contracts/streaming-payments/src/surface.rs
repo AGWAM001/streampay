@@ -8,7 +8,7 @@
 //!
 //! * the generated test matrix (`error_surface_test.rs`) can prove that every
 //!   *reachable* branch fires its declared code, and
-//! * `docs/ERRORS.md` is generated from the same table (see
+//! * `docs/ERROR_SURFACE.md` is generated from the same table (see
 //!   `examples/error_surface_doc.rs`) and diffed in CI.
 //!
 //! Because the table is data, a hand-maintained list of "which test covers
@@ -93,6 +93,26 @@ pub enum Branch {
     /// `withdraw_treasury`: amount exceeds fees collected minus fees already
     /// withdrawn.
     WithdrawTreasuryExceedsBalance,
+    // ------------------------------------------------------- sponsor registry
+    /// `register_sponsor`: a budget cap (period or per-beneficiary) is <= 0.
+    RegisterLimitNonPositive,
+    // ---------------------------------------------------- sponsored_withdraw
+    SponsoredWithdrawAmountNonPositive,
+    SponsoredWithdrawAmountExceedsAvailable,
+    /// No sponsor budget is registered under the caller-supplied address.
+    SponsorNotFound,
+    /// The sponsor's registered budget is paused.
+    SponsorInactive,
+    /// The beneficiary never enrolled an ed25519 consent key.
+    BeneficiaryNotEnrolled,
+    /// The relayed claim was submitted after its signed `deadline`.
+    ClaimExpired,
+    /// The claim's nonce was already spent for this (sponsor, beneficiary).
+    ClaimNonceReplay,
+    /// The claim would push the sponsor's current-period spend over its cap.
+    SponsorBudgetPeriodExceeded,
+    /// The claim would push this beneficiary's window spend over its cap.
+    SponsorBudgetBeneficiaryExceeded,
     // --------------------------------------------------- scheduled intents
     /// No stored intent exists for the supplied id.
     IntentNotFound,
@@ -163,13 +183,70 @@ pub enum Branch {
     PolicyDurationBelowFloor,
     PolicyDurationAboveCeiling,
     PolicyDepositBelowFloor,
+    // ------------------------------------------------------------- oracle
+    InvalidOracleThreshold,
+    OraclePublishersNotConfigured,
+    OracleReportTooOld,
+    NotOraclePublisher,
+    // ---------------------------------------------- ownership transfer
+    /// `propose_ownership_transfer`: the caller is neither the sender nor the
+    /// recipient.
+    ProposeNotAuthorized,
+    /// `propose_ownership_transfer`: the target already holds that role.
+    ProposeInvalidTarget,
+    /// `propose_ownership_transfer`: an unexpired proposal already exists.
+    ProposeAlreadyPending,
+    /// `accept_ownership_transfer`: the caller is not the named target.
+    AcceptNotTarget,
+    /// `accept_ownership_transfer`: the proposal's acceptance window elapsed.
+    OwnershipProposalExpired,
+    /// `accept_ownership_transfer` / `cancel_ownership_transfer`: no proposal
+    /// is stored for the stream.
+    NoPendingOwnership,
+    /// `cancel_ownership_transfer`: the caller did not create the proposal.
+    CancelProposalNotProposer,
+    // ------------------------------------------------------------ governance
+    // Issue #119: admin actions behind the two-key timelock. Named after the
+    // rule that refuses the call, because the rule *is* the security property.
+    /// A governance entrypoint called before the signer set was bootstrapped.
+    GovernanceNotInitialized,
+    /// `governance_bootstrap` on a contract that already has a signer set.
+    GovernanceAlreadyInitialized,
+    /// The caller is not in the signer set.
+    NotGovernanceSigner,
+    /// A proposed signer set lists the same address twice — one key in two slots.
+    GovernanceDuplicateSigner,
+    /// A proposed signer set is empty.
+    GovernanceSignerSetEmpty,
+    /// A proposed signer set exceeds MAX_SIGNERS.
+    GovernanceTooManySigners,
+    /// A proposed signer set cannot supply two distinct signatures.
+    GovernanceSignersNotDistinct,
+    /// No proposal is stored under the supplied id.
+    GovernanceProposalNotFound,
+    /// `governance_execute`: the veto window is still open.
+    GovernanceVetoWindowOpen,
+    /// `governance_veto`: the veto window has closed.
+    GovernanceVetoWindowClosed,
+    /// A configured veto window below MIN_VETO_WINDOW_SECONDS.
+    GovernanceVetoWindowTooShort,
+    /// The proposal was vetoed and is dead.
+    GovernanceAlreadyVetoed,
+    /// The proposal has already been executed.
+    GovernanceAlreadyExecuted,
+    /// `governance_sign`: this address already signed the proposal.
+    GovernanceDuplicateSignature,
+    /// `governance_execute`: not enough distinct, still-current signatures.
+    GovernanceSignaturesInsufficient,
+    /// A migrated admin entry point called directly after bootstrap.
+    GovernanceTimelockRequired,
 }
 
 impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 62] = [
+    pub const ALL: [Branch; 99] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -200,6 +277,16 @@ impl Branch {
         Branch::AcceptGovernorNotNominee,
         Branch::WithdrawTreasuryAmountNonPositive,
         Branch::WithdrawTreasuryExceedsBalance,
+        Branch::RegisterLimitNonPositive,
+        Branch::SponsoredWithdrawAmountNonPositive,
+        Branch::SponsoredWithdrawAmountExceedsAvailable,
+        Branch::SponsorNotFound,
+        Branch::SponsorInactive,
+        Branch::BeneficiaryNotEnrolled,
+        Branch::ClaimExpired,
+        Branch::ClaimNonceReplay,
+        Branch::SponsorBudgetPeriodExceeded,
+        Branch::SponsorBudgetBeneficiaryExceeded,
         Branch::IntentNotFound,
         Branch::IntentNotPending,
         Branch::IntentNotYetExecutable,
@@ -232,6 +319,33 @@ impl Branch {
         Branch::PolicyDurationBelowFloor,
         Branch::PolicyDurationAboveCeiling,
         Branch::PolicyDepositBelowFloor,
+        Branch::InvalidOracleThreshold,
+        Branch::OraclePublishersNotConfigured,
+        Branch::OracleReportTooOld,
+        Branch::NotOraclePublisher,
+        Branch::ProposeNotAuthorized,
+        Branch::ProposeInvalidTarget,
+        Branch::ProposeAlreadyPending,
+        Branch::AcceptNotTarget,
+        Branch::OwnershipProposalExpired,
+        Branch::NoPendingOwnership,
+        Branch::CancelProposalNotProposer,
+        Branch::GovernanceNotInitialized,
+        Branch::GovernanceAlreadyInitialized,
+        Branch::NotGovernanceSigner,
+        Branch::GovernanceDuplicateSigner,
+        Branch::GovernanceSignerSetEmpty,
+        Branch::GovernanceTooManySigners,
+        Branch::GovernanceSignersNotDistinct,
+        Branch::GovernanceProposalNotFound,
+        Branch::GovernanceVetoWindowOpen,
+        Branch::GovernanceVetoWindowClosed,
+        Branch::GovernanceVetoWindowTooShort,
+        Branch::GovernanceAlreadyVetoed,
+        Branch::GovernanceAlreadyExecuted,
+        Branch::GovernanceDuplicateSignature,
+        Branch::GovernanceSignaturesInsufficient,
+        Branch::GovernanceTimelockRequired,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -269,6 +383,9 @@ impl Branch {
                 "expire_dispute",
                 "resolve_dispute",
                 "required_dispute_bond",
+                "sponsored_withdraw",
+                "propose_ownership_transfer",
+                "accept_ownership_transfer",
             ],
             Branch::StreamNotActive => &[
                 "withdraw",
@@ -276,18 +393,21 @@ impl Branch {
                 "cancel_stream",
                 "top_up",
                 "raise_dispute",
+                "sponsored_withdraw",
+                "propose_ownership_transfer",
+                "accept_ownership_transfer",
             ],
-            Branch::CapacityOverflow => &["create_stream", "create_streams", "top_up"],
+            Branch::CapacityOverflow => &["create_stream", "top_up"],
             Branch::RateProductOverflow => &[
                 "streamed_at",
                 "available",
                 "withdraw",
                 "withdraw_max",
                 "cancel_stream",
+                "sponsored_withdraw",
             ],
             Branch::AvailableBalanceOverflow => &["available", "withdraw", "withdraw_max"],
             Branch::CancelSplitOverflow => &["cancel_stream"],
-            Branch::PayoutOverflow => &["withdraw", "withdraw_max"],
             Branch::SetFeeRateTooHigh => &["set_fee_bps"],
             Branch::GovernorNotAllowed => &[
                 "set_fee_bps",
@@ -299,6 +419,7 @@ impl Branch {
                 "execute_upgrade",
                 "migrate_storage",
                 "set_stream_policy",
+                "governance_bootstrap",
             ],
             Branch::AcceptGovernorNoPending | Branch::AcceptGovernorNotNominee => {
                 &["accept_governor"]
@@ -306,6 +427,18 @@ impl Branch {
             Branch::WithdrawTreasuryAmountNonPositive | Branch::WithdrawTreasuryExceedsBalance => {
                 &["withdraw_treasury"]
             }
+            Branch::PayoutOverflow => &["withdraw", "withdraw_max", "sponsored_withdraw"],
+            // ----------------------------------------------------- sponsor module
+            Branch::RegisterLimitNonPositive => &["register_sponsor"],
+            Branch::SponsoredWithdrawAmountNonPositive
+            | Branch::SponsoredWithdrawAmountExceedsAvailable
+            | Branch::SponsorNotFound
+            | Branch::SponsorInactive
+            | Branch::BeneficiaryNotEnrolled
+            | Branch::ClaimExpired
+            | Branch::ClaimNonceReplay
+            | Branch::SponsorBudgetPeriodExceeded
+            | Branch::SponsorBudgetBeneficiaryExceeded => &["sponsored_withdraw"],
             Branch::IntentNotFound => &[
                 "get_intent",
                 "execute_scheduled",
@@ -346,6 +479,9 @@ impl Branch {
                 "withdraw_max",
                 "cancel_stream",
                 "top_up",
+                "propose_ownership_transfer",
+                "accept_ownership_transfer",
+                "cancel_ownership_transfer",
             ],
             Branch::MigrationNotFrozen | Branch::AlreadyMigrated => &["migrate_storage"],
             Branch::ExecuteUpgradeNoPending | Branch::TimelockNotExpired => &["execute_upgrade"],
@@ -357,6 +493,65 @@ impl Branch {
             Branch::PolicyDurationBelowFloor | Branch::PolicyDurationAboveCeiling => {
                 &["create_stream", "create_streams"]
             }
+            Branch::InvalidOracleThreshold => &["set_oracle_config"],
+            Branch::OraclePublishersNotConfigured
+            | Branch::OracleReportTooOld
+            | Branch::NotOraclePublisher => &["submit_oracle_time"],
+            Branch::ProposeNotAuthorized
+            | Branch::ProposeInvalidTarget
+            | Branch::ProposeAlreadyPending => &["propose_ownership_transfer"],
+            Branch::AcceptNotTarget | Branch::OwnershipProposalExpired => {
+                &["accept_ownership_transfer"]
+            }
+            Branch::NoPendingOwnership => {
+                &["accept_ownership_transfer", "cancel_ownership_transfer"]
+            }
+            Branch::CancelProposalNotProposer => &["cancel_ownership_transfer"],
+            // ------------------------------------------------------------ governance
+            Branch::GovernanceNotInitialized => &[
+                "governance_propose",
+                "governance_sign",
+                "governance_veto",
+                "governance_execute",
+            ],
+            Branch::GovernanceAlreadyInitialized => &["governance_bootstrap"],
+            Branch::NotGovernanceSigner => {
+                &["governance_propose", "governance_sign", "governance_veto"]
+            }
+            Branch::GovernanceDuplicateSigner
+            | Branch::GovernanceSignerSetEmpty
+            | Branch::GovernanceTooManySigners
+            | Branch::GovernanceSignersNotDistinct => &[
+                "governance_bootstrap",
+                "governance_propose",
+                "governance_execute",
+            ],
+            Branch::GovernanceVetoWindowTooShort => &["governance_bootstrap", "governance_propose"],
+            Branch::GovernanceProposalNotFound => {
+                &["governance_sign", "governance_veto", "governance_execute"]
+            }
+            Branch::GovernanceVetoWindowOpen | Branch::GovernanceSignaturesInsufficient => {
+                &["governance_execute"]
+            }
+            Branch::GovernanceVetoWindowClosed => &["governance_veto"],
+            Branch::GovernanceAlreadyVetoed => {
+                &["governance_sign", "governance_veto", "governance_execute"]
+            }
+            Branch::GovernanceAlreadyExecuted => {
+                &["governance_sign", "governance_veto", "governance_execute"]
+            }
+            Branch::GovernanceDuplicateSignature => &["governance_sign"],
+            Branch::GovernanceTimelockRequired => &[
+                "set_fee_bps",
+                "nominate_governor",
+                "withdraw_treasury",
+                "set_stream_policy",
+                "set_frozen",
+                "propose_upgrade",
+                "execute_upgrade",
+                "migrate_storage",
+                "set_oracle_config",
+            ],
         }
     }
 
@@ -396,6 +591,16 @@ impl Branch {
             Branch::AcceptGovernorNoPending => StreamError::NoPendingGovernor,
             Branch::WithdrawTreasuryAmountNonPositive => StreamError::ZeroAmount,
             Branch::WithdrawTreasuryExceedsBalance => StreamError::InsufficientTreasuryBalance,
+            Branch::RegisterLimitNonPositive => StreamError::ZeroAmount,
+            Branch::SponsoredWithdrawAmountNonPositive => StreamError::ZeroAmount,
+            Branch::SponsoredWithdrawAmountExceedsAvailable => StreamError::AmountExceedsAvailable,
+            Branch::SponsorNotFound => StreamError::SponsorNotFound,
+            Branch::SponsorInactive => StreamError::SponsorInactive,
+            Branch::BeneficiaryNotEnrolled => StreamError::BeneficiaryNotEnrolled,
+            Branch::ClaimExpired => StreamError::ClaimExpired,
+            Branch::ClaimNonceReplay => StreamError::ClaimNonceReplay,
+            Branch::SponsorBudgetPeriodExceeded => StreamError::SponsorBudgetExceeded,
+            Branch::SponsorBudgetBeneficiaryExceeded => StreamError::BeneficiaryBudgetExceeded,
             Branch::IntentNotFound => StreamError::IntentNotFound,
             Branch::IntentNotPending => StreamError::IntentNotPending,
             Branch::IntentNotYetExecutable => StreamError::IntentNotYetExecutable,
@@ -429,10 +634,39 @@ impl Branch {
             Branch::PolicyDurationBelowFloor => StreamError::PolicyDurationBelowFloor,
             Branch::PolicyDurationAboveCeiling => StreamError::PolicyDurationAboveCeiling,
             Branch::PolicyDepositBelowFloor => StreamError::PolicyDepositBelowFloor,
+            Branch::InvalidOracleThreshold => StreamError::InvalidOracleThreshold,
+            Branch::OraclePublishersNotConfigured => StreamError::OraclePublishersNotConfigured,
+            Branch::OracleReportTooOld => StreamError::OracleReportTooOld,
+            Branch::NotOraclePublisher => StreamError::NotOraclePublisher,
+            Branch::ProposeNotAuthorized
+            | Branch::AcceptNotTarget
+            | Branch::CancelProposalNotProposer => StreamError::NotAuthorized,
+            Branch::ProposeInvalidTarget => StreamError::InvalidTransferTarget,
+            Branch::ProposeAlreadyPending => StreamError::OwnershipProposalPending,
+            Branch::OwnershipProposalExpired => StreamError::OwnershipProposalExpired,
+            Branch::NoPendingOwnership => StreamError::NoPendingOwnership,
+            Branch::GovernanceNotInitialized => StreamError::GovernanceNotInitialized,
+            Branch::GovernanceAlreadyInitialized => StreamError::GovernanceAlreadyInitialized,
+            Branch::NotGovernanceSigner => StreamError::NotGovernanceSigner,
+            Branch::GovernanceDuplicateSigner => StreamError::GovernanceDuplicateSigner,
+            Branch::GovernanceSignerSetEmpty => StreamError::GovernanceSignerSetEmpty,
+            Branch::GovernanceTooManySigners => StreamError::GovernanceTooManySigners,
+            Branch::GovernanceSignersNotDistinct => StreamError::GovernanceSignersNotDistinct,
+            Branch::GovernanceProposalNotFound => StreamError::GovernanceProposalNotFound,
+            Branch::GovernanceVetoWindowOpen => StreamError::GovernanceVetoWindowOpen,
+            Branch::GovernanceVetoWindowClosed => StreamError::GovernanceVetoWindowClosed,
+            Branch::GovernanceVetoWindowTooShort => StreamError::GovernanceVetoWindowTooShort,
+            Branch::GovernanceAlreadyVetoed => StreamError::GovernanceAlreadyVetoed,
+            Branch::GovernanceAlreadyExecuted => StreamError::GovernanceAlreadyExecuted,
+            Branch::GovernanceDuplicateSignature => StreamError::GovernanceDuplicateSignature,
+            Branch::GovernanceSignaturesInsufficient => {
+                StreamError::GovernanceSignaturesInsufficient
+            }
+            Branch::GovernanceTimelockRequired => StreamError::GovernanceTimelockRequired,
         }
     }
 
-    /// Human-readable condition, used to generate `docs/ERRORS.md`.
+    /// Human-readable condition, used to generate `docs/ERROR_SURFACE.md`.
     pub const fn condition(self) -> &'static str {
         match self {
             Branch::CreateDepositNonPositive => "deposit_amount is zero or negative",
@@ -482,6 +716,28 @@ impl Branch {
             }
             Branch::WithdrawTreasuryExceedsBalance => {
                 "amount exceeds fees collected minus fees already withdrawn"
+            }
+            Branch::RegisterLimitNonPositive => {
+                "a sponsor budget cap (per-period or per-beneficiary) is zero or negative"
+            }
+            Branch::SponsoredWithdrawAmountNonPositive => {
+                "a sponsored claim requests a zero or negative payout"
+            }
+            Branch::SponsoredWithdrawAmountExceedsAvailable => {
+                "a sponsored claim exceeds the stream's accrued-but-unwithdrawn balance"
+            }
+            Branch::SponsorNotFound => "no sponsor budget is registered for the address",
+            Branch::SponsorInactive => "the sponsor's budget is paused (inactive)",
+            Branch::BeneficiaryNotEnrolled => {
+                "the beneficiary has not enrolled an ed25519 consent key"
+            }
+            Branch::ClaimExpired => "the relayed claim was submitted after its deadline",
+            Branch::ClaimNonceReplay => "the claim's nonce was already spent for this pair",
+            Branch::SponsorBudgetPeriodExceeded => {
+                "the claim would exceed the sponsor's per-period budget cap"
+            }
+            Branch::SponsorBudgetBeneficiaryExceeded => {
+                "the claim would exceed the per-beneficiary budget cap"
             }
             Branch::IntentNotFound => "no scheduled intent is stored under the id",
             Branch::IntentNotPending => "the intent is already executed, cancelled, or expired",
@@ -540,6 +796,63 @@ impl Branch {
             }
             Branch::PolicyDepositBelowFloor => {
                 "stream deposit is below the governance policy floor"
+            }
+            Branch::InvalidOracleThreshold => {
+                "oracle threshold is invalid (e.g. zero or exceeds publisher count)"
+            }
+            Branch::OraclePublishersNotConfigured => "oracle publishers are not configured",
+            Branch::OracleReportTooOld => "oracle report timestamp is too far in the past or future",
+            Branch::NotOraclePublisher => "the caller is not an authorized oracle publisher",
+            Branch::ProposeNotAuthorized => {
+                "the caller is neither the current sender nor the current recipient"
+            }
+            Branch::ProposeInvalidTarget => "the proposed target already holds that role",
+            Branch::ProposeAlreadyPending => {
+                "an unexpired ownership proposal already exists for the stream"
+            }
+            Branch::AcceptNotTarget => "the caller is not the proposal's named new owner",
+            Branch::OwnershipProposalExpired => {
+                "the proposal's acceptance window has elapsed"
+            }
+            Branch::NoPendingOwnership => "no ownership proposal is stored for the stream",
+            Branch::CancelProposalNotProposer => {
+                "the caller did not create the pending ownership proposal"
+            }
+            Branch::GovernanceNotInitialized => {
+                "the governance signer set has not been bootstrapped"
+            }
+            Branch::GovernanceAlreadyInitialized => {
+                "governance_bootstrap was called but a signer set already exists"
+            }
+            Branch::NotGovernanceSigner => "the caller is not a member of the signer set",
+            Branch::GovernanceDuplicateSigner => {
+                "the signer set lists the same address twice (one key in two slots)"
+            }
+            Branch::GovernanceSignerSetEmpty => "the signer set is empty",
+            Branch::GovernanceTooManySigners => "the signer set exceeds MAX_SIGNERS",
+            Branch::GovernanceSignersNotDistinct => {
+                "the signer set holds fewer than two distinct keys"
+            }
+            Branch::GovernanceProposalNotFound => "no proposal is stored under the id",
+            Branch::GovernanceVetoWindowOpen => {
+                "execution was attempted before the veto window closed"
+            }
+            Branch::GovernanceVetoWindowClosed => {
+                "a veto was attempted after the veto window closed"
+            }
+            Branch::GovernanceVetoWindowTooShort => {
+                "the veto window is shorter than MIN_VETO_WINDOW_SECONDS"
+            }
+            Branch::GovernanceAlreadyVetoed => "the proposal was vetoed and is dead",
+            Branch::GovernanceAlreadyExecuted => "the proposal has already been executed",
+            Branch::GovernanceDuplicateSignature => {
+                "this address already signed the proposal; execution needs two distinct keys"
+            }
+            Branch::GovernanceSignaturesInsufficient => {
+                "fewer than the required distinct, still-current signatures are recorded"
+            }
+            Branch::GovernanceTimelockRequired => {
+                "the action requires an executed governance proposal now that governance is bootstrapped"
             }
         }
     }
