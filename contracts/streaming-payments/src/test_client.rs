@@ -11,8 +11,9 @@
 use soroban_sdk::{contractclient, Address, BytesN, Env, Vec};
 
 use crate::{
-    BatchEntry, FeeScan, MigrationStatus, PendingOwnership, PendingUpgrade, PeriodSpend,
-    ScheduledIntent, SponsorConfig, Stream, StreamError, StreamInput, StreamPolicy, TreasuryStatus,
+    BatchEntry, FeeScan, MigrationStatus, PendingOwnership, PendingRateChange, PendingUpgrade,
+    PeriodSpend, RateSegment, ScheduledIntent, SponsorConfig, Stream, StreamError, StreamInput,
+    StreamPolicy, TreasuryStatus,
 };
 
 /// Interface of the StreamPay streaming-payments contract.
@@ -73,6 +74,16 @@ pub trait StreamingPaymentsApi {
         stream_id: u64,
     ) -> Result<(), StreamError>;
     fn pending_ownership_transfer(env: Env, stream_id: u64) -> Option<PendingOwnership>;
+    fn propose_rate_change(
+        env: Env,
+        caller: Address,
+        stream_id: u64,
+        amount_per_second: i128,
+    ) -> Result<(), StreamError>;
+    fn accept_rate_change(env: Env, caller: Address, stream_id: u64) -> Result<(), StreamError>;
+    fn cancel_rate_change(env: Env, caller: Address, stream_id: u64) -> Result<(), StreamError>;
+    fn pending_rate_change(env: Env, stream_id: u64) -> Option<PendingRateChange>;
+    fn rate_segments(env: Env, stream_id: u64) -> Vec<RateSegment>;
     fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError>;
     fn available(env: Env, stream_id: u64) -> Result<i128, StreamError>;
     fn recipient_streams(env: Env, recipient: Address, offset: u32, limit: u32) -> Vec<u64>;

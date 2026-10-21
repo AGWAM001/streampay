@@ -416,3 +416,54 @@ pub struct OwnershipAccepted {
     pub new_owner: Address,
     pub role: OwnershipRole,
 }
+
+/// Emitted when the sender or recipient proposes a new streaming rate. The
+/// change takes effect only when the counterparty accepts, and only from the
+/// moment of acceptance: nothing accrues differently before it, and the
+/// `RateChangeAccepted` event that follows carries the settled amounts.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RateChangeProposed {
+    #[topic]
+    pub stream_id: u64,
+    /// The proposing party (the stream's sender or recipient).
+    pub proposed_by: Address,
+    /// The party whose acceptance the change requires.
+    pub counterparty: Address,
+    pub amount_per_second: i128,
+    /// Ledger timestamp at or after which the proposal is stale.
+    pub expires_at: u64,
+}
+
+/// Emitted when a pending rate change is accepted and its rebalancing settles.
+///
+/// The four amounts are the whole funds-bug audit trail for one change, and
+/// they are exact by construction: `reserved_at_new_rate` is an integer product
+/// (`new_amount_per_second * window length`) and `deposit` is
+/// `owed_at_change + reserved_at_new_rate`. `adjustment` is the signed
+/// difference against the deposit before the change — positive means the sender
+/// topped up that amount, negative means the sender was refunded its absolute
+/// value, zero means the old reserve still covered the new rate exactly.
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RateChangeAccepted {
+    #[topic]
+    pub stream_id: u64,
+    /// The accepting counterparty (the address that authorized the change).
+    pub accepted_by: Address,
+    /// Rate in effect from `effective_from` (inclusive) to the stream's
+    /// `end_time`; the rate the proposal committed to.
+    pub new_amount_per_second: i128,
+    /// First timestamp accrued at the new rate.
+    pub effective_from: u64,
+    /// Accrued at `effective_from` under the previous schedule. The change
+    /// cannot alter this amount — that is the property the segment split keeps.
+    pub owed_at_change: i128,
+    /// Reserved for `[effective_from, end_time)` at the new rate.
+    pub reserved_at_new_rate: i128,
+    /// Funds moved to settle the change (see the struct docs).
+    pub adjustment: i128,
+    /// Stream deposit after the adjustment; equals
+    /// `owed_at_change + reserved_at_new_rate`.
+    pub deposit: i128,
+}

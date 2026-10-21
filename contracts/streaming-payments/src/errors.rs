@@ -186,6 +186,17 @@ pub enum StreamError {
     /// An unexpired ownership proposal already exists for this stream; cancel
     /// or accept it before proposing another.
     OwnershipProposalPending = 63,
+    /// No rate-change proposal is stored for this stream.
+    NoPendingRateChange = 64,
+    /// The pending rate-change proposal's acceptance window has elapsed; the
+    /// rate must be proposed again by a stream party.
+    RateProposalExpired = 65,
+    /// An unexpired rate-change proposal already exists for this stream; cancel
+    /// or accept it before proposing another.
+    RateProposalPending = 66,
+    /// The stream already carries the maximum number of rate segments
+    /// (`MAX_RATE_SEGMENTS`); cancel it or open a new stream instead.
+    TooManyRateSegments = 67,
 }
 
 impl StreamError {
@@ -256,6 +267,10 @@ impl StreamError {
         StreamError::OwnershipProposalExpired,
         StreamError::InvalidTransferTarget,
         StreamError::OwnershipProposalPending,
+        StreamError::NoPendingRateChange,
+        StreamError::RateProposalExpired,
+        StreamError::RateProposalPending,
+        StreamError::TooManyRateSegments,
     ];
 
     /// The stable numeric value carried across the contract boundary
