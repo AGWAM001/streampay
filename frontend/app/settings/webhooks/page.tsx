@@ -69,17 +69,6 @@ export default function WebhooksSettingsPage() {
   // New secret modal / banner
   const [revealedSecret, setRevealedSecret] = useState<{ id: string; secret: string } | null>(null);
 
-  const loadData = useCallback(() => {
-    const type = activeTab;
-    fetch(`/api/webhooks?type=${type}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data) return;
-        if (type === "endpoints") setEndpoints(data);
-        else if (type === "deliveries") setDeliveries(data);
-        else setDlqItems(data);
-      })
-      .catch((e: unknown) => toast.error(`Failed to load webhook data: ${String(e)}`));
   const loadData = useCallback(async () => {
     try {
       if (activeTab === "endpoints") {
