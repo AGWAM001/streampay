@@ -19,7 +19,10 @@ jobs:
     env:
       # Single source of truth for the Wasm size budget (KB, issue #35).
       # Raise deliberately in a PR with justification if the contract grows.
-      WASM_SIZE_BUDGET_KB: 120
+      # 120 -> 130: the recipient dispute flow (#55) adds 6 entrypoints, 3 events and
+      # one persistent storage key. Measured with the pinned stellar-cli 28.1.0:
+      # main = 118,295 B, contract with disputes = 127,307 B (no new dependencies).
+      WASM_SIZE_BUDGET_KB: 130
     steps:
       - uses: actions/checkout@v7
 
