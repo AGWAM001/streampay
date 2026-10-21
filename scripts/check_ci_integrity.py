@@ -247,6 +247,24 @@ def check_workflows(root, ref=None):
                 if not isinstance(steps, list):
                     problems.append(("steps", rel, 0, f"job {job_id}: steps is not a list"))
                     continue
+                # GitHub resolves a local `uses: ./path` against the runner
+                # workspace, and a `with: path:` checkout moves the repository
+                # into a subdirectory of it. #131 checks the repo out twice
+                # (`head-repo`, `base-repo`) and calls `./head-repo/.github/
+                # actions/wasm-diff`, and that step passes in CI, so the
+                # destinations have to be stripped before the path is judged
+                # unresolvable. Measured behaviour, not a guess: reporting it
+                # would fail a workflow that works.
+                checkout_dirs = []
+                for step in steps:
+                    if not isinstance(step, dict) or not str(step.get("uses", "")).startswith("actions/checkout"):
+                        continue
+                    with_block = step.get("with")
+                    dest = ""
+                    if isinstance(with_block, dict):
+                        dest = str(with_block.get("path") or "").strip().strip("/")
+                    if dest and dest != ".":
+                        checkout_dirs.append(dest)
                 for index, step in enumerate(steps, 1):
                     where = f"job {job_id} step {index}"
                     if not isinstance(step, dict):
@@ -271,16 +289,28 @@ def check_workflows(root, ref=None):
                         ref_text = str(step["uses"])
                         if ref_text.startswith("./"):
                             # A local action needs no ref, but the path has to
-                            # resolve from the repo root or the job dies at
+                            # resolve to an action file or the job dies at
                             # "Unable to resolve action" with nothing to show.
                             target = ref_text[2:].rstrip("/")
-                            options = (f"{target}/action.yml", f"{target}/action.yaml", f"{target}.yml")
-                            if not any(read_work_tree(root, rel) is not None for rel in options):
+                            candidates = [target]
+                            for dest in checkout_dirs:
+                                if target == dest:
+                                    candidates.append("")
+                                elif target.startswith(dest + "/"):
+                                    candidates.append(target[len(dest) + 1:])
+                            options = []
+                            for cand in candidates:
+                                if cand:
+                                    options += [f"{cand}/action.yml", f"{cand}/action.yaml", f"{cand}.yml"]
+                                else:
+                                    options += ["action.yml", "action.yaml"]
+                            if not any(read_work_tree(root, opt) is not None for opt in options):
                                 problems.append((
                                     "steps", rel, 0,
                                     f"{where} ({label}): uses: '{ref_text}' does not resolve - none of "
-                                    f"{', '.join(options)} exists at the repo root. A local action path is "
-                                    "relative to the repository root, not to the workflow file.",
+                                    f"{', '.join(sorted(set(options)))} exists in the repository (a local "
+                                    "action path is relative to the repository root, or to the directory "
+                                    "a `with: path:` checkout placed it in).",
                                 ))
                         elif "@" not in ref_text:
                             problems.append(("steps", rel, 0,
@@ -480,6 +510,17 @@ VALID_WORKFLOW = (
     "      - name: say it\n        run: echo ok\n",
 )
 
+# The #131 shape: the repository is checked out into a subdirectory and the
+# job's own action is addressed through it. That workflow runs green, so the
+# checker has to accept it.
+VALID_SUBDIR_WORKFLOW = (
+    "clean-subdir.yml",
+    "name: ok2\n'on': push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n"
+    "      - name: checkout into head-repo\n        uses: actions/checkout@v7\n"
+    "        with:\n          path: head-repo\n"
+    "      - name: local through the checkout dir\n        uses: ./head-repo/.github/actions/exists\n",
+)
+
 FIXTURES = {
     # A flush-left JS template literal inside `run: |` ends the block scalar,
     # exactly the shape that made #182's mutation.yml unparseable.
@@ -504,7 +545,13 @@ FIXTURES = {
         "      - name: bare\n        with:\n          foo: bar\n"
         "      - name: branch\n        uses: some/action@main\n"
         "      - name: lost\n        uses: ./does-not-exist\n"
-        "  b:\n    runs-on: ubuntu-latest\n    needs: nonexistent\n    steps:\n      - run: echo x\n",
+        "  b:\n    runs-on: ubuntu-latest\n    needs: nonexistent\n    steps:\n      - run: echo x\n"
+        # Prefix stripping must not make the detector blind: the checkout dir is
+        # real, the action inside it is not.
+        "  c:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - name: checkout into head-repo\n        uses: actions/checkout@v7\n"
+        "        with:\n          path: head-repo\n"
+        "      - name: lost under the checkout dir\n        uses: ./head-repo/.github/actions/nope\n",
     ),
     "triggers": (
         "notriggers.yml",
@@ -538,6 +585,7 @@ def self_test():
                 handle.write(body)
 
         write(VALID_WORKFLOW[0], VALID_WORKFLOW[1])
+        write(VALID_SUBDIR_WORKFLOW[0], VALID_SUBDIR_WORKFLOW[1])
         for name, body in FIXTURES.values():
             write(name, body)
         # The valid fixture references a local action, so it has to resolve.
@@ -556,10 +604,13 @@ def self_test():
         messages = " || ".join(message for _, _, _, message in problems)
         if "does not resolve" not in messages:
             failures.append("steps detector did not report a local action path that does not resolve")
+        if "head-repo/.github/actions/nope" not in messages:
+            failures.append("steps detector stopped reporting a local action that is missing under a "
+                            "`with: path:` checkout directory")
         # A detector that fires on everything would keep CI permanently red, so
         # a valid workflow has to come back clean.
         for kind, rel, _, message in problems:
-            if rel.endswith(VALID_WORKFLOW[0]):
+            if rel.endswith(VALID_WORKFLOW[0]) or rel.endswith(VALID_SUBDIR_WORKFLOW[0]):
                 failures.append(f"false positive on the valid fixture {rel}: [{kind}] {message}")
 
         # gates: a step present at the base and absent here must be reported, a
