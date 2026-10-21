@@ -857,7 +857,7 @@ fn stream_error_variant_list_is_exhaustive() {
             | StreamError::DisputeActive
             | StreamError::DisputeNotFound
             | StreamError::DisputeNotExpired => StreamError::ALL.contains(&e),
-            | StreamError::IntentNotFound
+            StreamError::IntentNotFound
             | StreamError::IntentNotPending
             | StreamError::IntentNotYetExecutable
             | StreamError::IntentExpired

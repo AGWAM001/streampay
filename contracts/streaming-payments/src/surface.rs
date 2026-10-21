@@ -169,12 +169,7 @@ impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 30] = [
-    pub const ALL: [Branch; 37] = [
-    pub const ALL: [Branch; 42] = [
-    pub const ALL: [Branch; 49] = [
-    pub const ALL: [Branch; 54] = [
-    pub const ALL: [Branch; 56] = [
+    pub const ALL: [Branch; 62] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -282,8 +277,6 @@ impl Branch {
                 "top_up",
                 "raise_dispute",
             ],
-            Branch::CapacityOverflow => &["create_stream", "top_up"],
-            Branch::StreamNotActive => &["withdraw", "withdraw_max", "cancel_stream", "top_up"],
             Branch::CapacityOverflow => &["create_stream", "create_streams", "top_up"],
             Branch::RateProductOverflow => &[
                 "streamed_at",

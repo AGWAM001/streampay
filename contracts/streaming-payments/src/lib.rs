@@ -99,20 +99,12 @@ pub use dispute::{
 };
 pub use errors::StreamError;
 pub use events::{
-    DisputeExpired, DisputeRaised, DisputeResolved, FeeCharged, FeeWithdrawn, StreamCancelled,
-    StreamCreated, StreamToppedUp, Withdrawn,
-    FeeCharged, FeeWithdrawn, ScheduledIntentCancelled, ScheduledIntentExpired,
-    ScheduledStreamExecuted, StreamCancelled, StreamCreated, StreamScheduled, StreamToppedUp,
-    StreamsCreated, Withdrawn,
+    ContractFrozenStateChanged, ContractUpgraded, DisputeExpired, DisputeRaised, DisputeResolved,
     FeeCharged, FeeWithdrawn, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
     PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized, ScheduledIntentCancelled,
-    ScheduledIntentExpired, ScheduledStreamExecuted, StreamCancelled, StreamCreated,
-    StreamScheduled, StreamToppedUp, StreamsCreated, Withdrawn,
-    ContractFrozenStateChanged, ContractUpgraded, FeeCharged, FeeWithdrawn, PolicyAssetExecuted,
-    PolicyAssetQueued, PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed,
-    PolicyInitialized, ScheduledIntentCancelled, ScheduledIntentExpired, ScheduledStreamExecuted,
-    StorageMigrated, StreamCancelled, StreamCreated, StreamPolicySet, StreamScheduled,
-    StreamToppedUp, StreamsCreated, UpgradeCancelled, UpgradeProposed, Withdrawn,
+    ScheduledIntentExpired, ScheduledStreamExecuted, StorageMigrated, StreamCancelled,
+    StreamCreated, StreamPolicySet, StreamScheduled, StreamToppedUp, StreamsCreated,
+    UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
 pub use policy::{validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};

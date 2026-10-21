@@ -35,11 +35,8 @@ use soroban_sdk::{
 use crate::stream::streamed_at;
 use crate::test_client::StreamingPaymentsClient as Client;
 use crate::{
-    bond_shares, required_bond, StreamError, StreamStatus, StreamingPayments, MAX_DURATION_SECONDS,
-};
-use crate::{StreamError, StreamInput, StreamStatus, StreamingPayments, MAX_DURATION_SECONDS};
-    StreamError, StreamInput, StreamStatus, StreamingPayments, INITIAL_SCHEMA_VERSION,
-    MAX_DURATION_SECONDS, MIN_UPGRADE_DELAY_SECONDS, TARGET_SCHEMA_VERSION,
+    bond_shares, required_bond, StreamError, StreamInput, StreamStatus, StreamingPayments,
+    INITIAL_SCHEMA_VERSION, MAX_DURATION_SECONDS, MIN_UPGRADE_DELAY_SECONDS, TARGET_SCHEMA_VERSION,
 };
 
 // ---------------------------------------------------------------- fixtures --
@@ -3437,6 +3434,40 @@ fn dispute_raise_requires_recipient_authorization() {
 fn dispute_raise_rejections() {
     let f = Fixture::setup();
 
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_raise_dispute(&999)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::StreamNotFound);
+
+    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+    let d = f.raise_dispute(id);
+    assert_eq!(d.bond, BOND);
+
+    // One open dispute at a time.
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_raise_dispute(&id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::DisputeActive);
+
+    // Terminal streams cannot be disputed.
+    let ended = f.create_stream(DEPOSIT, DAY, 10 * DAY, true);
+    f.advance_time(20 * DAY);
+    f.client.mock_all_auths().withdraw(&ended, &DEPOSIT);
+    let err = f
+        .client
+        .mock_all_auths()
+        .try_raise_dispute(&ended)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, StreamError::StreamNotActive);
+}
+
 /// Property: every state-mutating entrypoint (`create_stream`, `create_streams`,
 /// `withdraw`, `withdraw_max`, `top_up`, `cancel_stream`, `withdraw_treasury`)
 /// strictly preserves value conservation:
@@ -4254,35 +4285,19 @@ fn create_stream_without_balance_reports_deposit_transfer_failed() {
     let err = f
         .client
         .mock_all_auths()
-        .try_raise_dispute(&999)
+        .try_create_stream(
+            &broke,
+            &f.recipient,
+            &f.token,
+            &DEPOSIT,
+            &(now + DAY),
+            &(now + 11 * DAY),
+            &false,
+        )
         .unwrap_err()
         .unwrap();
-    assert_eq!(err, StreamError::StreamNotFound);
-
-    let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
-    let d = f.raise_dispute(id);
-    assert_eq!(d.bond, BOND);
-
-    // One open dispute at a time.
-    let err = f
-        .client
-        .mock_all_auths()
-        .try_raise_dispute(&id)
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, StreamError::DisputeActive);
-
-    // Terminal streams cannot be disputed.
-    let ended = f.create_stream(DEPOSIT, DAY, 10 * DAY, true);
-    f.advance_time(20 * DAY);
-    f.client.mock_all_auths().withdraw(&ended, &DEPOSIT);
-    let err = f
-        .client
-        .mock_all_auths()
-        .try_raise_dispute(&ended)
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, StreamError::StreamNotActive);
+    assert_eq!(err, StreamError::DepositTransferFailed);
+    assert!(f.client.mock_all_auths().try_get_stream(&1).is_err());
 }
 
 #[test]
@@ -4748,19 +4763,6 @@ fn property_contract_balance_equals_locks_plus_outstanding_bonds() {
             "lock invariant broken at step {step}"
         );
     }
-        .try_create_stream(
-            &broke,
-            &f.recipient,
-            &f.token,
-            &DEPOSIT,
-            &(now + DAY),
-            &(now + 11 * DAY),
-            &false,
-        )
-        .unwrap_err()
-        .unwrap();
-    assert_eq!(err, StreamError::DepositTransferFailed);
-    assert!(f.client.mock_all_auths().try_get_stream(&1).is_err());
 }
 
 /// A top-up the sender's balance cannot cover fails with its own code and
