@@ -226,7 +226,16 @@ interface: they are only ever appended to, never renumbered or reused.
   measured at 0 B or negative. The CI budget is therefore raised deliberately
   to the smallest whole KB the current interface fits (63 KB, 369 B of
   headroom), with `docs/WASM_SIZE.md` recording why and naming the next
-  entrypoint addition as the trigger to revisit the contract split.
+  entrypoint addition as the trigger to revisit the contract split. Merging
+  the governance timelock then took the build to 84,682 B, because its new
+  interface items arrived with plain `///` docs again; re-applying Technique 1
+  with the new `scripts/gate_interface_docs.py` probe (55 doc groups, and four
+  entrypoints whose doc blocks the merge had duplicated) recovers 6,416 B and
+  lands the binary at **78,266 B**, 14,123 B of which is governance's code,
+  spec entries, event symbols and exports. The scan now runs as a CI step
+  ("Interface doc strings stay out of the Wasm spec") so the rule cannot regress
+  again, and the budget moves 63 → **77 KB** (582 B of headroom) under the same
+  rule.
 - **Deployment interface:** the contract now has a constructor. Deploy with
   the governor address as a constructor argument
   (`stellar contract deploy … -- --governor G…`); `scripts/deploy_testnet.sh`

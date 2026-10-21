@@ -447,45 +447,114 @@ pub enum StreamError {
         doc = " or accept it before proposing another."
     )]
     OwnershipProposalPending = 63,
-    /// A governance entrypoint was called before the signer set was bootstrapped.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A governance entrypoint was called before the signer set was bootstrapped."
+    )]
     GovernanceNotInitialized = 64,
-    /// `governance_bootstrap` was called, but the signer set already exists.
-    /// Bootstrap is one-time; later sets arrive as an executed `SetSigners`
-    /// proposal, so no key can re-establish governance over an existing one.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `governance_bootstrap` was called, but the signer set already exists."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Bootstrap is one-time; later sets arrive as an executed `SetSigners`"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " proposal, so no key can re-establish governance over an existing one."
+    )]
     GovernanceAlreadyInitialized = 65,
-    /// The caller is not a member of the governance signer set.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The caller is not a member of the governance signer set."
+    )]
     NotGovernanceSigner = 66,
-    /// The proposed signer set lists the same address twice. Refused rather than
-    /// deduplicated: two slots held by one key are one key.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The proposed signer set lists the same address twice. Refused rather than"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " deduplicated: two slots held by one key are one key."
+    )]
     GovernanceDuplicateSigner = 67,
-    /// The proposed signer set is empty.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The proposed signer set is empty."
+    )]
     GovernanceSignerSetEmpty = 68,
-    /// The proposed signer set exceeds `MAX_SIGNERS`.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The proposed signer set exceeds `MAX_SIGNERS`."
+    )]
     GovernanceTooManySigners = 69,
-    /// The proposed signer set does not hold two distinct keys, so it could never
-    /// satisfy the two-signature rule.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The proposed signer set does not hold two distinct keys, so it could never"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " satisfy the two-signature rule.")]
     GovernanceSignersNotDistinct = 70,
-    /// No proposal is stored under the supplied id.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " No proposal is stored under the supplied id."
+    )]
     GovernanceProposalNotFound = 71,
-    /// Execution was attempted while the veto window is still open.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Execution was attempted while the veto window is still open."
+    )]
     GovernanceVetoWindowOpen = 72,
-    /// A veto was attempted after the window closed; the proposal is matured and
-    /// executable (execute-on-timeout), so the way to stop it now is to rotate
-    /// the keys it would act through, not to veto it.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A veto was attempted after the window closed; the proposal is matured and"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " executable (execute-on-timeout), so the way to stop it now is to rotate"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the keys it would act through, not to veto it."
+    )]
     GovernanceVetoWindowClosed = 73,
-    /// The requested veto window is shorter than `MIN_VETO_WINDOW_SECONDS`.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The requested veto window is shorter than `MIN_VETO_WINDOW_SECONDS`."
+    )]
     GovernanceVetoWindowTooShort = 74,
-    /// The proposal was vetoed and is therefore dead.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The proposal was vetoed and is therefore dead."
+    )]
     GovernanceAlreadyVetoed = 75,
-    /// The proposal has already been executed.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The proposal has already been executed."
+    )]
     GovernanceAlreadyExecuted = 76,
-    /// This address has already signed the proposal. Execution needs two
-    /// *distinct* signatures, so a second one from the same key is refused.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " This address has already signed the proposal. Execution needs two"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " *distinct* signatures, so a second one from the same key is refused."
+    )]
     GovernanceDuplicateSignature = 77,
-    /// Fewer than the required distinct, still-current signatures are recorded.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Fewer than the required distinct, still-current signatures are recorded."
+    )]
     GovernanceSignaturesInsufficient = 78,
-    /// The action requires an executed governance proposal now that the signer
-    /// set is bootstrapped; the direct entry point is closed.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The action requires an executed governance proposal now that the signer"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " set is bootstrapped; the direct entry point is closed."
+    )]
     GovernanceTimelockRequired = 79,
 }
 

@@ -674,9 +674,18 @@ pub struct OwnershipAccepted {
 // fired from, so an indexer built before the timelock keeps reading the same
 // trail and simply gains the proposal id alongside it.
 
-/// Emitted when the signer set is established or rotated, and when the veto
-/// window changes. The set is emitted in full because "which keys govern this
-/// contract" is only auditable from the transcript, not from a delta.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when the signer set is established or rotated, and when the veto"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " window changes. The set is emitted in full because \"which keys govern this"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " contract\" is only auditable from the transcript, not from a delta."
+)]
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GovernanceSignersSet {
@@ -686,9 +695,15 @@ pub struct GovernanceSignersSet {
     pub veto_window: u64,
 }
 
-/// Emitted when a signer proposes an admin action. `executable_at` is the end of
-/// the veto window: from that timestamp the proposal is executable by anyone and
-/// is never voided by time.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when a signer proposes an admin action. `executable_at` is the end of"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " the veto window: from that timestamp the proposal is executable by anyone and"
+)]
+#[cfg_attr(not(target_family = "wasm"), doc = " is never voided by time.")]
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GovernanceActionProposed {
@@ -699,9 +714,18 @@ pub struct GovernanceActionProposed {
     pub action: crate::governance::GovernanceAction,
 }
 
-/// Emitted for each distinct signature. A second signature from an address that
-/// already signed is refused before this event can fire, so `signature_count`
-/// here is always a count of distinct keys.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted for each distinct signature. A second signature from an address that"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " already signed is refused before this event can fire, so `signature_count`"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " here is always a count of distinct keys."
+)]
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GovernanceActionSigned {
@@ -711,7 +735,10 @@ pub struct GovernanceActionSigned {
     pub signature_count: u32,
 }
 
-/// Emitted when a signer vetoes a proposal inside its veto window.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when a signer vetoes a proposal inside its veto window."
+)]
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GovernanceActionVetoed {
@@ -720,9 +747,18 @@ pub struct GovernanceActionVetoed {
     pub vetoed_by: Address,
 }
 
-/// Emitted when a matured, multiply-signed proposal is applied. `executed_by` is
-/// whoever submitted the transaction — execution is permissionless — while
-/// `signers` names the keys that actually authorized it.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when a matured, multiply-signed proposal is applied. `executed_by` is"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " whoever submitted the transaction — execution is permissionless — while"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " `signers` names the keys that actually authorized it."
+)]
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GovernanceActionExecuted {

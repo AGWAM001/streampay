@@ -2218,17 +2218,15 @@ impl StreamingPayments {
         doc = " property of the deposit boundary a stream actually crossed, never"
     )]
     #[cfg_attr(not(target_family = "wasm"), doc = " retroactively.")]
-    /// Sets the protocol fee rate (basis points on each new stream's
-    /// deposit, charged once at creation). Governor-only. Reverts with
-    /// [`StreamError::FeeRateTooHigh`] above [`MAX_FEE_BPS`] (the protocol
-    /// cap) and with [`StreamError::NotGovernor`] for any other caller.
-    ///
-    /// Changes apply only to streams created afterwards: fees are a
-    /// property of the deposit boundary a stream actually crossed, never
-    /// retroactively.
-    ///
-    /// Once the governance signer set is bootstrapped this path closes and the
-    /// action must arrive as an executed proposal ([`StreamError::GovernanceTimelockRequired`]).
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Once the governance signer set is bootstrapped this path closes and the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " action must arrive as an executed proposal ([`StreamError::GovernanceTimelockRequired`])."
+    )]
     pub fn set_fee_bps(env: Env, caller: Address, new_fee_bps: u32) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
         governance::require_direct_call(&env)?;
@@ -2788,18 +2786,13 @@ impl StreamingPayments {
     #[cfg_attr(not(target_family = "wasm"), doc = "")]
     #[cfg_attr(
         not(target_family = "wasm"),
-        doc = " Governance timelock hook: this setter gates via `treasury::require_governor` and will route"
+        doc = " Gated by the governance timelock once the signer set is bootstrapped: the"
     )]
     #[cfg_attr(
         not(target_family = "wasm"),
-        doc = " through the timelocked proposal queue once governance timelocks are enabled across all operations."
+        doc = " action then arrives as `GovernanceAction::SetStreamPolicy` on an executed"
     )]
-    /// Sets governance policy floors and ceilings for streams of `token`, or global default if `token` is None.
-    /// Governor-only.
-    ///
-    /// Gated by the governance timelock once the signer set is bootstrapped: the
-    /// action then arrives as `GovernanceAction::SetStreamPolicy` on an executed
-    /// proposal (see `governance.rs`).
+    #[cfg_attr(not(target_family = "wasm"), doc = " proposal (see `governance.rs`).")]
     pub fn set_stream_policy(
         env: Env,
         caller: Address,
@@ -2852,16 +2845,20 @@ impl StreamingPayments {
         doc = " cancel, top_up) revert with [`StreamError::ContractFrozen`], but read views"
     )]
     #[cfg_attr(not(target_family = "wasm"), doc = " remain accessible.")]
-    /// Sets the freeze state of the contract. Governor-only.
-    ///
-    /// When frozen, mutating stream entrypoints (create, withdraw, withdraw_max,
-    /// cancel, top_up) revert with [`StreamError::ContractFrozen`], but read views
-    /// remain accessible.
-    ///
-    /// Freezing stays immediate even after governance is bootstrapped: a
-    /// timelock that delays the break-glass is worse than no break-glass.
-    /// *Unfreezing* reopens the contract to activity, so it requires an executed
-    /// proposal.
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Freezing stays immediate even after governance is bootstrapped: a"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " timelock that delays the break-glass is worse than no break-glass."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " *Unfreezing* reopens the contract to activity, so it requires an executed"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " proposal.")]
     pub fn set_frozen(env: Env, caller: Address, frozen: bool) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
         if !frozen {
@@ -2945,13 +2942,16 @@ impl StreamingPayments {
         not(target_family = "wasm"),
         doc = " Reverts with [`StreamError::NoPendingUpgrade`] if no proposal is pending."
     )]
-    /// Cancels a pending upgrade proposal. Governor-only.
-    ///
-    /// Reverts with [`StreamError::NoPendingUpgrade`] if no proposal is pending.
-    ///
-    /// Like freezing, this is a risk-reducing action and so stays immediate: a
-    /// maliciously proposed upgrade must be cancellable the second it is seen,
-    /// not two days later.
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Like freezing, this is a risk-reducing action and so stays immediate: a"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " maliciously proposed upgrade must be cancellable the second it is seen,"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " not two days later.")]
     pub fn cancel_upgrade(env: Env, caller: Address) -> Result<(), StreamError> {
         treasury::require_governor(&env, &caller)?;
         let pending = stream::pending_upgrade(&env)
@@ -3224,19 +3224,49 @@ impl StreamingPayments {
     // design and the security argument live in `governance.rs`; these are the
     // surface.
 
-    /// Establishes the governance signer set and its veto window. Governor-only,
-    /// and one-time: after bootstrap the set can only change by executing a
-    /// `GovernanceAction::SetSigners` proposal, so no key can ever re-establish
-    /// governance over an existing one.
-    ///
-    /// Until this is called every admin entry point behaves exactly as it did
-    /// before the timelock existed, which makes adoption an explicit, auditable
-    /// act rather than a side effect of a wasm upgrade.
-    ///
-    /// Reverts with [`StreamError::GovernanceDuplicateSigner`] when the set lists
-    /// the same address twice and [`StreamError::GovernanceSignersNotDistinct`]
-    /// when it holds fewer than two distinct keys — the invariant is two
-    /// *independent* signatures, not two slots.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Establishes the governance signer set and its veto window. Governor-only,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " and one-time: after bootstrap the set can only change by executing a"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `GovernanceAction::SetSigners` proposal, so no key can ever re-establish"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " governance over an existing one.")]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Until this is called every admin entry point behaves exactly as it did"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " before the timelock existed, which makes adoption an explicit, auditable"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " act rather than a side effect of a wasm upgrade."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Reverts with [`StreamError::GovernanceDuplicateSigner`] when the set lists"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the same address twice and [`StreamError::GovernanceSignersNotDistinct`]"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " when it holds fewer than two distinct keys — the invariant is two"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " *independent* signatures, not two slots."
+    )]
     pub fn governance_bootstrap(
         env: Env,
         caller: Address,
@@ -3247,8 +3277,11 @@ impl StreamingPayments {
         governance::bootstrap(&env, &caller, &signers, veto_window)
     }
 
-    /// Proposes an admin action for the timelock. Signer-only; returns the
-    /// proposal id.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Proposes an admin action for the timelock. Signer-only; returns the"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " proposal id.")]
     pub fn governance_propose(
         env: Env,
         caller: Address,
@@ -3257,8 +3290,14 @@ impl StreamingPayments {
         governance::propose(&env, &caller, &action)
     }
 
-    /// Adds the caller's signature to a proposal. Reverts with
-    /// [`StreamError::GovernanceDuplicateSignature`] if they already signed.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Adds the caller's signature to a proposal. Reverts with"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " [`StreamError::GovernanceDuplicateSignature`] if they already signed."
+    )]
     pub fn governance_sign(
         env: Env,
         caller: Address,
@@ -3267,18 +3306,36 @@ impl StreamingPayments {
         governance::sign(&env, &caller, proposal_id)
     }
 
-    /// Vetoes a proposal while its window is open. One signer is enough: vetoing
-    /// removes risk, so it should never be the action that requires a quorum.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Vetoes a proposal while its window is open. One signer is enough: vetoing"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " removes risk, so it should never be the action that requires a quorum."
+    )]
     pub fn governance_veto(env: Env, caller: Address, proposal_id: u64) -> Result<(), StreamError> {
         governance::veto(&env, &caller, proposal_id)
     }
 
-    /// Applies a matured, multiply-signed proposal.
-    ///
-    /// Permissionless on purpose: a proposal that only a particular keyholder
-    /// can submit is one that keyholder can suppress. `executor` is recorded in
-    /// the audit trail but authorizes nothing — the authority is the two
-    /// signatures on the proposal.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Applies a matured, multiply-signed proposal."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Permissionless on purpose: a proposal that only a particular keyholder"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " can submit is one that keyholder can suppress. `executor` is recorded in"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the audit trail but authorizes nothing — the authority is the two"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " signatures on the proposal.")]
     pub fn governance_execute(
         env: Env,
         executor: Address,
@@ -3343,27 +3400,39 @@ impl StreamingPayments {
         }
     }
 
-    /// Whether the timelock has taken over the admin entry points.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Whether the timelock has taken over the admin entry points."
+    )]
     pub fn governance_is_initialized(env: Env) -> bool {
         governance::is_initialized(&env)
     }
 
-    /// The current signer set.
+    #[cfg_attr(not(target_family = "wasm"), doc = " The current signer set.")]
     pub fn governance_signers(env: Env) -> Vec<Address> {
         governance::signers(&env)
     }
 
-    /// The configured veto window in seconds.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The configured veto window in seconds."
+    )]
     pub fn governance_veto_window(env: Env) -> u64 {
         governance::veto_window(&env)
     }
 
-    /// Reads a proposal: its window, recorded signatures and terminal flags.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Reads a proposal: its window, recorded signatures and terminal flags."
+    )]
     pub fn governance_proposal(env: Env, proposal_id: u64) -> Option<Proposal> {
         governance::proposal(&env, proposal_id)
     }
 
-    /// The next proposal id, for clients that want to follow the queue.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The next proposal id, for clients that want to follow the queue."
+    )]
     pub fn governance_proposal_count(env: Env) -> u64 {
         env.storage()
             .instance()

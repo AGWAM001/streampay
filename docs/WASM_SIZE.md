@@ -10,6 +10,9 @@ met the bar on the branch's own tree; merging `main` added 3,757 B of new
 interface on top, and the follow-up probes in
 [Size gate status](#size-gate-status-64143-b-is-the-measured-floor-of-this-interface)
 measure that the remaining 4,144 B exists only inside the public interface.
+Merging the governance timelock afterwards added a second, larger tranche —
+see [Second re-baseline](#second-re-baseline-merging-the-governance-timelock-64143-b--78266-b-gate-77-kb)
+— and the size gate now sits at **77 KB**.
 
 All numbers below are built with the pinned release toolchain
 (`stellar-cli 28.1.0`, `rustc 1.99.1`, `wasm32v1-none`, `stellar contract build`
@@ -31,9 +34,12 @@ node scripts/wasm-report.mjs ../../target/wasm32v1-none/release/streampay_contra
 Final size: **60,386 bytes (59.0 KiB)** — under the 60 KB target, and 33.6 %
 smaller than the baseline this work started from (59.7 % of it). Measured
 against the 120 KB budget the size gate was set at (issue #35), the binary is
-now **under half that budget**; the budget was lowered to 60 KB here so any
-regression fails CI, and it is at **63 KB** on the merged tree for the reasons
-in [Size gate status](#size-gate-status-64143-b-is-the-measured-floor-of-this-interface).
+now **under two thirds of that budget**; the budget was lowered to 60 KB here
+so any regression fails CI, and it now sits at **77 KB** on the merged tree for
+the reasons in
+[Size gate status](#size-gate-status-64143-b-is-the-measured-floor-of-this-interface)
+and
+[Second re-baseline](#second-re-baseline-merging-the-governance-timelock-64143-b--78266-b-gate-77-kb).
 
 > **These two rows were measured on the tree before `main` was merged in.**
 > After the merge the contract is 64,143 B — see
@@ -207,6 +213,77 @@ entrypoint addition** — that is what will trip the 63 KB gate.
 | Leave the gate at 60 KB and ship a red "Wasm size budget check" step | Makes the breach visible but blocks review/merge of an otherwise green PR, and the number it reports is upstream's growth, not a regression of this work — superseded by the justified bump above. |
 | Move `withdraw_treasury` / `verify_treasury` / `treasury_status` / `set_stream_policy` / policy* admin entrypoints to a second contract | ~−2.5 KB `code` plus their spec entries, but breaks the single-contract storage/upgrade model (admin state shares instance storage with streams) — same rejection as before. |
 | Trim remaining spec (68 entrypoints, 18 KB) | Only by dropping the spec section, already rejected below. |
+
+## Second re-baseline: merging the governance timelock (64,143 B → 78,266 B, gate 77 KB)
+
+`main` has since merged the governance timelock (`GovernanceAction` /
+`Proposal` / `GovernanceDataKey`, 5 `#[contractevent]` structs, error codes
+64–79, and the `governance_bootstrap` … `governance_execute` entrypoints).
+The first CI build on top of that merge measured **84,682 B** — 20,170 B over
+the 63 KB gate — because the new interface items arrived with plain `///` doc
+comments, i.e. exactly the bytes Technique 1 exists to remove, and the
+re-scan invariant ("0 interface items carrying ungated `///` docs") had
+silently gone false when the branch was cut.
+
+The fix is Technique 1 re-applied, now as a checked, re-runnable probe instead
+of a one-off edit: `scripts/gate_interface_docs.py` walks the crate's sources,
+identifies interface items by their attributes (and `pub fn` inside
+`#[contractimpl]`), and converts their doc lines to the
+`#[cfg_attr(not(target_family = "wasm"), doc = "…")]` form. It is idempotent,
+skips test-only modules, and reports what it would gate:
+
+```bash
+python scripts/gate_interface_docs.py contracts/streaming-payments/src/*.rs          # dry run → 0 groups
+python scripts/gate_interface_docs.py contracts/streaming-payments/src/*.rs --apply  # re-gates a fresh merge
+```
+
+The same command with `--check` is now a CI step in the contract job ("Interface
+doc strings stay out of the Wasm spec"), so the invariant that broke here cannot
+silently break again.
+
+This pass gated **55 doc groups** (16 in `errors.rs`, 20 in `governance.rs`,
+14 in `lib.rs`, 5 in `events.rs`) and recovered **6,416 B** of
+`contractspecv0` (27,499 → 21,083). It also repaired damage the merge itself
+had done: `set_fee_bps`, `set_stream_policy`, `set_frozen` and `cancel_upgrade`
+each came out of the merge carrying *both* the branch's gated doc block and
+main's rewritten plain one, so their rustdoc rendered the same paragraph twice
+and the older wording contradicted the new governance behaviour. The stale
+block was dropped in favour of main's text at all four sites.
+
+| Section | Merged with ownership transfer | Merged with governance | Δ |
+|---|---|---|---|
+| `code` | 39,312 | 49,317 | +10,005 |
+| `contractspecv0` | 18,011 | 21,083 | +3,072 |
+| `data` | 4,251 | 4,999 | +748 |
+| `export` | 1,396 | 1,631 | +235 |
+| headers/meta/other | 1,173 | 1,236 | +63 |
+| **Total** | **64,143** | **78,266 (76.4 KiB)** | **+14,123** |
+
+Attribution of the +14,123 B: 10,005 B is the governance module's compiled body
+(`governance_propose` alone is 2,195 B — the largest function in the binary —
+and `governance_execute` 1,103 B), 3,072 B is the *structural* spec entries of
+the new types, entrypoints and error codes, 748 B is the new event/field
+symbols in `data`, and 235 B the new exports. None of it is documentation.
+
+Probes run on this tree before accepting the number:
+
+| Probe | Result |
+|---|---|
+| `gate_interface_docs.py --check` re-scan after the pass | **0 groups left** — and the scan is now a CI step, so the invariant is enforced rather than remembered. |
+| Residual doc prose in the artifact (`grep` of the built wasm for governance doc phrases) | **0 hits** — only identifiers like `timelock` inside error/variant names survive. |
+| Dedup of the governance legs into a shared helper (Technique 2 shape) | The five `governance_*` entrypoints are already 2-line wrappers over `governance.rs`; the bytes live inside one function each, so there is no duplicated leg to merge. Not taken. |
+| `#[inline(never)]` / `opt-level` / feature trimming | Re-measured no — unchanged from the first re-baseline's table above. |
+
+**Gate decision.** `WASM_SIZE_BUDGET_KB` is raised from 63 to **77**
+(78,848 B — 582 B of headroom over the measured 78,266 B), which is the same
+rule applied to the new interface: the smallest whole KB the current interface
+fits. The alternative of holding 63 KB would require deleting ~14 KB of merged
+governance functionality, which is a product decision, not a size optimization.
+The single-contract split discussed above is now worth reopening on its own
+merits (the `code` section is 63 % of the binary and `governance_propose` is
+the single largest function in it), but it is out of scope for #58: this PR
+ships no behavior change.
+
 
 ## Categories investigated and rejected (with measurements)
 
