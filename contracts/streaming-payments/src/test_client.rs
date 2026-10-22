@@ -12,11 +12,8 @@ use soroban_sdk::{contractclient, Address, BytesN, Env, Vec};
 
 use crate::{
     BatchEntry, Dispute, FeeScan, GovernanceAction, MigrationStatus, PendingOwnership,
-    PendingUpgrade, PeriodSpend, Proposal, ScheduledIntent, SponsorConfig, Stream, StreamError,
-    StreamInput, StreamPolicy, TreasuryStatus,
-    BatchEntry, FeeScan, GovernanceAction, MigrationStatus, PendingOwnership, PendingRateChange,
-    PendingUpgrade, PeriodSpend, Proposal, RateSegment, ScheduledIntent, SponsorConfig, Stream,
-    StreamError, StreamInput, StreamPolicy, TreasuryStatus,
+    PendingRateChange, PendingUpgrade, PeriodSpend, Proposal, RateSegment, ScheduledIntent,
+    SponsorConfig, Stream, StreamError, StreamInput, StreamPolicy, TreasuryStatus,
 };
 
 /// Interface of the StreamPay streaming-payments contract.
