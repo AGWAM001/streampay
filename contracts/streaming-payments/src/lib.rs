@@ -1430,21 +1430,57 @@ impl StreamingPayments {
         Ok(())
     }
 
-    /// Recipient-initiated dispute: flags this stream (wrong address,
-    /// coerced creation) and freezes its cancel/top-up mutations until the
-    /// sender calls [`StreamingPayments::resolve_dispute`] or the timelock
-    /// elapses and anyone calls [`StreamingPayments::expire_dispute`].
-    ///
-    /// Only the stream's recipient can raise it (their authorization is
-    /// required), only on an active, undisputed stream. Anti-griefing: the
-    /// recipient posts a bond ([`StreamingPayments::required_dispute_bond`],
-    /// a share of the deposit that escalates with every dispute round on
-    /// the stream) via a prior token approval, held by the contract until
-    /// resolution. Accrual keeps running and accrued funds stay withdrawable
-    /// throughout — the freeze targets the stream's lifecycle, not the
-    /// recipient's earned balance.
-    ///
-    /// Returns the recorded dispute (bond, window, expiry timestamp).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Recipient-initiated dispute: flags this stream (wrong address,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " coerced creation) and freezes its cancel/top-up mutations until the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " sender calls [`StreamingPayments::resolve_dispute`] or the timelock"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " elapses and anyone calls [`StreamingPayments::expire_dispute`]."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Only the stream's recipient can raise it (their authorization is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " required), only on an active, undisputed stream. Anti-griefing: the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " recipient posts a bond ([`StreamingPayments::required_dispute_bond`],"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " a share of the deposit that escalates with every dispute round on"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the stream) via a prior token approval, held by the contract until"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " resolution. Accrual keeps running and accrued funds stay withdrawable"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " throughout — the freeze targets the stream's lifecycle, not the"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " recipient's earned balance.")]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Returns the recorded dispute (bond, window, expiry timestamp)."
+    )]
     pub fn raise_dispute(env: Env, stream_id: u64) -> Result<Dispute, StreamError> {
         let s = stream::get_stream(&env, stream_id)?;
         if s.status != StreamStatus::Active {
@@ -1489,17 +1525,41 @@ impl StreamingPayments {
         Ok(d)
     }
 
-    /// Sender-only resolution of an open dispute:
-    ///
-    /// * `accept = true` — the dispute is legitimate: the bond is refunded
-    ///   to the recipient and the stream is unwound with the standard
-    ///   pro-rata cancel split (a `StreamCancelled` event accompanies the
-    ///   `DisputeResolved`). If the stream already depleted during the
-    ///   dispute (the recipient withdrew everything), only the bond is
-    ///   refunded.
-    /// * `accept = false` — bad faith: the bond is slashed to the sender as
-    ///   compensation for the frozen window, and the stream resumes normal
-    ///   operation immediately.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Sender-only resolution of an open dispute:"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " * `accept = true` — the dispute is legitimate: the bond is refunded"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   to the recipient and the stream is unwound with the standard"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   pro-rata cancel split (a `StreamCancelled` event accompanies the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   `DisputeResolved`). If the stream already depleted during the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   dispute (the recipient withdrew everything), only the bond is"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "   refunded.")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " * `accept = false` — bad faith: the bond is slashed to the sender as"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = "   compensation for the frozen window, and the stream resumes normal"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "   operation immediately.")]
     pub fn resolve_dispute(
         env: Env,
         caller: Address,
@@ -1569,14 +1629,35 @@ impl StreamingPayments {
         Ok(())
     }
 
-    /// Closes a dispute whose timelock has fully elapsed: the bond is split
-    /// (sender receives the upper half as compensation for the frozen
-    /// window, the recipient the remainder) and the stream resumes normally.
-    ///
-    /// Callable by anyone once `now >= expires_at` — no authorization is
-    /// involved and no funds ever move to the trigger. Reverting the split
-    /// to a full bond refund would make serial disputes free for a patient
-    /// griefer; see `docs/ARCHITECTURE.md` for the griefing-threshold math.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Closes a dispute whose timelock has fully elapsed: the bond is split"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " (sender receives the upper half as compensation for the frozen"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " window, the recipient the remainder) and the stream resumes normally."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Callable by anyone once `now >= expires_at` — no authorization is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " involved and no funds ever move to the trigger. Reverting the split"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " to a full bond refund would make serial disputes free for a patient"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " griefer; see `docs/ARCHITECTURE.md` for the griefing-threshold math."
+    )]
     pub fn expire_dispute(env: Env, stream_id: u64) -> Result<(), StreamError> {
         let s = stream::get_stream(&env, stream_id)?;
         let d = dispute::get_dispute(&env, stream_id)?;
@@ -1617,24 +1698,6 @@ impl StreamingPayments {
         Ok(())
     }
 
-    /// Proposes handing the caller's stream role (sender or recipient) to
-    /// `new_owner`. The role does not move until `new_owner` calls
-    /// [`StreamingPayments::accept_ownership_transfer`].
-    ///
-    /// * Only the current sender or recipient may propose; their authorization
-    ///   is required. A stranger is rejected with [`StreamError::NotAuthorized`].
-    /// * The stream must be `Active`: ownership of a cancelled or depleted
-    ///   stream has no future claims and cannot be transferred.
-    /// * Proposing to the current holder of the same role is rejected with
-    ///   [`StreamError::InvalidTransferTarget`].
-    /// * At most one unexpired proposal exists per stream. Proposing again
-    ///   while one is pending reverts with
-    ///   [`StreamError::OwnershipProposalPending`]; an expired proposal is
-    ///   removed and replaced.
-    ///
-    /// No tokens move and no accounting field changes at proposal time. The
-    /// target is recorded under its own storage key with a seven-day
-    /// acceptance window ([`OWNERSHIP_PROPOSAL_TTL_SECONDS`]).
     #[cfg_attr(
         not(target_family = "wasm"),
         doc = " Proposes handing the caller's stream role (sender or recipient) to"
@@ -1941,24 +2004,39 @@ impl StreamingPayments {
         stream::get_stream(&env, stream_id)
     }
 
-    /// Read-only view of a stream's open dispute. Reverts with
-    /// [`StreamError::DisputeNotFound`] when the stream is undisputed
-    /// (disputes exist only while open; resolution and expiry remove them).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Read-only view of a stream's open dispute. Reverts with"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " [`StreamError::DisputeNotFound`] when the stream is undisputed"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " (disputes exist only while open; resolution and expiry remove them)."
+    )]
     pub fn get_dispute(env: Env, stream_id: u64) -> Result<Dispute, StreamError> {
         dispute::get_dispute(&env, stream_id)
     }
 
-    /// The bond a recipient must post (and pre-approve) to raise the next
-    /// dispute on this stream: 5% of the deposit, multiplied by the number
-    /// of disputes already raised on it, floored at one token unit.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The bond a recipient must post (and pre-approve) to raise the next"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " dispute on this stream: 5% of the deposit, multiplied by the number"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " of disputes already raised on it, floored at one token unit."
+    )]
     pub fn required_dispute_bond(env: Env, stream_id: u64) -> Result<i128, StreamError> {
         let s = stream::get_stream(&env, stream_id)?;
         dispute::required_bond(s.deposit, dispute::dispute_count(&env, stream_id))
     }
 
-    /// Read-only view of the accrued-but-unwithdrawn balance at the current
-    /// ledger time. Zero before `start_time` and for cancelled streams; the
-    /// full remainder at or after `end_time`.
     #[cfg_attr(
         not(target_family = "wasm"),
         doc = " Read-only view of the accrued-but-unwithdrawn balance at the current"

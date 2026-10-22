@@ -42,30 +42,60 @@ pub const MIN_DISPUTE_BOND: i128 = 1;
 const TTL_THRESHOLD_LEDGERS: u32 = 200_000;
 const TTL_EXTEND_LEDGERS: u32 = 500_000;
 
-/// An open dispute on a stream. Stored only while the dispute is live;
-/// resolution/expiry deletes the entry.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " An open dispute on a stream. Stored only while the dispute is live;"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " resolution/expiry deletes the entry."
+)]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Dispute {
     pub stream_id: u64,
-    /// The stream recipient who raised it (always the stream's recipient).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The stream recipient who raised it (always the stream's recipient)."
+    )]
     pub raised_by: Address,
-    /// Bond held by the contract for the duration of the dispute.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Bond held by the contract for the duration of the dispute."
+    )]
     pub bond: i128,
     pub started_at: u64,
-    /// First ledger timestamp at which the dispute can be expired.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " First ledger timestamp at which the dispute can be expired."
+    )]
     pub expires_at: u64,
 }
 
-/// Storage keys for dispute state, kept separate from the stream keys so
-/// existing stream serialization never changes.
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Storage keys for dispute state, kept separate from the stream keys so"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " existing stream serialization never changes."
+)]
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DisputeKey {
-    /// The open dispute of the given stream, if any.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The open dispute of the given stream, if any."
+    )]
     Active(u64),
-    /// Number of disputes ever raised on the given stream (persists across
-    /// resolution/expiry; drives the escalating bond).
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Number of disputes ever raised on the given stream (persists across"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " resolution/expiry; drives the escalating bond)."
+    )]
     Count(u64),
 }
 

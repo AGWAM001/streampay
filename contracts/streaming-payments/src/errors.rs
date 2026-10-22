@@ -556,12 +556,24 @@ pub enum StreamError {
         doc = " set is bootstrapped; the direct entry point is closed."
     )]
     GovernanceTimelockRequired = 79,
-    /// A dispute is open on the stream: `cancel_stream` and `top_up` are
-    /// frozen until the sender resolves it or the timelock expires.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A dispute is open on the stream: `cancel_stream` and `top_up` are"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " frozen until the sender resolves it or the timelock expires."
+    )]
     DisputeActive = 80,
-    /// No open dispute exists on the stream.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " No open dispute exists on the stream."
+    )]
     DisputeNotFound = 81,
-    /// The dispute's timelock has not elapsed yet.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The dispute's timelock has not elapsed yet."
+    )]
     DisputeNotExpired = 82,
 }
 

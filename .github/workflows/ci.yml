@@ -19,19 +19,22 @@ jobs:
     env:
       # Single source of truth for the Wasm size budget (KB). The rule is:
       # the smallest whole KB that the current public interface fits, so the
-      # ratchet stays as tight as the interface allows. 89 KB = this build's
-      # 90,318 B + 818 B of headroom. History: issue #58's techniques took the
+      # ratchet stays as tight as the interface allows. 84 KB = this build's
+      # 85,270 B + 746 B of headroom. History: issue #58's techniques took the
       # contract from 91,004 B to 60,386 B, upstream's ownership-transfer +
       # vault surface added 3,757 B (gate: 63 KB), and the governance timelock
       # that has now merged adds 14,123 B more — 10,005 B of `code`, 3,072 B of
       # structural spec entries, 748 B of `data` topics and 235 B of exports, on
       # top of the ungated `///` docs its new interface items carried (6,416 B,
       # recovered by re-applying Technique 1; docs/WASM_SIZE.md). The recipient
-      # dispute flow (#55) then adds 12,052 B on top of that 77 KB gate: 6
-      # entrypoints, 3 events and one persistent storage key, no new
-      # dependencies, measured with the pinned stellar-cli 28.1.0. The next
-      # entrypoint addition should trigger the split discussion, not a bump.
-      WASM_SIZE_BUDGET_KB: 89
+      # dispute flow (#55) then adds 7,004 B on top of that 77 KB gate: 5
+      # entrypoints, 3 events, 2 types, 3 error codes and one persistent storage
+      # key, no new dependencies, measured with the pinned stellar-cli 28.1.0.
+      # Its interface items merged without Technique 1, so the same gating that
+      # governance needed here recovers 5,048 B (90,318 B before, 85,270 B
+      # after). The next entrypoint addition should trigger the split discussion,
+      # not a bump.
+      WASM_SIZE_BUDGET_KB: 84
     steps:
       - uses: actions/checkout@v7
 
