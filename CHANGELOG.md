@@ -10,6 +10,47 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- Two-step rate renegotiation (#54): `propose_rate_change`,
+  `accept_rate_change`, `cancel_rate_change`, and the `pending_rate_change` and
+  `rate_segments` read views. Either party can propose a new
+  `amount_per_second` for the remainder of a live stream; only the named
+  counterparty can accept, within a seven-day window. At acceptance the accrued
+  balance is priced under the schedule that existed before the change (never
+  re-priced), the rest of the window is reserved at the new rate, and the
+  difference against the escrow still held is pulled from the sender (increase)
+  or refunded to them (decrease) in the same transaction.
+- Piecewise accrual: `Stream` streams are now priced as a schedule of
+  `RateSegment { start_time, end_time, allocation, basis_seconds }` windows.
+  `streamed_amount_at_segments` sums the unchanged pure `streamed_at` over them,
+  so an empty schedule is the pre-#54 single-window formula bit-for-bit and a
+  renegotiated window — `allocation = rate × window`, `basis_seconds = window` —
+  accrues with no division residue at all. `available`, `withdraw`,
+  `withdraw_max`, `cancel_stream`, `streamed_at` and `sponsored_withdraw` all
+  price the same schedule.
+- `PendingRateChange` and `RateSegments` storage keys
+  (`DataKey::PendingRateChange(id)`, `DataKey::RateSegments(id)`, both
+  appended), one offer per stream and at most `MAX_RATE_SEGMENTS = 32` accepted
+  windows per stream, with dedicated TTL maintenance. No stored `Stream` layout
+  changed, so no migration is required.
+- Append-only `RateChangeProposed` / `RateChangeAccepted` events
+  (`stream_id` topic); the acceptance payload carries
+  `owed_at_change`, `reserved_at_new_rate`, `adjustment` and the new `deposit`
+  as the audit trail of the rebalancing.
+- New `StreamError` variants (appended): `NoPendingRateChange` (80),
+  `RateProposalExpired` (81), `RateProposalPending` (82), and
+  `TooManyRateSegments` (83).
+- Reference-model schedule math (`model/src/math.rs`):
+  `streamed_at_schedule` (the `u128` floor-division model) and
+  `streamed_at_rate_schedule` (a division-free `Σ rate × elapsed` model), used
+  as differential oracles rather than as a second reading of contract state.
+- New `rate_schedule` fuzz target for segment sequences, and the `conservation`
+  target now renegotiates streams inside its random operation sequence and
+  re-prices every stored schedule against the reference model. Both are wired
+  into `fuzz.yml`, `nightly-fuzz.yml`, `fuzz-campaign.yml` and the campaign /
+  coverage scripts.
+- `docs/adr/0012-piecewise-rate-schedule-storage.md`, and
+  `docs/ARCHITECTURE.md` §3.1 (piecewise math) + §18 (the renegotiation flow,
+  storage/TTL and the exactness argument).
 - Two-step stream ownership transfer: `propose_ownership_transfer`,
   `accept_ownership_transfer`, `cancel_ownership_transfer`, and the
   `pending_ownership_transfer` read view. Either the sender (payer) or the
@@ -213,6 +254,13 @@ interface: they are only ever appended to, never renumbered or reused.
   build`). Linked from the README and CONTRIBUTING.
 
 ### Changed
+- `hot_path_footprint_harness` instruction budgets were re-measured and raised
+  (`create_stream` 560k / `withdraw` 370k / `cancel_stream` 545k /
+  `withdraw_max` 375k, plus a new 415k budget for `withdraw` on a renegotiated
+  stream): reading the rate schedule from its own key costs one extra persistent
+  lookup on every accrual path even for a stream that never renegotiated. The
+  trade-off, and why the alternative (a field on `Stream`) was rejected, is
+  recorded in `docs/FOOTPRINT.md` Candidate 5 and ADR-0012.
 - **Contract Wasm size (#58):** the deployed binary shrinks from 91,004 B to
   60,386 B (59.0 KiB, under the new 60 KB CI budget). Doc comments on
   interface items are no longer embedded into `contractspecv0` on-chain

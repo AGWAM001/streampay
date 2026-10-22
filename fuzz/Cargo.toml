@@ -46,6 +46,13 @@ bench = false
 
 
 [[bin]]
+name = "rate_schedule"
+path = "fuzz_targets/rate_schedule.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "campaign"
 path = "fuzz_targets/campaign.rs"
 test = false

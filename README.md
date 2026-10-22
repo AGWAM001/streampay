@@ -78,9 +78,14 @@ Metrics, alerting stack, and operational diagnosis: [`docs/RUNBOOK.md`](./docs/R
 | `propose_ownership_transfer(caller, stream_id, new_owner)` | sender or recipient | — (records a pending target) | `OwnershipProposed` |
 | `accept_ownership_transfer(caller, stream_id)` | named `new_owner` only | — (moves the role) | `OwnershipAccepted` |
 | `cancel_ownership_transfer(caller, stream_id)` | proposer only | — (clears the pending target) | — |
+| `propose_rate_change(caller, stream_id, amount_per_second)` | sender or recipient | — (records a pending offer) | `RateChangeProposed` |
+| `accept_rate_change(caller, stream_id)` | named counterparty only (an increase also consumes sender auth) | pulls the shortfall or refunds the freed escrow, atomically | `RateChangeAccepted` |
+| `cancel_rate_change(caller, stream_id)` | proposer only | — (clears the pending offer) | — |
 | `get_stream(stream_id) → Stream` | — (read-only) | — | — |
 | `available(stream_id) → i128` | — (read-only) | — | — |
 | `pending_ownership_transfer(stream_id) → Option<PendingOwnership>` | — (read-only) | — | — |
+| `pending_rate_change(stream_id) → Option<PendingRateChange>` | — (read-only) | — | — |
+| `rate_segments(stream_id) → Vec<RateSegment>` | — (read-only) | — | — |
 | `recipient_streams(address, offset, limit) → Vec<u64>` | — (read-only) | — | — |
 | `sender_streams(address, offset, limit) → Vec<u64>` | — (read-only) | — | — |
 | `schedule_stream(sender, recipient, token, deposit, start, end, cancelable, interval, occurrences, fee_budget, execute_after, expires_at) → u64` | anyone (sender auth required) | pulls `(deposit+fee)×occurrences` in | `StreamScheduled` |
@@ -142,6 +147,32 @@ after a transfer — only the destination of future claims (recipient) or future
 top-ups/cancellation refunds (sender) changes. See
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §17 for the full invariant
 proof sketch.
+
+### Two-step rate renegotiation
+
+The two parties can agree on a new `amount_per_second` for the rest of a live
+stream. Neither can impose it:
+
+1. The current sender or recipient calls `propose_rate_change`, which records
+   the new rate and a 7-day acceptance window. The stream is unchanged.
+2. Only the counterparty named in that offer can call `accept_rate_change`, and
+   only before it expires. The proposer can cancel a pending offer at any time;
+   an expired offer is unacceptible but replaceable.
+
+At acceptance the contract prices the change: what the recipient has already
+earned at the old rate stays exactly as it accrued, the remaining window is
+reserved at the new rate, and the difference against the escrow still held is
+settled in the same transaction — pulled from the sender on an increase,
+refunded to them on a decrease. An increase the sender cannot fund reverts
+before anything changes, so a failed negotiation leaves the stream, its
+schedule and the open offer untouched. The accepted schedule is readable with
+`rate_segments`, and every accrual path (`available`, `withdraw`,
+`withdraw_max`, cancellation) prices it, so the client-side numbers and the
+on-chain money cannot disagree. See
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) §3.1 and §18 for the piecewise
+math and the exactness argument, and
+[`docs/adr/0012-piecewise-rate-schedule-storage.md`](./docs/adr/0012-piecewise-rate-schedule-storage.md)
+for why the schedule lives under its own storage key.
 
 Any SEP-41-compatible asset can fund a stream: an issued asset via its
 Stellar Asset Contract id (e.g. USDC on testnet) or **native XLM** via its

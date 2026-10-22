@@ -556,6 +556,38 @@ pub enum StreamError {
         doc = " set is bootstrapped; the direct entry point is closed."
     )]
     GovernanceTimelockRequired = 79,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " No rate-change proposal is stored for this stream."
+    )]
+    NoPendingRateChange = 80,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The pending rate-change proposal's acceptance window has elapsed; the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " rate must be proposed again by a stream party."
+    )]
+    RateProposalExpired = 81,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " An unexpired rate-change proposal already exists for this stream; cancel"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " or accept it before proposing another."
+    )]
+    RateProposalPending = 82,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The stream already carries the maximum number of rate segments"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " (`MAX_RATE_SEGMENTS`); cancel it or open a new stream instead."
+    )]
+    TooManyRateSegments = 83,
 }
 
 impl StreamError {
@@ -642,6 +674,10 @@ impl StreamError {
         StreamError::GovernanceDuplicateSignature,
         StreamError::GovernanceSignaturesInsufficient,
         StreamError::GovernanceTimelockRequired,
+        StreamError::NoPendingRateChange,
+        StreamError::RateProposalExpired,
+        StreamError::RateProposalPending,
+        StreamError::TooManyRateSegments,
     ];
 
     /// The stable numeric value carried across the contract boundary
