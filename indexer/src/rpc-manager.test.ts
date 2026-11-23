@@ -14,7 +14,7 @@
  * resumes correctly against remaining healthy endpoints.
  */
 
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import {
   RpcManager,
@@ -36,6 +36,7 @@ interface MockEndpoint {
   url: string;
   behavior: MockBehavior;
   callCount: number;
+  calls: Array<{ body?: string; parsed?: Record<string, unknown> }>;
 }
 
 const mockEndpoints = new Map<string, MockEndpoint>();
@@ -44,6 +45,15 @@ async function mockFetch(url: string, init?: RequestInit): Promise<Response> {
   const ep = mockEndpoints.get(url);
   if (!ep) throw new Error(`no mock for ${url}`);
   ep.callCount += 1;
+
+  const rawBody = typeof init?.body === "string" ? init.body : undefined;
+  let parsed: Record<string, unknown> | undefined;
+  if (rawBody) {
+    try {
+      parsed = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch {}
+  }
+  ep.calls.push({ body: rawBody, parsed });
 
   const behavior = ep.behavior;
 
@@ -91,7 +101,7 @@ beforeEach(() => {
 });
 
 function endpoint(url: string, behavior: MockBehavior): MockEndpoint {
-  const ep: MockEndpoint = { url, behavior, callCount: 0 };
+  const ep: MockEndpoint = { url, behavior, callCount: 0, calls: [] };
   mockEndpoints.set(url, ep);
   return ep;
 }
@@ -344,5 +354,221 @@ describe("getGlobalRpcManager", () => {
   it("throws when called without options first time", () => {
     _setGlobalRpcManager(null);
     assert.throws(() => getGlobalRpcManager(), /options required/);
+  });
+});
+
+// ── Deterministic fake-clock transitions (Issue #484) ───────────────────────
+
+describe("RpcManager deterministic fake-clock transitions", () => {
+  const tickAsync = async (ms: number) => {
+    mock.timers.tick(ms);
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  before(() => {
+    mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  });
+
+  after(() => {
+    mock.timers.reset();
+  });
+
+  beforeEach(() => {
+    mockEndpoints.clear();
+    _setGlobalRpcManager(null);
+  });
+
+  afterEach(() => {
+    mock.timers.reset();
+    mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  });
+
+  it("pins healthy -> suspect -> ejected -> probe -> restored transitions with routing assertions", async () => {
+    const primary = endpoint("http://primary", { type: "success", ledger: 100 });
+    const secondary = endpoint("http://secondary", { type: "success", ledger: 100 });
+
+    const mgr = makeManager({
+      failureThreshold: 3,
+      healthCheckIntervalMs: 10_000,
+    });
+    mgr.start();
+
+    // 1. Healthy: both healthy, primary selected
+    const res1 = await mgr.getLatestLedger();
+    assert.equal(res1.sequence, 100);
+    assert.equal(primary.callCount, 1);
+    assert.equal(secondary.callCount, 0);
+
+    // 2. Suspect: primary fails once (< threshold 3)
+    primary.behavior = { type: "network-error" };
+    try {
+      await mgr.getLatestLedger();
+    } catch {
+      // primary failed
+    }
+
+    const healthSuspect = mgr.getHealth();
+    const primaryHealth = healthSuspect.find((h) => h.url === "http://primary");
+    assert.equal(primaryHealth?.healthy, true, "primary still marked healthy while suspect");
+    assert.equal(primaryHealth?.failures, 1, "primary failure count incremented");
+
+    // Next user call routes to secondary because primary is penalized for failures
+    const res2 = await mgr.getLatestLedger();
+    assert.equal(res2.sequence, 100);
+    assert.equal(secondary.callCount, 1, "call routed to secondary endpoint");
+
+    // 3. Ejected: primary fails to reach failureThreshold = 3 via periodic health probes
+    primary.behavior = { type: "network-error" };
+    await tickAsync(10_000); // probe fires: primary fails -> failures = 2
+    await tickAsync(10_000); // probe fires: primary fails -> failures = 3 >= failureThreshold -> ejected!
+
+    const healthEjected = mgr.getHealth();
+    const primaryEjected = healthEjected.find((h) => h.url === "http://primary");
+    assert.equal(primaryEjected?.healthy, false, "primary must be ejected (healthy: false)");
+    assert.equal(primaryEjected?.failures, 3, "primary has 3 failures");
+
+    // Recovery probes never carry user traffic:
+    // Check all calls made to primary during probes
+    for (const call of primary.calls) {
+      if (call.parsed) {
+        assert.equal(call.parsed.method, "getLatestLedger", "probe calls only query getLatestLedger");
+        assert.deepEqual(call.parsed.params, {}, "probe carries empty params, never user payloads");
+      }
+    }
+
+    // While primary is ejected, user reads route exclusively to secondary
+    const secBefore = secondary.callCount;
+    await mgr.call({ method: "getEvents", params: { startLedger: 50 } }, "read");
+    assert.equal(secondary.callCount, secBefore + 1, "user call routed exclusively to secondary");
+    assert.equal(secondary.calls[secondary.calls.length - 1].parsed?.method, "getEvents");
+
+    // 4. Restore: Primary is now recovering. Primary recovers after 30s re-probe timer.
+    primary.behavior = { type: "success", ledger: 110 };
+
+    // Advance 30,000 ms to trigger the restoration timeout
+    await tickAsync(30_000);
+
+    const healthRestored = mgr.getHealth();
+    const primaryRestored = healthRestored.find((h) => h.url === "http://primary");
+    assert.equal(primaryRestored?.healthy, true, "primary endpoint restored to healthy");
+    assert.equal(primaryRestored?.failures, 0, "primary failure count reset to 0");
+
+    // User calls can now route back to primary
+    const primBefore = primary.callCount;
+    await mgr.getLatestLedger();
+    assert.equal(primary.callCount, primBefore + 1, "restored primary resumes receiving user reads");
+
+    mgr.stop();
+  });
+
+  it("handles concurrent failure of all endpoints deterministically", async () => {
+    endpoint("http://primary", { type: "network-error" });
+    endpoint("http://secondary", { type: "network-error" });
+
+    const mgr = makeManager({ failureThreshold: 1 });
+
+    // Primary fails
+    try { await mgr.getLatestLedger(); } catch {}
+    // Secondary fails
+    try { await mgr.getLatestLedger(); } catch {}
+
+    const health = mgr.getHealth();
+    assert.ok(health.every((h) => !h.healthy), "all endpoints must be ejected");
+
+    // All endpoints down: throws specific error
+    await assert.rejects(
+      () => mgr.getLatestLedger(),
+      /RpcManager: no healthy endpoints available/
+    );
+
+    // After 30s timeout, endpoints are restored
+    endpoint("http://primary", { type: "success", ledger: 250 });
+    endpoint("http://secondary", { type: "success", ledger: 250 });
+    await tickAsync(30_000);
+
+    const healthAfter = mgr.getHealth();
+    assert.ok(healthAfter.some((h) => h.healthy), "endpoints restored after timeout");
+    const result = await mgr.getLatestLedger();
+    assert.equal(result.sequence, 250);
+
+    mgr.stop();
+  });
+
+  it("treats HTTP 429 as failure and respects token bucket rate budget", async () => {
+    endpoint("http://primary", { type: "http-error", status: 429 });
+    endpoint("http://secondary", { type: "success", ledger: 200 });
+
+    const mgr = makeManager({
+      maxRps: 5,
+      failureThreshold: 2,
+    });
+
+    // First call to primary gets 429
+    await assert.rejects(
+      () => mgr.getLatestLedger(),
+      /HTTP 429 rate limited/
+    );
+
+    const primaryHealth = mgr.getHealth().find((h) => h.url === "http://primary");
+    assert.equal(primaryHealth?.failures, 1, "429 recorded as failure toward threshold");
+
+    // Second call routes to secondary because primary has failure count 1
+    const res = await mgr.getLatestLedger();
+    assert.equal(res.sequence, 200);
+
+    // Drain available budget
+    while (mgr.getRateBudget().availableTokens > 0) {
+      await mgr.getLatestLedger();
+    }
+
+    // Now bucket is exhausted; next call must throw RATE_EXHAUSTED
+    await assert.rejects(
+      () => mgr.getLatestLedger(),
+      (err: unknown) => {
+        const error = err as { code?: string; retryAfterMs?: number };
+        return error.code === "RATE_EXHAUSTED" && typeof error.retryAfterMs === "number";
+      }
+    );
+
+    // Advance fake timer by 500 ms (refills 5 * 0.5 = 2.5 tokens)
+    await tickAsync(500);
+
+    const budgetAfter = mgr.getRateBudget();
+    assert.ok(budgetAfter.availableTokens >= 2, "token bucket refilled by clock advance");
+
+    // Call succeeds again within budget
+    const resAfter = await mgr.getLatestLedger();
+    assert.equal(resAfter.sequence, 200);
+
+    mgr.stop();
+  });
+
+  it("verifies health-check probe interval bounds", async () => {
+    const primary = endpoint("http://primary", { type: "success", ledger: 300 });
+    const secondary = endpoint("http://secondary", { type: "success", ledger: 300 });
+
+    const checkIntervalMs = 5_000;
+    const mgr = makeManager({ healthCheckIntervalMs: checkIntervalMs });
+    mgr.start();
+
+    assert.equal(primary.callCount, 0);
+    assert.equal(secondary.callCount, 0);
+
+    // Advance 4,999 ms - interval has not elapsed yet
+    await tickAsync(checkIntervalMs - 1);
+    assert.equal(primary.callCount, 0);
+    assert.equal(secondary.callCount, 0);
+
+    // Advance remaining 1 ms - exactly at 5,000 ms probe fires
+    await tickAsync(1);
+    assert.equal(primary.callCount, 1);
+    assert.equal(secondary.callCount, 1);
+
+    // Advance another full interval - second probe fires
+    await tickAsync(checkIntervalMs);
+    assert.equal(primary.callCount, 2);
+    assert.equal(secondary.callCount, 2);
+
+    mgr.stop();
   });
 });

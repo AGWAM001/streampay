@@ -488,3 +488,83 @@ export const globalIndexerTracer = new Tracer({
   serviceName: "streampay-indexer",
   exporters: [new OtlpHttpSpanExporter()],
 });
+
+// ── Ledger Gap Telemetry (Issue #483) ─────────────────────────────────────────
+
+export interface LedgerGapRecord {
+  from: number;
+  to: number;
+  size: number;
+  source: string;
+  detectedAt: number;
+}
+
+export interface MetricSample {
+  name: string;
+  value: number;
+  labels: Record<string, string>;
+  timestamp: number;
+}
+
+export class TelemetryMetricsRegistry {
+  private samples: MetricSample[] = [];
+  private counters = new Map<string, number>();
+
+  recordCounter(name: string, value: number, labels: Record<string, string> = {}): void {
+    const key = `${name}:${JSON.stringify(labels)}`;
+    this.counters.set(key, (this.counters.get(key) ?? 0) + value);
+    this.samples.push({
+      name,
+      value,
+      labels,
+      timestamp: Date.now(),
+    });
+  }
+
+  getCounter(name: string, labels: Record<string, string> = {}): number {
+    const key = `${name}:${JSON.stringify(labels)}`;
+    return this.counters.get(key) ?? 0;
+  }
+
+  getSamples(name?: string): MetricSample[] {
+    return name ? this.samples.filter((s) => s.name === name) : [...this.samples];
+  }
+
+  clear(): void {
+    this.samples = [];
+    this.counters.clear();
+  }
+}
+
+export const globalMetricsRegistry = new TelemetryMetricsRegistry();
+
+export function emitLedgerGapTelemetry(gap: LedgerGapRecord): void {
+  // Counter metric for gap count and gap size (ledgers missed), labeled by source
+  globalMetricsRegistry.recordCounter("indexer_ledger_gap_count_total", 1, { source: gap.source });
+  globalMetricsRegistry.recordCounter("indexer_ledger_gap_size_total", gap.size, { source: gap.source });
+
+  const activeSpan = globalIndexerTracer.getActiveSpan();
+  if (activeSpan) {
+    activeSpan.addEvent("ledger_gap_detected", {
+      "gap.from": gap.from,
+      "gap.to": gap.to,
+      "gap.size": gap.size,
+      "gap.source": gap.source,
+    });
+    activeSpan.setAttribute("indexer.ledger_gap", true);
+  }
+
+  // Structured warning log with exact range
+  console.warn(
+    JSON.stringify({
+      level: "warn",
+      event: "ledger_gap_detected",
+      source: gap.source,
+      range: `[${gap.from}..${gap.to}]`,
+      from: gap.from,
+      to: gap.to,
+      size: gap.size,
+      message: `Ledger gap detected: missed ledgers [${gap.from}..${gap.to}] (${gap.size} ledgers) from source '${gap.source}'`,
+    })
+  );
+}

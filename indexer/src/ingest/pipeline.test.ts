@@ -18,6 +18,8 @@ import type { RateBudgetSnapshot } from "../rpc-manager.js";
 import { IngestPipeline, type EventSource, type EventsPage, type TickReport } from "./pipeline.js";
 import { deriveInFlight, planWindowLedgers, planWindows, type WindowSizeOptions } from "./planner.js";
 import { IngestSequencer } from "./sequencer.js";
+import { globalMetricsRegistry } from "../telemetry.js";
+import { MockSorobanRpc } from "../chaos/mock_rpc.js";
 import type { DecodedEvent, EventValue, RpcEvent } from "../types.js";
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
@@ -441,6 +443,96 @@ describe("IngestSequencer", () => {
     assert.equal(metrics.gapLedgers, 10);
     assert.equal(metrics.ledgersCovered, 60);
     assert.equal(sequencer.coveredThrough, 169);
+  });
+});
+
+// ── Issue #483: Sequencer ledger gap detection, metrics and alerts ────────────
+
+describe("IngestSequencer ledger gap detection and telemetry (Issue #483)", () => {
+  it("emits gap metric and structured warning on skipped ledger range, contiguous produces none, backfill clears gap", () => {
+    globalMetricsRegistry.clear();
+    const sequencer = new IngestSequencer();
+
+    // 1. Contiguous stream produces 0 gaps
+    sequencer.coverWindow({ from: 100, to: 109 });
+    sequencer.coverWindow({ from: 110, to: 119 });
+    assert.equal(sequencer.activeGaps.length, 0, "contiguous stream produces zero gaps");
+    assert.equal(sequencer.metrics().gapWindows, 0);
+    assert.equal(globalMetricsRegistry.getCounter("indexer_ledger_gap_count_total"), 0);
+
+    // Capture console.warn logs
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+
+    try {
+      // 2. Skipped range: skips 120..129, jumps to 130..139
+      sequencer.coverWindow({ from: 130, to: 139 }, "rpc");
+
+      // Exactly 1 gap record
+      assert.equal(sequencer.activeGaps.length, 1, "skipped range produces exactly one gap record");
+      const gap = sequencer.activeGaps[0];
+      assert.equal(gap.from, 120);
+      assert.equal(gap.to, 129);
+      assert.equal(gap.size, 10);
+      assert.equal(gap.source, "rpc");
+
+      // Counter metrics emitted
+      const countMetric = globalMetricsRegistry.getCounter("indexer_ledger_gap_count_total", { source: "rpc" });
+      const sizeMetric = globalMetricsRegistry.getCounter("indexer_ledger_gap_size_total", { source: "rpc" });
+      assert.equal(countMetric, 1, "gap count metric must be 1");
+      assert.equal(sizeMetric, 10, "gap size metric must equal skipped ledgers (10)");
+
+      // Structured warning log contains exact range
+      assert.ok(warnings.some((w) => w.includes("[120..129]") && w.includes("ledger_gap_detected")));
+
+      // 3. Backfill clears the gap state
+      sequencer.backfillWindow({ from: 120, to: 129 });
+      assert.equal(sequencer.activeGaps.length, 0, "backfill must clear the active gap state");
+    } finally {
+      console.warn = origWarn;
+    }
+  });
+
+  it("integrates with MockSorobanRpc SC-03 ledger_gap_skip scenario", () => {
+    globalMetricsRegistry.clear();
+    const sequencer = new IngestSequencer();
+    const mockRpc = new MockSorobanRpc("ledger_gap_skip");
+
+    // Generate windows from mock RPC simulating the fault
+    const windows = mockRpc.generateWindows(1000, 1020, 5);
+    // windows: [1000..1004], then skips [1005..1009], then [1010..1014], [1015..1019], [1020..1020]
+
+    for (const w of windows) {
+      sequencer.coverWindow(w, "mock_rpc");
+    }
+
+    // Exactly one gap record for [1005..1009]
+    assert.equal(sequencer.activeGaps.length, 1, "SC-03 produces exactly one gap record");
+    const gap = sequencer.activeGaps[0];
+    assert.equal(gap.from, 1005);
+    assert.equal(gap.to, 1009);
+    assert.equal(gap.size, 5);
+    assert.equal(gap.source, "mock_rpc");
+
+    // Metrics emitted
+    assert.equal(globalMetricsRegistry.getCounter("indexer_ledger_gap_count_total", { source: "mock_rpc" }), 1);
+    assert.equal(globalMetricsRegistry.getCounter("indexer_ledger_gap_size_total", { source: "mock_rpc" }), 5);
+
+    // Contiguous Mock RPC produces none
+    const cleanRpc = new MockSorobanRpc(null);
+    const cleanSequencer = new IngestSequencer();
+    const cleanWindows = cleanRpc.generateWindows(1000, 1020, 5);
+    for (const w of cleanWindows) {
+      cleanSequencer.coverWindow(w, "mock_rpc");
+    }
+    assert.equal(cleanSequencer.activeGaps.length, 0, "contiguous mock rpc stream produces zero gap records");
+
+    // Backfill clears the gap
+    sequencer.backfillWindow({ from: 1005, to: 1009 });
+    assert.equal(sequencer.activeGaps.length, 0, "backfill clears gap from SC-03 fault");
   });
 });
 
