@@ -910,6 +910,113 @@ pub enum StreamError {
         doc = " so the number is never reused. See `docs/ERROR_SURFACE.md`."
     )]
     CapExceededStream = 129,
+    // Codes 130-132 are taken by the atomic stream + NFT mint change
+    // (issue #575), which is in flight on the same append-only registry;
+    // the emergency-migration codes therefore start at 133.
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A migration session (export on this instance, or import into it) is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " already active or has already completed."
+    )]
+    MigrationSessionActive = 133,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " No migration session exists where one is required (no export on"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " this instance, or no import begun into it)."
+    )]
+    MigrationSessionNotFound = 134,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A record's Merkle proof does not verify against its page root"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " during migration import.")]
+    MigrationProofInvalid = 135,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The page root read from the source instance does not match the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " root the target instance committed to at import begin."
+    )]
+    MigrationRootMismatch = 136,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " This migration root has already been consumed by an import into"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " this instance; replaying it is refused."
+    )]
+    MigrationRootConsumed = 137,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Migration import target is not a fresh instance (it already"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " holds streams or intents).")]
+    MigrationTargetNotFresh = 138,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Migration import cannot finalize: pages or records are still"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " missing.")]
+    MigrationImportIncomplete = 139,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Imported total value does not equal the exported total value"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " (conservation violated).")]
+    MigrationConservationMismatch = 140,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " This migration page has already been imported; importing it"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " again is refused.")]
+    MigrationPageAlreadyImported = 141,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Migration page index is outside the exported page range."
+    )]
+    MigrationPageOutOfRange = 142,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The source instance's export is not finalized (or the source is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " not frozen), so there is no published root to import against."
+    )]
+    MigrationSourceNotFinalized = 143,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " An export record supplied by the operator does not match the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " record actually stored on this instance (or is a globals record"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " outside page zero).")]
+    MigrationRecordMismatch = 144,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Export page records are not in strictly increasing record-key"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " order; duplicates and reordering are refused."
+    )]
+    MigrationExportOrderViolation = 145,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A migration page is empty or exceeds the maximum record count."
+    )]
+    MigrationPageTooLarge = 146,
 }
 
 impl StreamError {
@@ -1046,6 +1153,20 @@ impl StreamError {
         StreamError::AgentExpired,
         StreamError::CapExceededPeriod,
         StreamError::CapExceededStream,
+        StreamError::MigrationSessionActive,
+        StreamError::MigrationSessionNotFound,
+        StreamError::MigrationProofInvalid,
+        StreamError::MigrationRootMismatch,
+        StreamError::MigrationRootConsumed,
+        StreamError::MigrationTargetNotFresh,
+        StreamError::MigrationImportIncomplete,
+        StreamError::MigrationConservationMismatch,
+        StreamError::MigrationPageAlreadyImported,
+        StreamError::MigrationPageOutOfRange,
+        StreamError::MigrationSourceNotFinalized,
+        StreamError::MigrationRecordMismatch,
+        StreamError::MigrationExportOrderViolation,
+        StreamError::MigrationPageTooLarge,
     ];
 
     /// The stable numeric value carried across the contract boundary

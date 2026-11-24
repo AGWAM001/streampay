@@ -137,6 +137,20 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 127 | `AgentExpired` | **retired** (unreachable) | — | — |
 | 128 | `CapExceededPeriod` | **retired** (unreachable) | — | — |
 | 129 | `CapExceededStream` | **retired** (unreachable) | — | — |
+| 133 | `MigrationSessionActive` | reachable (1 branch(es)) | `migration_begin_export`, `migration_begin_import` | a migration session is already active or finalized on this instance |
+| 134 | `MigrationSessionNotFound` | reachable (1 branch(es)) | `migration_begin_import`, `migration_export_page`, `migration_finalize_export`, `migration_finalize_import`, `migration_import_page` | no migration session exists on this instance |
+| 135 | `MigrationProofInvalid` | reachable (1 branch(es)) | `migration_import_page` | a record's Merkle proof does not verify against its page root |
+| 136 | `MigrationRootMismatch` | reachable (1 branch(es)) | `migration_import_page` | the page root does not bind to the committed migration root or disagrees with the source instance |
+| 137 | `MigrationRootConsumed` | reachable (1 branch(es)) | `migration_begin_import` | this migration root has already been consumed by an import into this instance |
+| 138 | `MigrationTargetNotFresh` | reachable (1 branch(es)) | `migration_begin_import` | the migration import target already holds streams or intents |
+| 139 | `MigrationImportIncomplete` | reachable (1 branch(es)) | `migration_finalize_import` | migration import cannot finalize: pages or records are still missing |
+| 140 | `MigrationConservationMismatch` | reachable (1 branch(es)) | `migration_finalize_import` | imported total value does not equal the exported total value |
+| 141 | `MigrationPageAlreadyImported` | reachable (1 branch(es)) | `migration_import_page` | this migration page has already been imported |
+| 142 | `MigrationPageOutOfRange` | reachable (1 branch(es)) | `migration_import_page` | migration page index is outside the exported page range |
+| 143 | `MigrationSourceNotFinalized` | reachable (1 branch(es)) | `migration_begin_import` | the source instance's export is not finalized or the source is not frozen |
+| 144 | `MigrationRecordMismatch` | reachable (1 branch(es)) | `migration_export_page` | an export record does not match the record stored on this instance |
+| 145 | `MigrationExportOrderViolation` | reachable (1 branch(es)) | `migration_export_page` | export page records are not in strictly increasing record-key order |
+| 146 | `MigrationPageTooLarge` | reachable (1 branch(es)) | `migration_export_page`, `migration_import_page` | a migration page is empty or exceeds the maximum record count |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -209,6 +223,20 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `TimelockNotExpired` | `execute_upgrade` | `TimelockNotExpired` | 39 | upgrade timelock delay has not yet expired | reachable |
 | `UpgradeDelayTooShort` | `propose_upgrade` | `UpgradeDelayTooShort` | 40 | proposed upgrade delay is shorter than MIN_UPGRADE_DELAY_SECONDS | reachable |
 | `AlreadyMigrated` | `migrate_storage` | `AlreadyMigrated` | 41 | storage has already been migrated to the target schema version | reachable |
+| `MigrationBeginSessionActive` | `migration_begin_export`, `migration_begin_import` | `MigrationSessionActive` | 133 | a migration session is already active or finalized on this instance | reachable |
+| `MigrationNoSession` | `migration_export_page`, `migration_finalize_export`, `migration_begin_import`, `migration_import_page`, `migration_finalize_import` | `MigrationSessionNotFound` | 134 | no migration session exists on this instance | reachable |
+| `MigrationImportProofInvalid` | `migration_import_page` | `MigrationProofInvalid` | 135 | a record's Merkle proof does not verify against its page root | reachable |
+| `MigrationImportRootMismatch` | `migration_import_page` | `MigrationRootMismatch` | 136 | the page root does not bind to the committed migration root or disagrees with the source instance | reachable |
+| `MigrationImportRootConsumed` | `migration_begin_import` | `MigrationRootConsumed` | 137 | this migration root has already been consumed by an import into this instance | reachable |
+| `MigrationImportTargetNotFresh` | `migration_begin_import` | `MigrationTargetNotFresh` | 138 | the migration import target already holds streams or intents | reachable |
+| `MigrationFinalizeImportIncomplete` | `migration_finalize_import` | `MigrationImportIncomplete` | 139 | migration import cannot finalize: pages or records are still missing | reachable |
+| `MigrationConservationTotalMismatch` | `migration_finalize_import` | `MigrationConservationMismatch` | 140 | imported total value does not equal the exported total value | reachable |
+| `MigrationImportPageReplay` | `migration_import_page` | `MigrationPageAlreadyImported` | 141 | this migration page has already been imported | reachable |
+| `MigrationImportPageOutOfRange` | `migration_import_page` | `MigrationPageOutOfRange` | 142 | migration page index is outside the exported page range | reachable |
+| `MigrationSourceExportNotFinal` | `migration_begin_import` | `MigrationSourceNotFinalized` | 143 | the source instance's export is not finalized or the source is not frozen | reachable |
+| `MigrationExportRecordMismatch` | `migration_export_page` | `MigrationRecordMismatch` | 144 | an export record does not match the record stored on this instance | reachable |
+| `MigrationExportPageOutOfOrder` | `migration_export_page` | `MigrationExportOrderViolation` | 145 | export page records are not in strictly increasing record-key order | reachable |
+| `MigrationPageTooLarge` | `migration_export_page`, `migration_import_page` | `MigrationPageTooLarge` | 146 | a migration page is empty or exceeds the maximum record count | reachable |
 | `PolicyRateBelowFloor` | `create_stream`, `create_streams`, `top_up` | `PolicyRateBelowFloor` | 42 | stream rate is below the governance policy floor | reachable |
 | `PolicyRateAboveCeiling` | `create_stream`, `create_streams`, `top_up` | `PolicyRateAboveCeiling` | 43 | stream rate exceeds the governance policy ceiling | reachable |
 | `PolicyDurationBelowFloor` | `create_stream`, `create_streams` | `PolicyDurationBelowFloor` | 44 | stream duration is below the governance policy floor | reachable |

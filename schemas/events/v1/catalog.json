@@ -93,13 +93,13 @@
     },
     {
       "event_key": "governance_action_executed",
-      "fingerprint": "sha256:de687ceefc10aefae7e339b119adb836dd36507d01aaaf97c1b85fc222d8cc02",
+      "fingerprint": "sha256:7dc586070477ca5929f0ca735bf1c5348a89f2dbfa8452d85fe86f4e9a28357f",
       "schema": "events/governance_action_executed.json",
       "struct": "GovernanceActionExecuted"
     },
     {
       "event_key": "governance_action_proposed",
-      "fingerprint": "sha256:1930191a03f61d83e3fe628ce152834f7b639b71af8e817838fc0c57794ba850",
+      "fingerprint": "sha256:219775906a7cdfc9d4977befbd6b7c96b9071a50567ad54e9684af992cfed051",
       "schema": "events/governance_action_proposed.json",
       "struct": "GovernanceActionProposed"
     },
@@ -138,6 +138,24 @@
       "fingerprint": "sha256:be27fe4f3537259a7dbc0b805c963dd2393d49967ca47f74de98d438b47fb9c0",
       "schema": "events/hook_registered.json",
       "struct": "HookRegistered"
+    },
+    {
+      "event_key": "migration_exported",
+      "fingerprint": "sha256:d282ba568f81760464decabe6043cdbb58fb583c960da7510b311075cdfeb525",
+      "schema": "events/migration_exported.json",
+      "struct": "MigrationExported"
+    },
+    {
+      "event_key": "migration_finalized",
+      "fingerprint": "sha256:cf155a3ee32b7c146e46fe2089edd692230cb95f0c2558c11565bfaccfd8951c",
+      "schema": "events/migration_finalized.json",
+      "struct": "MigrationFinalized"
+    },
+    {
+      "event_key": "migration_imported",
+      "fingerprint": "sha256:90bd4976d70d74bf95adc5c47f11e45b8d408cf2443eee6d2b15d6ed81315d6e",
+      "schema": "events/migration_imported.json",
+      "struct": "MigrationImported"
     },
     {
       "event_key": "operator_key_rotated",

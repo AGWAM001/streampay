@@ -1,0 +1,65 @@
+{
+  "$defs": {},
+  "$id": "https://streampay.dev/schemas/events/v1/events/migration_imported.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Emitted when a migration import completes on the target instance: every page verified against the source's published root and written, with the imported totals matching the exported totals (conservation).",
+  "properties": {
+    "nonce": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    },
+    "pages": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u32"
+    },
+    "records": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    },
+    "root": {
+      "contentEncoding": "base64",
+      "description": "32-byte hash, base64-encoded on the registry surface.",
+      "type": "string",
+      "x-soroban-type": "BytesN<32>"
+    },
+    "total_value": {
+      "type": "integer",
+      "x-soroban-type": "i128"
+    }
+  },
+  "required": [
+    "nonce",
+    "root",
+    "records",
+    "total_value",
+    "pages"
+  ],
+  "title": "MigrationImported",
+  "type": "object",
+  "x-streampay": {
+    "event_key": "migration_imported",
+    "fingerprint": "sha256:90bd4976d70d74bf95adc5c47f11e45b8d408cf2443eee6d2b15d6ed81315d6e",
+    "registry_version": 1,
+    "topicSchema": {
+      "items": [
+        {
+          "description": "Stellar account or contract address (StrKey).",
+          "type": "string",
+          "x-soroban-type": "Address"
+        }
+      ],
+      "type": "array"
+    },
+    "topics": [
+      {
+        "name": "source",
+        "type": "Address"
+      }
+    ]
+  }
+}
