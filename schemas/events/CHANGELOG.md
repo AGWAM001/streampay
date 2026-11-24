@@ -6,6 +6,12 @@ be mentioned here — by event struct name and field name — before the PR can
 merge. Breaking changes are rejected outright; they need a governed
 v1 → v2 migration (see [README.md](README.md#versioning-v1--v2-coexistence)).
 
+## v1.0.7 — 2026-11-24 (stream reputation, #574)
+
+One additive event; no existing event changed shape (entry count 62 → 63).
+
+- `ReputationUpdated`: added event (topic `subject:Address`, data `stream_id`, `score`, `completed_streams`) — emitted when an address's non-transferable stream-credit reputation record changes after a settled stream outcome: a completed stream, or a dispute resolution that credits/debits the parties. Batch settlement updates records without per-stream events, so a batch emits at most the summary event instead.
+
 ## v1.0.6 — 2026-11-24 (`main` repair #697: session-key, commit-reveal and insurance surfaces withdrawn)
 
 Eight registry entries disappear (entry count 70 → 62): `AgentAuthorized` and
