@@ -461,6 +461,53 @@ describe("RpcManager deterministic fake-clock transitions", () => {
     mgr.stop();
   });
 
+  it("proves a still-broken endpoint stays ejected across re-probe timeouts until healthy probe succeeds", async () => {
+    const primary = endpoint("http://primary", { type: "success", ledger: 100 });
+    const secondary = endpoint("http://secondary", { type: "success", ledger: 100 });
+
+    const mgr = makeManager({
+      failureThreshold: 2,
+    });
+
+    // 1. Primary fails repeatedly and crosses failure threshold
+    primary.behavior = { type: "network-error" };
+    try { await mgr.getLatestLedger(); } catch {}
+    try { await mgr.getLatestLedger(); } catch {}
+
+    const health1 = mgr.getHealth();
+    const primHealth1 = health1.find((h) => h.url === "http://primary");
+    assert.equal(primHealth1?.healthy, false, "primary is ejected after crossing threshold");
+
+    // 2. Primary remains broken. Advance 30,000 ms to trigger probe.
+    primary.calls.length = 0;
+    await tickAsync(30_000);
+
+    // Primary attempted probe via getLatestLedger
+    assert.ok(primary.calls.some((c) => c.parsed?.method === "getLatestLedger"), "re-probe attempted getLatestLedger");
+
+    // Primary must STILL be ejected because probe failed
+    const health2 = mgr.getHealth();
+    const primHealth2 = health2.find((h) => h.url === "http://primary");
+    assert.equal(primHealth2?.healthy, false, "still-broken primary stays ejected");
+
+    // Traffic continues to route to secondary only
+    const secCallsBefore = secondary.callCount;
+    const res = await mgr.getLatestLedger();
+    assert.equal(secondary.callCount, secCallsBefore + 1, "traffic routes to secondary while primary broken");
+    assert.equal(res.sequence, 100);
+
+    // 3. Primary finally recovers
+    primary.behavior = { type: "success", ledger: 105 };
+    await tickAsync(30_000);
+
+    const health3 = mgr.getHealth();
+    const primHealth3 = health3.find((h) => h.url === "http://primary");
+    assert.equal(primHealth3?.healthy, true, "primary restored after successful probe");
+    assert.equal(primHealth3?.failures, 0, "failures reset after successful probe");
+
+    mgr.stop();
+  });
+
   it("handles concurrent failure of all endpoints deterministically", async () => {
     endpoint("http://primary", { type: "network-error" });
     endpoint("http://secondary", { type: "network-error" });

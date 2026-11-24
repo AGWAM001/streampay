@@ -507,22 +507,69 @@ export interface MetricSample {
 }
 
 export class TelemetryMetricsRegistry {
+  private readonly maxSamples: number;
+  private readonly maxCounterEntries: number;
+  private readonly maxLabelKeyLength: number;
+  private readonly maxLabelValueLength: number;
+  private readonly maxLabelsPerMetric: number;
   private samples: MetricSample[] = [];
   private counters = new Map<string, number>();
 
+  constructor(options?: {
+    maxSamples?: number;
+    maxCounterEntries?: number;
+    maxLabelKeyLength?: number;
+    maxLabelValueLength?: number;
+    maxLabelsPerMetric?: number;
+  }) {
+    this.maxSamples = options?.maxSamples ?? 1000;
+    this.maxCounterEntries = options?.maxCounterEntries ?? 500;
+    this.maxLabelKeyLength = options?.maxLabelKeyLength ?? 64;
+    this.maxLabelValueLength = options?.maxLabelValueLength ?? 128;
+    this.maxLabelsPerMetric = options?.maxLabelsPerMetric ?? 10;
+  }
+
+  private sanitizeLabels(labels: Record<string, string>): Record<string, string> {
+    const sanitized: Record<string, string> = {};
+    const keys = Object.keys(labels).sort().slice(0, this.maxLabelsPerMetric);
+    for (const key of keys) {
+      const cleanKey = key.slice(0, this.maxLabelKeyLength);
+      const cleanVal = String(labels[key]).slice(0, this.maxLabelValueLength);
+      sanitized[cleanKey] = cleanVal;
+    }
+    return sanitized;
+  }
+
   recordCounter(name: string, value: number, labels: Record<string, string> = {}): void {
-    const key = `${name}:${JSON.stringify(labels)}`;
-    this.counters.set(key, (this.counters.get(key) ?? 0) + value);
+    const cleanLabels = this.sanitizeLabels(labels);
+    const key = `${name}:${JSON.stringify(cleanLabels)}`;
+
+    if (this.counters.has(key)) {
+      this.counters.set(key, (this.counters.get(key) ?? 0) + value);
+    } else {
+      if (this.counters.size >= this.maxCounterEntries) {
+        const firstKey = this.counters.keys().next().value;
+        if (firstKey !== undefined) {
+          this.counters.delete(firstKey);
+        }
+      }
+      this.counters.set(key, value);
+    }
+
+    if (this.samples.length >= this.maxSamples) {
+      this.samples.shift();
+    }
     this.samples.push({
       name,
       value,
-      labels,
+      labels: cleanLabels,
       timestamp: Date.now(),
     });
   }
 
   getCounter(name: string, labels: Record<string, string> = {}): number {
-    const key = `${name}:${JSON.stringify(labels)}`;
+    const cleanLabels = this.sanitizeLabels(labels);
+    const key = `${name}:${JSON.stringify(cleanLabels)}`;
     return this.counters.get(key) ?? 0;
   }
 

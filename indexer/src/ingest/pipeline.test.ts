@@ -18,7 +18,7 @@ import type { RateBudgetSnapshot } from "../rpc-manager.js";
 import { IngestPipeline, type EventSource, type EventsPage, type TickReport } from "./pipeline.js";
 import { deriveInFlight, planWindowLedgers, planWindows, type WindowSizeOptions } from "./planner.js";
 import { IngestSequencer } from "./sequencer.js";
-import { globalMetricsRegistry } from "../telemetry.js";
+import { globalMetricsRegistry, TelemetryMetricsRegistry } from "../telemetry.js";
 import { MockSorobanRpc } from "../chaos/mock_rpc.js";
 import type { DecodedEvent, EventValue, RpcEvent } from "../types.js";
 
@@ -533,6 +533,78 @@ describe("IngestSequencer ledger gap detection and telemetry (Issue #483)", () =
     // Backfill clears the gap
     sequencer.backfillWindow({ from: 1005, to: 1009 });
     assert.equal(sequencer.activeGaps.length, 0, "backfill clears gap from SC-03 fault");
+  });
+
+  it("resolves interior backfill by splitting into residual gaps and handles repeated partial overlaps", () => {
+    const sequencer = new IngestSequencer();
+    sequencer.coverWindow({ from: 100, to: 119 });
+    // Introduce gap [120..129] of size 10
+    sequencer.coverWindow({ from: 130, to: 139 });
+
+    assert.equal(sequencer.activeGaps.length, 1);
+    assert.equal(sequencer.activeGaps[0].from, 120);
+    assert.equal(sequencer.activeGaps[0].to, 129);
+    assert.equal(sequencer.activeGaps[0].size, 10);
+
+    // 1. Interior backfill: backfill [123..126] inside [120..129]
+    sequencer.backfillWindow({ from: 123, to: 126 });
+
+    // Must split into two residual gaps: [120..122] (size 3) and [127..129] (size 4) totalling 7
+    assert.equal(sequencer.activeGaps.length, 2, "interior backfill must split into 2 residual gaps");
+    assert.equal(sequencer.activeGaps[0].from, 120);
+    assert.equal(sequencer.activeGaps[0].to, 122);
+    assert.equal(sequencer.activeGaps[0].size, 3);
+    assert.equal(sequencer.activeGaps[1].from, 127);
+    assert.equal(sequencer.activeGaps[1].to, 129);
+    assert.equal(sequencer.activeGaps[1].size, 4);
+
+    const totalResidual = sequencer.activeGaps.reduce((acc, g) => acc + g.size, 0);
+    assert.equal(totalResidual, 7, "residual gaps must total 7 ledgers");
+
+    // 2. Repeated partial overlaps:
+    // Backfill prefix of first gap: [120..120] -> residual [121..122] (size 2)
+    sequencer.backfillWindow({ from: 120, to: 120 });
+    assert.equal(sequencer.activeGaps[0].from, 121);
+    assert.equal(sequencer.activeGaps[0].to, 122);
+    assert.equal(sequencer.activeGaps[0].size, 2);
+
+    // Backfill suffix of second gap: [129..129] -> residual [127..128] (size 2)
+    sequencer.backfillWindow({ from: 129, to: 129 });
+    assert.equal(sequencer.activeGaps[1].from, 127);
+    assert.equal(sequencer.activeGaps[1].to, 128);
+    assert.equal(sequencer.activeGaps[1].size, 2);
+
+    // Backfill remainder of first gap: [121..122] -> first gap resolved completely
+    sequencer.backfillWindow({ from: 121, to: 122 });
+    assert.equal(sequencer.activeGaps.length, 1);
+    assert.equal(sequencer.activeGaps[0].from, 127);
+    assert.equal(sequencer.activeGaps[0].to, 128);
+
+    // Backfill remainder of second gap: [127..128] -> all gaps cleared
+    sequencer.backfillWindow({ from: 127, to: 128 });
+    assert.equal(sequencer.activeGaps.length, 0);
+  });
+
+  it("bounds telemetry sample retention and counter map cardinality", () => {
+    const registry = new TelemetryMetricsRegistry({
+      maxSamples: 5,
+      maxCounterEntries: 3,
+      maxLabelKeyLength: 10,
+      maxLabelValueLength: 10,
+      maxLabelsPerMetric: 2,
+    });
+
+    // Ring sampling
+    for (let i = 0; i < 10; i++) {
+      registry.recordCounter("test_counter", 1, { idx: String(i) });
+    }
+    const samples = registry.getSamples("test_counter");
+    assert.equal(samples.length, 5, "samples must be capped at maxSamples (5)");
+    assert.equal(samples[samples.length - 1].labels.idx, "9");
+
+    // Cardinality bounded
+    const counterCount = (registry as any).counters.size;
+    assert.ok(counterCount <= 3, "counter map size must be bounded by maxCounterEntries");
   });
 });
 

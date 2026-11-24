@@ -126,6 +126,18 @@ export class IngestSequencer {
         // Covers end of gap
         g.to = window.from - 1;
         g.size = g.to - g.from + 1;
+      } else if (window.from > g.from && window.to < g.to) {
+        // Covers interior of gap: split into two residual gaps
+        const rightGap: LedgerGapRecord = {
+          from: window.to + 1,
+          to: g.to,
+          size: g.to - (window.to + 1) + 1,
+          source: g.source,
+          detectedAt: g.detectedAt,
+        };
+        g.to = window.from - 1;
+        g.size = g.to - g.from + 1;
+        this.gaps.splice(i + 1, 0, rightGap);
       }
     }
   }

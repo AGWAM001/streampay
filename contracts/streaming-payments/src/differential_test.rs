@@ -14,12 +14,10 @@ use std::println;
 use std::vec;
 use std::vec::Vec;
 
+use crate::{streamed_amount_at_segments, RateSegment, Stream, StreamError, StreamStatus};
 use soroban_sdk::{testutils::Address as _, Address, Env, Vec as SdkVec};
 use streampay_model::{
     streamed_at_rate_schedule, streamed_at_schedule, ModelError, ModelRateSegment,
-};
-use crate::{
-    streamed_amount_at_segments, RateSegment, Stream, StreamError, StreamStatus,
 };
 
 use streampay_model::seeds::{
@@ -192,14 +190,8 @@ fn differential_matrix_for_piecewise_rate_schedules() {
     // Degenerate case 3: Adjacent equal rates
     test_cases.push(TestSchedule {
         name: "degenerate: adjacent equal rates",
-        segments: vec![
-            (1000, 1500, 250_000, 500),
-            (1500, 2000, 250_000, 500),
-        ],
-        exact_rate: Some(vec![
-            (1000, 1500, 500),
-            (1500, 2000, 500),
-        ]),
+        segments: vec![(1000, 1500, 250_000, 500), (1500, 2000, 250_000, 500)],
+        exact_rate: Some(vec![(1000, 1500, 500), (1500, 2000, 500)]),
     });
 
     // Degenerate case 4: Rate decrease (models accept_rate_decrease.txt: 5000 down to 500)
@@ -209,10 +201,7 @@ fn differential_matrix_for_piecewise_rate_schedules() {
             (1000, 2000, 5_000_000, 1000), // rate 5000
             (2000, 4000, 1_000_000, 2000), // rate 500
         ],
-        exact_rate: Some(vec![
-            (1000, 2000, 5000),
-            (2000, 4000, 500),
-        ]),
+        exact_rate: Some(vec![(1000, 2000, 5000), (2000, 4000, 500)]),
     });
 
     // Generate 64 seeded random schedules varying count, boundary placement, and rates
@@ -241,7 +230,11 @@ fn differential_matrix_for_piecewise_rate_schedules() {
             };
 
             segs.push((start, end, alloc, basis));
-            let gap = if (rng.next_u64() % 4) == 0 { rng.next_range(1, 50) } else { 0 };
+            let gap = if (rng.next_u64() % 4) == 0 {
+                rng.next_range(1, 50)
+            } else {
+                0
+            };
             cur_time = end + gap;
         }
 
@@ -252,7 +245,10 @@ fn differential_matrix_for_piecewise_rate_schedules() {
         });
     }
 
-    println!("Running differential matrix across {} piecewise schedules...", test_cases.len());
+    println!(
+        "Running differential matrix across {} piecewise schedules...",
+        test_cases.len()
+    );
 
     for (case_idx, tc) in test_cases.iter().enumerate() {
         let mut contract_segments: SdkVec<RateSegment> = SdkVec::new(&env);
