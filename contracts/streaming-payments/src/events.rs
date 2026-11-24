@@ -1378,3 +1378,66 @@ pub struct HookFailed {
     pub callback_contract: Address,
     pub error_code: u32,
 }
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when `create_stream_with_nft` atomically creates a stream and"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " mints its linked stream NFT in the same transaction. Keyed by both the"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " stream id and the NFT contract, so the bidirectional link (stream -> NFT"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " here, NFT -> stream in the companion's bound stream id) is auditable"
+)]
+#[cfg_attr(not(target_family = "wasm"), doc = " from the event trail alone.")]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamNftMinted {
+    #[topic]
+    pub stream_id: u64,
+    #[topic]
+    pub nft_contract: Address,
+    pub recipient: Address,
+}
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted in the failure path of `create_stream_with_nft` immediately"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " before the call aborts with the mapped `StreamError`. Because the abort"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " rolls the transaction back, this event is visible in simulation/trace"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " output rather than the committed ledger log: its role is diagnostics,"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " while the no-orphan invariant itself is enforced by the rollback."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamNftLinkFailed {
+    #[topic]
+    pub stream_id: u64,
+    #[topic]
+    pub nft_contract: Address,
+    pub recipient: Address,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The mapped StreamPay error code the call aborts with (never a raw"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " NFT-contract code).")]
+    pub error_code: u32,
+}

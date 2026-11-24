@@ -2989,6 +2989,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stream-nft"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "soroban-sdk",
+ "streampay-contract",
+]
+
+[[package]]
 name = "streampay-contract"
 version = "0.1.0"
 dependencies = [

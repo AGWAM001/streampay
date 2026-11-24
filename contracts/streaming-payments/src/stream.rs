@@ -1115,6 +1115,24 @@ pub enum DataKey {
         doc = " Reentrancy lock flag for stream id during hook callback (temporary/persistent storage)."
     )]
     StreamReentrancyLock(u64),
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " NFT contract linked to a stream at atomic creation (persistent storage);"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " written only by `create_stream_with_nft` after the mint succeeds."
+    )]
+    StreamNftLink(u64),
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Atomic create+mint in-flight lock (temporary storage): set before the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " external mint call, cleared after it; blocks reentrant atomic creation."
+    )]
+    AtomicMintLock,
 }
 
 /// Freeze point of stream `id` while it is paused; `None` while it streams.
