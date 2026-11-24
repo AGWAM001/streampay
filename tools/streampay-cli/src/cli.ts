@@ -52,6 +52,8 @@ import {
   type Profile,
 } from "./profiles.ts";
 import { durationSecondsFromDays } from "../../../scripts/lib/duration.ts";
+import { dryRun, executeManifest, loadManifest, readCheckpoint, writeCheckpoint } from "./batch-manifest.ts";
+import { diffSurface, exploreSurface, renderTable, type ContractSpec } from "./abi-explorer.ts";
 
 type OutputMode = "json" | "text";
 type SignerMode = (typeof SIGNER_MODES)[number];
@@ -1149,10 +1151,45 @@ function printResult(value: Record<string, unknown>, mode: OutputMode): void {
   if (value.transactions) console.log(JSON.stringify(value.transactions, null, 2));
 }
 
+function runOfflineCommand(options: Options): void {
+  if (options.command === "batch") {
+    const loaded = loadManifest(required(options, "manifest"));
+    if (!loaded.manifest) throw new CliError(loaded.errors.join("; "), "USAGE", 2);
+    const preview = dryRun(loaded.manifest);
+    if (getOption(options, "confirm") !== "yes") {
+      console.log(JSON.stringify({ dryRun: true, ...preview }, null, 2));
+      return;
+    }
+    const checkpointPath = getOption(options, "checkpoint");
+    const current = checkpointPath ? readCheckpoint(checkpointPath) : { completed: [], audit: [] };
+    const next = executeManifest(loaded.manifest, current, true);
+    if (checkpointPath) writeCheckpoint(checkpointPath, next);
+    console.log(JSON.stringify({ dryRun: false, preview, checkpoint: next }, null, 2));
+    return;
+  }
+  const spec = JSON.parse(readFileSync(required(options, "spec"), "utf8")) as ContractSpec;
+  const kind = getOption(options, "kind");
+  const name = getOption(options, "name");
+  if (options.values.has("diff")) {
+    const other = JSON.parse(readFileSync(required(options, "diff"), "utf8")) as ContractSpec;
+    console.log(JSON.stringify(diffSurface(spec, other), null, 2));
+    return;
+  }
+  const model = exploreSurface(spec, {
+    kind: kind === "function" || kind === "error" || kind === "event" ? kind : undefined,
+    name,
+  });
+  console.log(options.json ? JSON.stringify(model, null, 2) : renderTable(model));
+}
+
 async function main(): Promise<void> {
   let options: Options = { command: "help", values: new Map(), flags: new Set(), json: false, dryRun: false, watch: false, positionals: [] };
   try {
     options = parseArgs(process.argv.slice(2));
+    if (options.command === "batch" || options.command === "abi") {
+      runOfflineCommand(options);
+      return;
+    }
     const result = await resolveOptionsAndRun(options);
     printResult(result.value, options.json ? "json" : "text");
     process.exitCode = result.exitCode;

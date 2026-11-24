@@ -10,6 +10,7 @@
 //! ```
 mod diff;
 mod export;
+mod merkle;
 mod model;
 mod rpc;
 mod verify;
