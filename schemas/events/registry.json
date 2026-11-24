@@ -1302,6 +1302,31 @@
         }
       ]
     },
+    "ReputationUpdated": {
+      "canonical": "streampay-event/v1|ReputationUpdated|key=reputation_updated|topics=[subject:Address],data=[completed_streams:u32,score:u32,stream_id:u64]",
+      "data": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        },
+        {
+          "name": "score",
+          "type": "u32"
+        },
+        {
+          "name": "completed_streams",
+          "type": "u32"
+        }
+      ],
+      "event_key": "reputation_updated",
+      "fingerprint": "sha256:e55d499b26e37e7b62ea675a51df0106b6d74b5b5d2232943c41cda5f6707a33",
+      "topics": [
+        {
+          "name": "subject",
+          "type": "Address"
+        }
+      ]
+    },
     "ScheduledIntentCancelled": {
       "canonical": "streampay-event/v1|ScheduledIntentCancelled|key=scheduled_intent_cancelled|topics=[intent_id:u64],data=[refund:i128,sender:Address]",
       "data": [
@@ -2009,6 +2034,7 @@
     "PolicyInitialized": "sha256:332dec01d9e44b08a077228239c6b3fdcc435b4c59862a9efd6d4001a7cbd44b",
     "RateChangeAccepted": "sha256:66b7fcbf7e912df0adfb728f6dd025e43a3678b76885950fb68c9e7b1ea41da3",
     "RateChangeProposed": "sha256:9e2dec2cd991106085acabb92aaec4edf32ca518a688d2090ded15d91c7f70c0",
+    "ReputationUpdated": "sha256:e55d499b26e37e7b62ea675a51df0106b6d74b5b5d2232943c41cda5f6707a33",
     "ScheduledIntentCancelled": "sha256:fe727619a69c546daa9f512a6cbe4162453a8404bd8dba614384557f162e5f0e",
     "ScheduledIntentExpired": "sha256:708a995061ac8713d9a6fc7ea04f7c39eee313276cc42fb0cd9268f3210500ee",
     "ScheduledStreamExecuted": "sha256:318937479fdb35060d6640657c70d51fcda211fc4408f5902b7eac1224f89f06",
