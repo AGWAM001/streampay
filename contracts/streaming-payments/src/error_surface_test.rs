@@ -207,6 +207,197 @@ impl Governed {
     }
 }
 
+// ------------------------------------------------------- migration probes --
+//
+// The migration branches fire across two instances in one env (export on the
+// source, import on the target), so the probes share one scaffolding type
+// rather than repeating the two-contract ceremony a dozen times.
+
+struct MigPair {
+    env: soroban_sdk::Env,
+    token: Address,
+    governor: Address,
+    source: Address,
+    source_client: crate::test_client::StreamingPaymentsClient<'static>,
+    target_client: crate::test_client::StreamingPaymentsClient<'static>,
+}
+
+impl MigPair {
+    fn new() -> Self {
+        use soroban_sdk::testutils::Address as _;
+        let env = soroban_sdk::Env::default();
+        env.mock_all_auths();
+        let sac = env.register_stellar_asset_contract_v2(Address::generate(&env));
+        let token = sac.address();
+        let sender = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let governor = Address::generate(&env);
+        soroban_sdk::token::StellarAssetClient::new(&env, &token).mint(&sender, &(40 * DEPOSIT));
+        let source = env.register(crate::StreamingPayments, (governor.clone(),));
+        let source_client = crate::test_client::StreamingPaymentsClient::new(&env, &source);
+        let target = env.register(crate::StreamingPayments, (governor.clone(),));
+        let target_client = crate::test_client::StreamingPaymentsClient::new(&env, &target);
+        soroban_sdk::token::StellarAssetClient::new(&env, &token).approve(
+            &sender,
+            &source,
+            &(40 * DEPOSIT),
+            &1_000_000u32,
+        );
+        let now = env.ledger().timestamp();
+        for _ in 0..2 {
+            source_client.mock_all_auths().create_stream_with_oracle(
+                &sender,
+                &recipient,
+                &token,
+                &DEPOSIT,
+                &(now + DAY),
+                &(now + 11 * DAY),
+                &true,
+                &false,
+            );
+        }
+        MigPair {
+            env,
+            token,
+            governor,
+            source,
+            source_client,
+            target_client,
+        }
+    }
+
+    fn records(&self) -> std::vec::Vec<crate::MigrationRecord> {
+        let c = self.source_client.mock_all_auths();
+        std::vec![
+            crate::MigrationRecord::Stream(c.get_stream(&1)),
+            crate::MigrationRecord::Stream(c.get_stream(&2)),
+        ]
+    }
+
+    fn globals(&self) -> crate::MigrationRecord {
+        crate::MigrationRecord::Globals(self.source_client.mock_all_auths().migration_globals())
+    }
+
+    fn export(&self) {
+        let c = self.source_client.mock_all_auths();
+        c.migration_begin_export(&self.governor);
+        let records = self.records();
+        let mut v = soroban_sdk::Vec::new(&self.env);
+        for r in &records {
+            v.push_back(r.clone());
+        }
+        c.migration_export_page(&v);
+        c.migration_finalize_export();
+    }
+
+    fn page_roots(&self) -> std::vec::Vec<BytesN<32>> {
+        let c = self.source_client.mock_all_auths();
+        std::vec![
+            c.migration_page_root(&0).expect("page zero"),
+            c.migration_page_root(&1).expect("page one"),
+        ]
+    }
+
+    fn proofs(&self, records: &[crate::MigrationRecord]) -> std::vec::Vec<crate::MigrationProof> {
+        use crate::migration::{leaf_hash, node_hash};
+        let leaves: std::vec::Vec<BytesN<32>> =
+            records.iter().map(|r| leaf_hash(&self.env, r)).collect();
+        (0..leaves.len())
+            .map(|index| {
+                let mut siblings = std::vec::Vec::new();
+                let mut level = leaves.clone();
+                let mut idx = index;
+                while level.len() > 1 {
+                    if idx % 2 == 0 {
+                        if idx + 1 < level.len() {
+                            siblings.push(level[idx + 1].clone());
+                        }
+                    } else {
+                        siblings.push(level[idx - 1].clone());
+                    }
+                    let mut next = std::vec::Vec::new();
+                    let mut i = 0;
+                    while i < level.len() {
+                        if i + 1 < level.len() {
+                            next.push(node_hash(&self.env, &level[i], &level[i + 1]));
+                        } else {
+                            next.push(level[i].clone());
+                        }
+                        i += 2;
+                    }
+                    idx /= 2;
+                    level = next;
+                }
+                let mut v = soroban_sdk::Vec::new(&self.env);
+                for s in &siblings {
+                    v.push_back(s.clone());
+                }
+                crate::MigrationProof { siblings: v }
+            })
+            .collect()
+    }
+
+    fn import_page(&self, page: u32, records: &[crate::MigrationRecord]) {
+        let roots = self.page_roots();
+        // Two pages: each page's root-level sibling is the other page root.
+        let sibling = roots[(1 - page) as usize].clone();
+        let mut siblings = soroban_sdk::Vec::new(&self.env);
+        siblings.push_back(sibling);
+        let mut recs = soroban_sdk::Vec::new(&self.env);
+        for r in records {
+            recs.push_back(r.clone());
+        }
+        let proofs = self.proofs(records);
+        let mut prfs = soroban_sdk::Vec::new(&self.env);
+        for pr in &proofs {
+            prfs.push_back(pr.clone());
+        }
+        self.target_client
+            .mock_all_auths()
+            .migration_import_page(&page, &siblings, &recs, &prfs)
+    }
+
+    /// The `try_` form of [`MigPair::import_page`], for probes that expect
+    /// the contract to reject the page.
+    fn try_import_page(
+        &self,
+        page: u32,
+        records: &[crate::MigrationRecord],
+    ) -> Result<
+        Result<(), soroban_sdk::ConversionError>,
+        Result<StreamError, soroban_sdk::InvokeError>,
+    > {
+        let roots = self.page_roots();
+        let sibling = roots[(1 - page) as usize].clone();
+        let mut siblings = soroban_sdk::Vec::new(&self.env);
+        siblings.push_back(sibling);
+        let mut recs = soroban_sdk::Vec::new(&self.env);
+        for r in records {
+            recs.push_back(r.clone());
+        }
+        let proofs = self.proofs(records);
+        let mut prfs = soroban_sdk::Vec::new(&self.env);
+        for pr in &proofs {
+            prfs.push_back(pr.clone());
+        }
+        self.target_client
+            .mock_all_auths()
+            .try_migration_import_page(&page, &siblings, &recs, &prfs)
+    }
+
+    fn import_all(&self) {
+        let records = self.records();
+        self.target_client
+            .mock_all_auths()
+            .migration_begin_import(&self.governor, &self.source);
+        self.import_page(0, &[self.globals()]);
+        self.import_page(1, &records);
+        self.target_client
+            .mock_all_auths()
+            .migration_finalize_import();
+    }
+}
+
 /// Triggers `branch` and returns the error the contract produced, or `None` for
 /// a branch classified [`Reachability::Defensive`] (no reachable trigger).
 fn probe(branch: Branch) -> Option<StreamError> {
@@ -1432,6 +1623,209 @@ fn probe(branch: Branch) -> Option<StreamError> {
                 .mock_all_auths()
                 .try_accept_rate_change(&f.recipient, &id)))
         }
+        // ------------------------------------------------------ migration
+        Branch::MigrationBeginSessionActive => {
+            let f = Fixture::setup_quiet();
+            f.client
+                .mock_all_auths()
+                .migration_begin_export(&f.governor);
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_migration_begin_export(&f.governor)))
+        }
+        Branch::MigrationNoSession => {
+            let f = Fixture::setup_quiet();
+            let mut records = soroban_sdk::Vec::new(&f.env);
+            records.push_back(crate::MigrationRecord::Treasury(
+                f.token.clone(),
+                crate::treasury::Treasury {
+                    charged_total: 0,
+                    withdrawn_total: 0,
+                },
+            ));
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_migration_export_page(&records)))
+        }
+        Branch::MigrationExportRecordMismatch => {
+            let f = Fixture::setup_quiet();
+            let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            let mut record = f.client.mock_all_auths().get_stream(&id);
+            record.deposit += 1;
+            f.client
+                .mock_all_auths()
+                .migration_begin_export(&f.governor);
+            let mut records = soroban_sdk::Vec::new(&f.env);
+            records.push_back(crate::MigrationRecord::Stream(record));
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_migration_export_page(&records)))
+        }
+        Branch::MigrationExportPageOutOfOrder => {
+            let f = Fixture::setup_quiet();
+            let first = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            let second = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            let c = f.client.mock_all_auths();
+            let mut records = soroban_sdk::Vec::new(&f.env);
+            records.push_back(crate::MigrationRecord::Stream(c.get_stream(&second)));
+            records.push_back(crate::MigrationRecord::Stream(c.get_stream(&first)));
+            c.migration_begin_export(&f.governor);
+            Some(rejected!(c.try_migration_export_page(&records)))
+        }
+        Branch::MigrationPageTooLarge => {
+            let f = Fixture::setup_quiet();
+            f.client
+                .mock_all_auths()
+                .migration_begin_export(&f.governor);
+            let mut records = soroban_sdk::Vec::new(&f.env);
+            for _ in 0..(crate::MAX_MIGRATION_PAGE_RECORDS + 1) {
+                records.push_back(crate::MigrationRecord::Treasury(
+                    f.token.clone(),
+                    crate::treasury::Treasury {
+                        charged_total: 0,
+                        withdrawn_total: 0,
+                    },
+                ));
+            }
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_migration_export_page(&records)))
+        }
+        Branch::MigrationSourceExportNotFinal => {
+            let p = MigPair::new();
+            p.source_client
+                .mock_all_auths()
+                .migration_begin_export(&p.governor);
+            Some(rejected!(p
+                .target_client
+                .mock_all_auths()
+                .try_migration_begin_import(&p.governor, &p.source)))
+        }
+        Branch::MigrationImportTargetNotFresh => {
+            use soroban_sdk::testutils::Address as _;
+            let p = MigPair::new();
+            p.export();
+            let third = p
+                .env
+                .register(crate::StreamingPayments, (p.governor.clone(),));
+            let third_client = crate::test_client::StreamingPaymentsClient::new(&p.env, &third);
+            let sender = Address::generate(&p.env);
+            soroban_sdk::token::StellarAssetClient::new(&p.env, &p.token)
+                .mint(&sender, &(10 * DEPOSIT));
+            soroban_sdk::token::StellarAssetClient::new(&p.env, &p.token).approve(
+                &sender,
+                &third,
+                &(10 * DEPOSIT),
+                &1_000_000u32,
+            );
+            let now = p.env.ledger().timestamp();
+            third_client.mock_all_auths().create_stream_with_oracle(
+                &sender,
+                &Address::generate(&p.env),
+                &p.token,
+                &DEPOSIT,
+                &(now + DAY),
+                &(now + 11 * DAY),
+                &true,
+                &false,
+            );
+            Some(rejected!(third_client
+                .mock_all_auths()
+                .try_migration_begin_import(&p.governor, &p.source)))
+        }
+        Branch::MigrationImportProofInvalid => {
+            let p = MigPair::new();
+            p.export();
+            p.target_client
+                .mock_all_auths()
+                .migration_begin_import(&p.governor, &p.source);
+            p.import_page(0, &[p.globals()]);
+            let mut records = p.records();
+            if let crate::MigrationRecord::Stream(s) = &mut records[0] {
+                s.deposit += 1;
+            }
+            Some(rejected!(p.try_import_page(1, &records)))
+        }
+        Branch::MigrationImportRootMismatch => {
+            let p = MigPair::new();
+            p.export();
+            p.target_client
+                .mock_all_auths()
+                .migration_begin_import(&p.governor, &p.source);
+            p.import_page(0, &[p.globals()]);
+            let records = p.records();
+            let mut recs = soroban_sdk::Vec::new(&p.env);
+            for r in &records {
+                recs.push_back(r.clone());
+            }
+            let proofs = p.proofs(&records);
+            let mut prfs = soroban_sdk::Vec::new(&p.env);
+            for pr in &proofs {
+                prfs.push_back(pr.clone());
+            }
+            // No root-level sibling: the real page root cannot fold into the
+            // committed root, so the binding check refuses the page.
+            let empty = soroban_sdk::Vec::new(&p.env);
+            Some(rejected!(p
+                .target_client
+                .mock_all_auths()
+                .try_migration_import_page(&1u32, &empty, &recs, &prfs)))
+        }
+        Branch::MigrationImportPageReplay => {
+            let p = MigPair::new();
+            p.export();
+            p.target_client
+                .mock_all_auths()
+                .migration_begin_import(&p.governor, &p.source);
+            p.import_page(0, &[p.globals()]);
+            Some(rejected!(p.try_import_page(0, &[p.globals()])))
+        }
+        Branch::MigrationImportPageOutOfRange => {
+            let p = MigPair::new();
+            p.export();
+            p.target_client
+                .mock_all_auths()
+                .migration_begin_import(&p.governor, &p.source);
+            let empty_records: soroban_sdk::Vec<crate::MigrationRecord> =
+                soroban_sdk::Vec::new(&p.env);
+            let empty_proofs: soroban_sdk::Vec<crate::MigrationProof> =
+                soroban_sdk::Vec::new(&p.env);
+            let empty_siblings: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&p.env);
+            Some(rejected!(p
+                .target_client
+                .mock_all_auths()
+                .try_migration_import_page(
+                    &7u32,
+                    &empty_siblings,
+                    &empty_records,
+                    &empty_proofs
+                )))
+        }
+        Branch::MigrationFinalizeImportIncomplete => {
+            let p = MigPair::new();
+            p.export();
+            p.target_client
+                .mock_all_auths()
+                .migration_begin_import(&p.governor, &p.source);
+            Some(rejected!(p
+                .target_client
+                .mock_all_auths()
+                .try_migration_finalize_import()))
+        }
+        Branch::MigrationImportRootConsumed => {
+            let p = MigPair::new();
+            p.export();
+            p.import_all();
+            Some(rejected!(p
+                .target_client
+                .mock_all_auths()
+                .try_migration_begin_import(&p.governor, &p.source)))
+        }
+
         // Invariant-protected: a stored stream always satisfies
         // `0 <= withdrawn <= streamed <= deposit <= i128::MAX`, so these
         // checked subtractions/addition can never cross an i128 boundary —
@@ -1442,6 +1836,35 @@ fn probe(branch: Branch) -> Option<StreamError> {
         | Branch::PayoutOverflow
         | Branch::RateSegmentSumOverflow
         | Branch::RateHeadroomUnderflow => None,
+        Branch::MigrationConservationTotalMismatch => {
+            let p = MigPair::new();
+            p.export();
+            // Import every page but stop before finalize: the session is
+            // still open, with its totals on record.
+            let records = p.records();
+            p.target_client
+                .mock_all_auths()
+                .migration_begin_import(&p.governor, &p.source);
+            p.import_page(0, &[p.globals()]);
+            p.import_page(1, &records);
+            // Forge the stored import session with a total the imported
+            // pages cannot meet — exactly what a corrupted write (or a
+            // record-value change between export and import) would
+            // produce. Finalize must refuse rather than bless the drift.
+            let mut session = p.target_client.migration_import().expect("import session");
+            session.total_value += 1;
+            let target = p.target_client.address.clone();
+            p.env.as_contract(&target, || {
+                p.env
+                    .storage()
+                    .instance()
+                    .set(&crate::migration::MigrationDataKey::ImportSession, &session);
+            });
+            Some(rejected!(p
+                .target_client
+                .mock_all_auths()
+                .try_migration_finalize_import()))
+        }
 
         // ------------------------------------------------------- governance
         Branch::GovernanceNotInitialized => {
@@ -2484,7 +2907,21 @@ fn stream_error_variant_list_is_exhaustive() {
             | StreamError::HookNotFound
             | StreamError::HookReentrancyBlocked
             | StreamError::HookExecutionFailed
-            | StreamError::InvalidHookSelector => StreamError::ALL.contains(&e),
+            | StreamError::InvalidHookSelector
+            | StreamError::MigrationSessionActive
+            | StreamError::MigrationSessionNotFound
+            | StreamError::MigrationProofInvalid
+            | StreamError::MigrationRootMismatch
+            | StreamError::MigrationRootConsumed
+            | StreamError::MigrationTargetNotFresh
+            | StreamError::MigrationImportIncomplete
+            | StreamError::MigrationConservationMismatch
+            | StreamError::MigrationPageAlreadyImported
+            | StreamError::MigrationPageOutOfRange
+            | StreamError::MigrationSourceNotFinalized
+            | StreamError::MigrationRecordMismatch
+            | StreamError::MigrationExportOrderViolation
+            | StreamError::MigrationPageTooLarge => StreamError::ALL.contains(&e),
         }
     }
 

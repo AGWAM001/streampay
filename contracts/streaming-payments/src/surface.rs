@@ -196,6 +196,48 @@ pub enum Branch {
     UpgradeDelayTooShort,
     /// `migrate_storage`: the schema has already been migrated to the target version.
     AlreadyMigrated,
+    // ------------------------------------------- emergency state migration
+    // Issue #569: governed break-glass migration to a new contract instance.
+    /// `migration_begin_export` / `migration_begin_import`: a session is
+    /// already active (or, for export, already finalized) on this instance.
+    MigrationBeginSessionActive,
+    /// A migration entrypoint that needs a session found none.
+    MigrationNoSession,
+    /// `migration_import_page`: a record's Merkle proof does not verify
+    /// against the page root.
+    MigrationImportProofInvalid,
+    /// `migration_import_page`: the page root does not bind to the root
+    /// committed at `migration_begin_import`, or disagrees with the root the
+    /// source instance currently publishes for that page.
+    MigrationImportRootMismatch,
+    /// `migration_begin_import`: this root was already consumed by a
+    /// completed import into this instance.
+    MigrationImportRootConsumed,
+    /// `migration_begin_import`: the target instance already holds state.
+    MigrationImportTargetNotFresh,
+    /// `migration_finalize_import`: pages or records are still missing.
+    MigrationFinalizeImportIncomplete,
+    /// `migration_finalize_import`: imported value differs from exported
+    /// value. Defensive: proofs bind every imported record to the exported
+    /// snapshot and the value of a record is a pure function of the record,
+    /// so a complete import cannot diverge; the check is the conservation
+    /// assertion itself, kept as a guard rather than an assumption.
+    MigrationConservationTotalMismatch,
+    /// `migration_import_page`: the page was already imported.
+    MigrationImportPageReplay,
+    /// `migration_import_page`: the page index is outside the export.
+    MigrationImportPageOutOfRange,
+    /// `migration_begin_import`: the source export is not finalized or the
+    /// source is not frozen.
+    MigrationSourceExportNotFinal,
+    /// `migration_export_page`: a supplied record does not match storage.
+    MigrationExportRecordMismatch,
+    /// `migration_export_page`: records are not in strictly increasing
+    /// record-key order (duplicate or out-of-order record).
+    MigrationExportPageOutOfOrder,
+    /// `migration_export_page` / `migration_import_page`: the page is empty
+    /// or exceeds the maximum record count.
+    MigrationPageTooLarge,
     // ------------------------------------------------ stream policy floors
     PolicyRateBelowFloor,
     PolicyRateAboveCeiling,
@@ -387,7 +429,7 @@ impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 168] = [
+    pub const ALL: [Branch; 182] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -464,6 +506,20 @@ impl Branch {
         Branch::TimelockNotExpired,
         Branch::UpgradeDelayTooShort,
         Branch::AlreadyMigrated,
+        Branch::MigrationBeginSessionActive,
+        Branch::MigrationNoSession,
+        Branch::MigrationImportProofInvalid,
+        Branch::MigrationImportRootMismatch,
+        Branch::MigrationImportRootConsumed,
+        Branch::MigrationImportTargetNotFresh,
+        Branch::MigrationFinalizeImportIncomplete,
+        Branch::MigrationConservationTotalMismatch,
+        Branch::MigrationImportPageReplay,
+        Branch::MigrationImportPageOutOfRange,
+        Branch::MigrationSourceExportNotFinal,
+        Branch::MigrationExportRecordMismatch,
+        Branch::MigrationExportPageOutOfOrder,
+        Branch::MigrationPageTooLarge,
         Branch::PolicyRateBelowFloor,
         Branch::PolicyRateAboveCeiling,
         Branch::PolicyDurationBelowFloor,
@@ -767,6 +823,28 @@ impl Branch {
                 "migrate_stream_version",
             ],
             Branch::MigrationNotFrozen | Branch::AlreadyMigrated => &["migrate_storage"],
+            Branch::MigrationBeginSessionActive => {
+                &["migration_begin_export", "migration_begin_import"]
+            }
+            Branch::MigrationNoSession => &[
+                "migration_export_page",
+                "migration_finalize_export",
+                "migration_begin_import",
+                "migration_import_page",
+                "migration_finalize_import",
+            ],
+            Branch::MigrationImportProofInvalid => &["migration_import_page"],
+            Branch::MigrationImportRootMismatch => &["migration_import_page"],
+            Branch::MigrationImportRootConsumed => &["migration_begin_import"],
+            Branch::MigrationImportTargetNotFresh => &["migration_begin_import"],
+            Branch::MigrationFinalizeImportIncomplete => &["migration_finalize_import"],
+            Branch::MigrationConservationTotalMismatch => &["migration_finalize_import"],
+            Branch::MigrationImportPageReplay => &["migration_import_page"],
+            Branch::MigrationImportPageOutOfRange => &["migration_import_page"],
+            Branch::MigrationSourceExportNotFinal => &["migration_begin_import"],
+            Branch::MigrationExportRecordMismatch => &["migration_export_page"],
+            Branch::MigrationExportPageOutOfOrder => &["migration_export_page"],
+            Branch::MigrationPageTooLarge => &["migration_export_page", "migration_import_page"],
             Branch::ExecuteUpgradeNoPending | Branch::TimelockNotExpired => &["execute_upgrade"],
             Branch::CancelUpgradeNoPending => &["cancel_upgrade"],
             Branch::UpgradeDelayTooShort => &["propose_upgrade"],
@@ -1036,6 +1114,22 @@ impl Branch {
             Branch::TimelockNotExpired => StreamError::TimelockNotExpired,
             Branch::UpgradeDelayTooShort => StreamError::UpgradeDelayTooShort,
             Branch::AlreadyMigrated => StreamError::AlreadyMigrated,
+            Branch::MigrationBeginSessionActive => StreamError::MigrationSessionActive,
+            Branch::MigrationNoSession => StreamError::MigrationSessionNotFound,
+            Branch::MigrationImportProofInvalid => StreamError::MigrationProofInvalid,
+            Branch::MigrationImportRootMismatch => StreamError::MigrationRootMismatch,
+            Branch::MigrationImportRootConsumed => StreamError::MigrationRootConsumed,
+            Branch::MigrationImportTargetNotFresh => StreamError::MigrationTargetNotFresh,
+            Branch::MigrationFinalizeImportIncomplete => StreamError::MigrationImportIncomplete,
+            Branch::MigrationConservationTotalMismatch => {
+                StreamError::MigrationConservationMismatch
+            }
+            Branch::MigrationImportPageReplay => StreamError::MigrationPageAlreadyImported,
+            Branch::MigrationImportPageOutOfRange => StreamError::MigrationPageOutOfRange,
+            Branch::MigrationSourceExportNotFinal => StreamError::MigrationSourceNotFinalized,
+            Branch::MigrationExportRecordMismatch => StreamError::MigrationRecordMismatch,
+            Branch::MigrationExportPageOutOfOrder => StreamError::MigrationExportOrderViolation,
+            Branch::MigrationPageTooLarge => StreamError::MigrationPageTooLarge,
             Branch::PolicyRateBelowFloor => StreamError::PolicyRateBelowFloor,
             Branch::PolicyRateAboveCeiling => StreamError::PolicyRateAboveCeiling,
             Branch::PolicyDurationBelowFloor => StreamError::PolicyDurationBelowFloor,
@@ -1287,6 +1381,46 @@ impl Branch {
             Branch::AlreadyMigrated => {
                 "storage has already been migrated to the target schema version"
             }
+            Branch::MigrationBeginSessionActive => {
+                "a migration session is already active or finalized on this instance"
+            }
+            Branch::MigrationNoSession => "no migration session exists on this instance",
+            Branch::MigrationImportProofInvalid => {
+                "a record's Merkle proof does not verify against its page root"
+            }
+            Branch::MigrationImportRootMismatch => {
+                "the page root does not bind to the committed migration root or disagrees with the source instance"
+            }
+            Branch::MigrationImportRootConsumed => {
+                "this migration root has already been consumed by an import into this instance"
+            }
+            Branch::MigrationImportTargetNotFresh => {
+                "the migration import target already holds streams or intents"
+            }
+            Branch::MigrationFinalizeImportIncomplete => {
+                "migration import cannot finalize: pages or records are still missing"
+            }
+            Branch::MigrationConservationTotalMismatch => {
+                "imported total value does not equal the exported total value"
+            }
+            Branch::MigrationImportPageReplay => {
+                "this migration page has already been imported"
+            }
+            Branch::MigrationImportPageOutOfRange => {
+                "migration page index is outside the exported page range"
+            }
+            Branch::MigrationSourceExportNotFinal => {
+                "the source instance's export is not finalized or the source is not frozen"
+            }
+            Branch::MigrationExportRecordMismatch => {
+                "an export record does not match the record stored on this instance"
+            }
+            Branch::MigrationExportPageOutOfOrder => {
+                "export page records are not in strictly increasing record-key order"
+            }
+            Branch::MigrationPageTooLarge => {
+                "a migration page is empty or exceeds the maximum record count"
+            }
             Branch::PolicyRateBelowFloor => "stream rate is below the governance policy floor",
             Branch::PolicyRateAboveCeiling => "stream rate exceeds the governance policy ceiling",
             Branch::PolicyDurationBelowFloor => {
@@ -1535,6 +1669,17 @@ impl Branch {
             | Branch::RateSegmentSumOverflow
             | Branch::RateHeadroomUnderflow
             | Branch::WithdrawManyTotalOverflow => Reachability::Defensive,
+            // `MigrationConservationTotalMismatch` is Reachable (the
+            // default below) even though an honest import cannot produce
+            // it: Merkle proofs bind every imported record to the exported
+            // snapshot and a record's value is a pure function of the
+            // record, so a page-complete, count-complete import carries
+            // exactly the exported total by construction. The finalize-time
+            // comparison is the conservation assertion itself, and the
+            // matrix probe reaches it the way reality would — through a
+            // stored session whose total no longer matches the imported
+            // pages (a corrupted write, or a record-value change between
+            // export and import).
             _ => Reachability::Reachable,
         }
     }

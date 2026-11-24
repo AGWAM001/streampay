@@ -334,6 +334,31 @@ pub trait StreamingPaymentsApi {
     fn governance_proposal(env: Env, proposal_id: u64) -> Option<Proposal>;
     fn governance_proposal_count(env: Env) -> u64;
 
+    // ------------------------------------------- emergency state migration
+    fn migration_begin_export(env: Env, caller: Address) -> Result<u64, StreamError>;
+    fn migration_export_page(
+        env: Env,
+        records: Vec<crate::MigrationRecord>,
+    ) -> Result<u32, StreamError>;
+    fn migration_finalize_export(env: Env) -> Result<BytesN<32>, StreamError>;
+    fn migration_export(env: Env) -> Option<crate::ExportSession>;
+    fn migration_page_root(env: Env, page: u32) -> Option<BytesN<32>>;
+    fn migration_globals(env: Env) -> crate::MigrationGlobals;
+    fn migration_begin_import(
+        env: Env,
+        caller: Address,
+        source: Address,
+    ) -> Result<BytesN<32>, StreamError>;
+    fn migration_import_page(
+        env: Env,
+        page: u32,
+        page_siblings: Vec<BytesN<32>>,
+        records: Vec<crate::MigrationRecord>,
+        proofs: Vec<crate::MigrationProof>,
+    ) -> Result<(), StreamError>;
+    fn migration_finalize_import(env: Env) -> Result<(), StreamError>;
+    fn migration_import(env: Env) -> Option<crate::ImportSession>;
+
     // ----------------------------------------------------------- receivables
     fn set_receivables_config(
         env: Env,

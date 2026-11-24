@@ -257,6 +257,25 @@ pub fn stream_fee(env: &Env, stream_id: u64) -> i128 {
     record.map_or(0, |r| r.amount)
 }
 
+/// The full stored fee record for one stream, if any. Used by the emergency
+/// state migration (issue #569) to export and verify fee state verbatim.
+pub fn get_stream_fee_record(env: &Env, stream_id: u64) -> Option<StreamFeeRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::StreamFee(stream_id))
+}
+
+/// Persists a fee record verbatim. Used by the emergency state migration
+/// (issue #569) when importing state into a fresh instance; the normal fee
+/// path writes through [`apply_fee`], never through here.
+pub fn put_stream_fee_record(env: &Env, stream_id: u64, record: &StreamFeeRecord) {
+    let key = DataKey::StreamFee(stream_id);
+    env.storage().persistent().set(&key, record);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+}
+
 #[cfg_attr(
     not(target_family = "wasm"),
     doc = " One call snapshot of the treasury state for a token: governance, current"
