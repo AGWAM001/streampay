@@ -370,6 +370,10 @@ pub(crate) fn kind_for_key(env: &Env, key_sc: &xdr::ScVal) -> Option<String> {
             DataKey::StreamReentrancyLock(_) => "stream_reentrancy_lock",
             DataKey::AgentAuth(_, _) => "agent_auth",
             DataKey::AgentCap(_, _) => "agent_cap",
+            // Issue #575: also entered `DataKey` after the corpus was cut, so
+            // dispatched here but not yet in `COVERED_KINDS`.
+            DataKey::StreamNftLink(_) => "stream_nft_link",
+            DataKey::AtomicMintLock => "atomic_mint_lock",
         }));
     }
     if let Ok(pk) = PolicyDataKey::try_from_val(env, key_sc) {

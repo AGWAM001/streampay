@@ -58,6 +58,19 @@ pub trait StreamingPaymentsApi {
         cancelable: bool,
         refund_to: Address,
     ) -> Result<u64, StreamError>;
+    #[allow(clippy::too_many_arguments)]
+    fn create_stream_with_nft(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+        nft_contract: Address,
+    ) -> Result<u64, StreamError>;
+    fn stream_nft_link(env: Env, stream_id: u64) -> Option<Address>;
     fn set_refund_target(
         env: Env,
         caller: Address,

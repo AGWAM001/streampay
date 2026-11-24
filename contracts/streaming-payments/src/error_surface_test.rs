@@ -2246,6 +2246,75 @@ fn probe(branch: Branch) -> Option<StreamError> {
                 &crate::HookFailurePolicy::EmitAndContinue,
             )))
         }
+        // ------------------------------------------------- atomic stream + NFT
+        Branch::CreateWithNftMintFailed => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let nft = f.env.register(
+                crate::atomic_nft_test::MockNft,
+                (
+                    1u64,
+                    crate::atomic_nft_test::MODE_ERROR,
+                    f.client.address.clone(),
+                    f.sender.clone(),
+                    f.token.clone(),
+                ),
+            );
+            Some(rejected!(f.client.mock_all_auths().try_create_stream_with_nft(
+                &f.sender,
+                &f.recipient,
+                &f.token,
+                &DEPOSIT,
+                &now,
+                &(now + 10 * DAY),
+                &true,
+                &nft,
+            )))
+        }
+        Branch::CreateWithNftLinkMismatch => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            let nft = f.env.register(
+                crate::atomic_nft_test::MockNft,
+                (
+                    99u64,
+                    crate::atomic_nft_test::MODE_OK,
+                    f.client.address.clone(),
+                    f.sender.clone(),
+                    f.token.clone(),
+                ),
+            );
+            Some(rejected!(f.client.mock_all_auths().try_create_stream_with_nft(
+                &f.sender,
+                &f.recipient,
+                &f.token,
+                &DEPOSIT,
+                &now,
+                &(now + 10 * DAY),
+                &true,
+                &nft,
+            )))
+        }
+        Branch::CreateWithNftReentrancyBlocked => {
+            let f = Fixture::setup_quiet();
+            let now = f.env.ledger().timestamp();
+            // Hold the atomic-mint lock the way an in-flight mint does, then
+            // a top-level atomic creation must refuse to start.
+            f.env.as_contract(&f.client.address, || {
+                crate::nft_link::set_atomic_mint_lock(&f.env, true);
+            });
+            let nft = soroban_sdk::Address::generate(&f.env);
+            Some(rejected!(f.client.mock_all_auths().try_create_stream_with_nft(
+                &f.sender,
+                &f.recipient,
+                &f.token,
+                &DEPOSIT,
+                &now,
+                &(now + 10 * DAY),
+                &true,
+                &nft,
+            )))
+        }
     }
 }
 
@@ -2484,7 +2553,10 @@ fn stream_error_variant_list_is_exhaustive() {
             | StreamError::HookNotFound
             | StreamError::HookReentrancyBlocked
             | StreamError::HookExecutionFailed
-            | StreamError::InvalidHookSelector => StreamError::ALL.contains(&e),
+            | StreamError::InvalidHookSelector
+            | StreamError::NftMintFailed
+            | StreamError::NftLinkMismatch
+            | StreamError::AtomicMintReentrancyBlocked => StreamError::ALL.contains(&e),
         }
     }
 

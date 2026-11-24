@@ -95,6 +95,8 @@ mod error_surface_test;
 mod oracle_staleness_test;
 mod extensions_test;
 
+#[cfg(test)]
+mod atomic_nft_test;
 mod dispute;
 #[cfg(test)]
 mod dispute_lifecycle_test;
@@ -110,6 +112,7 @@ pub mod voting_power;
 #[cfg(test)]
 mod governance_test;
 pub mod hooks;
+mod nft_link;
 pub mod oracle;
 mod policy;
 pub mod privacy_claims;
@@ -170,7 +173,8 @@ pub use events::{
     PolicyInitialized, RateChangeAccepted, RateChangeProposed, ScheduledIntentCancelled,
     ScheduledIntentExpired, ScheduledStreamExecuted, SenderTransferExpired, SenderTransferProposed,
     SenderTransferred, SponsorActiveSet, SponsorClaim, SponsorRegistered, StorageMigrated,
-    StreamCancelled, StreamCreated, StreamPaused, StreamPolicySet, StreamRecordMigrated,
+    StreamCancelled, StreamCreated, StreamNftLinkFailed, StreamNftMinted, StreamPaused,
+    StreamPolicySet, StreamRecordMigrated,
     StreamRefundTargetChanged, StreamResumed, StreamScheduled, StreamToppedUp, StreamsCreated,
     TemplateApproved, TemplateInstantiated, UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
@@ -616,6 +620,167 @@ impl StreamingPayments {
             fee,
             fee_bps,
         )
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Creates a stream and mints its linked stream NFT atomically in one"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " transaction (issue #575): either both exist when the call returns, or"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " neither does. The stream leg is the shared `create_stream_with_oracle`"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " path, so validation, the deposit pull, the protocol fee and"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `StreamCreated` are identical to `create_stream`; every stream effect"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " completes before the single external interaction, the companion NFT's"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `mint_linked` call (checks-effects-interactions). The NFT must already"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " be initialized and bound to the id this call will allocate (the next"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " stream id): the binding is re-read and checked before minting, and the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " companion re-verifies it on its side, making the link bidirectional."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " If the mint fails for any reason (callee error, panic, trap, binding"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " mismatch) the call emits `StreamNftLinkFailed` for trace diagnostics"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " and aborts with a mapped `StreamError`: the abort rolls the whole"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " transaction back, so no stream record, no deposit and no NFT can be"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " orphaned, and token conservation holds exactly as for `create_stream`."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A reentrant `create_stream_with_nft` attempted while the mint is in"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " flight (a hostile NFT calling back) is refused with"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `AtomicMintReentrancyBlocked`, failing the mint and the pair with it."
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_stream_with_nft(
+        env: Env,
+        sender: Address,
+        recipient: Address,
+        token: Address,
+        deposit_amount: i128,
+        start_time: u64,
+        end_time: u64,
+        cancelable: bool,
+        nft_contract: Address,
+    ) -> Result<u64, StreamError> {
+        // Guard first: a reentrant atomic creation sees the lock before it
+        // can produce any effect of its own.
+        if nft_link::atomic_mint_in_flight(&env) {
+            return Err(surface::reject(Branch::CreateWithNftReentrancyBlocked));
+        }
+
+        // Effects: the full stream-creation leg (checks, deposit pull,
+        // persistence, indexes, fee, `StreamCreated`) completes before the
+        // external mint interaction below.
+        let id = Self::create_stream_with_oracle(
+            env.clone(),
+            sender,
+            recipient.clone(),
+            token,
+            deposit_amount,
+            start_time,
+            end_time,
+            cancelable,
+            false,
+        )?;
+
+        nft_link::set_atomic_mint_lock(&env, true);
+
+        // Bidirectional binding check: the companion must be bound to the
+        // stream just created, otherwise the pair cannot be linked.
+        let bound = nft_link::nft_bound_stream_id(&env, &nft_contract);
+        if bound != Some(id) {
+            nft_link::set_atomic_mint_lock(&env, false);
+            StreamNftLinkFailed {
+                stream_id: id,
+                nft_contract: nft_contract.clone(),
+                recipient: recipient.clone(),
+                error_code: StreamError::NftLinkMismatch as u32,
+            }
+            .publish(&env);
+            return Err(surface::reject(Branch::CreateWithNftLinkMismatch));
+        }
+
+        // Interaction: the one external call, made with every effect in
+        // place and the reentrancy lock held.
+        let minted = nft_link::try_mint_linked(&env, &nft_contract, &recipient, id);
+        nft_link::set_atomic_mint_lock(&env, false);
+        if !minted {
+            StreamNftLinkFailed {
+                stream_id: id,
+                nft_contract: nft_contract.clone(),
+                recipient,
+                error_code: StreamError::NftMintFailed as u32,
+            }
+            .publish(&env);
+            return Err(surface::reject(Branch::CreateWithNftMintFailed));
+        }
+
+        // Link effect, written only after the mint succeeded, then announced.
+        nft_link::put_nft_link(&env, id, &nft_contract);
+        StreamNftMinted {
+            stream_id: id,
+            nft_contract,
+            recipient,
+        }
+        .publish(&env);
+        Ok(id)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Returns the stream-NFT contract linked to `stream_id` at atomic"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " creation, or `None` when the stream was created without a linked NFT."
+    )]
+    pub fn stream_nft_link(env: Env, stream_id: u64) -> Option<Address> {
+        nft_link::get_nft_link(&env, stream_id)
     }
 
     #[cfg_attr(

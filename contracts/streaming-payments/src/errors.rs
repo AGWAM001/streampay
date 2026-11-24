@@ -894,6 +894,29 @@ pub enum StreamError {
         doc = " The delegated withdrawal exceeds the agent's total cap for this stream."
     )]
     CapExceededStream = 129,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The linked stream-NFT mint failed during atomic create+mint;"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the whole transaction (deposit pull and stream record) rolls back."
+    )]
+    NftMintFailed = 130,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The NFT contract is bound to a different stream id than the one"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " just created, so the bidirectional link cannot be established."
+    )]
+    NftLinkMismatch = 131,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Atomic create+mint was re-entered while a mint linkage was in flight."
+    )]
+    AtomicMintReentrancyBlocked = 132,
 }
 
 impl StreamError {
@@ -1030,6 +1053,9 @@ impl StreamError {
         StreamError::AgentExpired,
         StreamError::CapExceededPeriod,
         StreamError::CapExceededStream,
+        StreamError::NftMintFailed,
+        StreamError::NftLinkMismatch,
+        StreamError::AtomicMintReentrancyBlocked,
     ];
 
     /// The stable numeric value carried across the contract boundary

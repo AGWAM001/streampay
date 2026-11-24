@@ -381,13 +381,23 @@ pub enum Branch {
     HookReentrancyBlocked,
     HookExecutionFailed,
     InvalidHookSelector,
+    // ------------------------------------------------- atomic stream + NFT
+    /// `create_stream_with_nft`: the linked NFT mint invocation failed
+    /// (callee error, panic or trap); the transaction rolls back in full.
+    CreateWithNftMintFailed,
+    /// `create_stream_with_nft`: the NFT contract is bound to a stream id
+    /// other than the one just created.
+    CreateWithNftLinkMismatch,
+    /// `create_stream_with_nft`: re-entered while an atomic mint linkage
+    /// was already in flight.
+    CreateWithNftReentrancyBlocked,
 }
 
 impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 168] = [
+    pub const ALL: [Branch; 171] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -556,6 +566,9 @@ impl Branch {
         Branch::HookReentrancyBlocked,
         Branch::HookExecutionFailed,
         Branch::InvalidHookSelector,
+        Branch::CreateWithNftMintFailed,
+        Branch::CreateWithNftLinkMismatch,
+        Branch::CreateWithNftReentrancyBlocked,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -950,6 +963,9 @@ impl Branch {
             Branch::HookAlreadyRegistered | Branch::InvalidHookSelector => &["register_hook"],
             Branch::HookNotFound => &["unregister_hook"],
             Branch::HookReentrancyBlocked | Branch::HookExecutionFailed => &["dispatch_hook"],
+            Branch::CreateWithNftMintFailed
+            | Branch::CreateWithNftLinkMismatch
+            | Branch::CreateWithNftReentrancyBlocked => &["create_stream_with_nft"],
         }
     }
 
@@ -1137,6 +1153,11 @@ impl Branch {
             Branch::HookReentrancyBlocked => StreamError::HookReentrancyBlocked,
             Branch::HookExecutionFailed => StreamError::HookExecutionFailed,
             Branch::InvalidHookSelector => StreamError::InvalidHookSelector,
+            Branch::CreateWithNftMintFailed => StreamError::NftMintFailed,
+            Branch::CreateWithNftLinkMismatch => StreamError::NftLinkMismatch,
+            Branch::CreateWithNftReentrancyBlocked => {
+                StreamError::AtomicMintReentrancyBlocked
+            }
         }
     }
 
@@ -1502,6 +1523,15 @@ impl Branch {
                 "callback contract invocation failed or reverted under Revert failure policy"
             }
             Branch::InvalidHookSelector => "callback selector is invalid",
+            Branch::CreateWithNftMintFailed => {
+                "the linked stream-NFT mint invocation failed; the atomic transaction rolls back"
+            }
+            Branch::CreateWithNftLinkMismatch => {
+                "the NFT contract is bound to a different stream id than the one just created"
+            }
+            Branch::CreateWithNftReentrancyBlocked => {
+                "atomic create+mint re-entered while a mint linkage was in flight"
+            }
         }
     }
 

@@ -1797,6 +1797,52 @@
         }
       ]
     },
+    "StreamNftLinkFailed": {
+      "canonical": "streampay-event/v1|StreamNftLinkFailed|key=stream_nft_link_failed|topics=[stream_id:u64,nft_contract:Address],data=[error_code:u32,recipient:Address]",
+      "data": [
+        {
+          "name": "recipient",
+          "type": "Address"
+        },
+        {
+          "name": "error_code",
+          "type": "u32"
+        }
+      ],
+      "event_key": "stream_nft_link_failed",
+      "fingerprint": "sha256:dbb893a694fa54f3dadae0830e0f48a75efc9a2f8f565bf4523de059f960cb4b",
+      "topics": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        },
+        {
+          "name": "nft_contract",
+          "type": "Address"
+        }
+      ]
+    },
+    "StreamNftMinted": {
+      "canonical": "streampay-event/v1|StreamNftMinted|key=stream_nft_minted|topics=[stream_id:u64,nft_contract:Address],data=[recipient:Address]",
+      "data": [
+        {
+          "name": "recipient",
+          "type": "Address"
+        }
+      ],
+      "event_key": "stream_nft_minted",
+      "fingerprint": "sha256:cf23b906912d12a5f81a2fac0fb51f247cce566a4e972b06e3344af38d4c6a7f",
+      "topics": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        },
+        {
+          "name": "nft_contract",
+          "type": "Address"
+        }
+      ]
+    },
     "StreamPaused": {
       "canonical": "streampay-event/v1|StreamPaused|key=stream_paused|topics=[stream_id:u64],data=[paused_at:u64]",
       "data": [
@@ -2204,6 +2250,8 @@
     "StorageMigrated": "sha256:3e0dc77f4cd7ab650f0239a9420df76cb30b78707cd25dcbdabe542c9d37baae",
     "StreamCancelled": "sha256:2b3062308e34986aea101c7c25e12965e40b9b9143475359a87741417bca71a7",
     "StreamCreated": "sha256:8e7e6d5ab578b8a656ecf6a58e712d15546c6bd95abc5030009597abb0ee5012",
+    "StreamNftLinkFailed": "sha256:dbb893a694fa54f3dadae0830e0f48a75efc9a2f8f565bf4523de059f960cb4b",
+    "StreamNftMinted": "sha256:cf23b906912d12a5f81a2fac0fb51f247cce566a4e972b06e3344af38d4c6a7f",
     "StreamPaused": "sha256:0d457030c164b4e062b06573927350f9782f0cb22409977ae4d6f01e17fb557e",
     "StreamPolicySet": "sha256:b351d5e8904e7e12bdd4a02f67b7d93fd47f2c8609661a1414965244a22fcb20",
     "StreamRecordMigrated": "sha256:e1a41c8e2201e81e259bd5f52b1fc85482d3657d3dc15b8385ef9a6ec16c5659",

@@ -1,0 +1,49 @@
+{
+  "$defs": {},
+  "$id": "https://streampay.dev/schemas/events/v1/events/stream_nft_minted.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Emitted when `create_stream_with_nft` atomically creates a stream and mints its linked stream NFT in the same transaction. Keyed by both the stream id and the NFT contract, so the bidirectional link (stream -> NFT here, NFT -> stream in the companion's bound stream id) is auditable from the event trail alone.",
+  "properties": {
+    "recipient": {
+      "description": "Stellar account or contract address (StrKey).",
+      "type": "string",
+      "x-soroban-type": "Address"
+    }
+  },
+  "required": [
+    "recipient"
+  ],
+  "title": "StreamNftMinted",
+  "type": "object",
+  "x-streampay": {
+    "event_key": "stream_nft_minted",
+    "fingerprint": "sha256:cf23b906912d12a5f81a2fac0fb51f247cce566a4e972b06e3344af38d4c6a7f",
+    "registry_version": 1,
+    "topicSchema": {
+      "items": [
+        {
+          "minimum": 0,
+          "type": "integer",
+          "x-soroban-type": "u64"
+        },
+        {
+          "description": "Stellar account or contract address (StrKey).",
+          "type": "string",
+          "x-soroban-type": "Address"
+        }
+      ],
+      "type": "array"
+    },
+    "topics": [
+      {
+        "name": "stream_id",
+        "type": "u64"
+      },
+      {
+        "name": "nft_contract",
+        "type": "Address"
+      }
+    ]
+  }
+}
