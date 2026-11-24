@@ -10,7 +10,8 @@ use soroban_sdk::{
 };
 
 use crate::{
-    test_client::StreamingPaymentsClient as Client, StreamCreated, StreamingPayments, Withdrawn,
+    test_client::StreamingPaymentsClient as Client, ReputationUpdated, StreamCreated, StreamStatus,
+    StreamingPayments, Withdrawn,
 };
 
 const FIXTURES: &str = include_str!("../../../tests/client-parity/fixtures.json");
@@ -78,6 +79,10 @@ fn shared_client_parity_fixtures_match_event_xdr_and_balances() {
             .mock_all_auths()
             .withdraw(&stream_id, &withdraw_amount);
         let withdrawn_events = env.events().all().filter_by_contract(&contract_id);
+        // Whether this withdraw *settled* the stream decides the expected
+        // reputation events below (#574).
+        let depleted =
+            client.mock_all_auths().get_stream(&stream_id).status == StreamStatus::Depleted;
 
         let token_client = TokenClient::new(&env, &token);
         if bless {
@@ -131,7 +136,7 @@ fn shared_client_parity_fixtures_match_event_xdr_and_balances() {
             cancelable: expected_created["cancelable"].as_bool().unwrap(),
         }
         .to_xdr(&env, &contract_id)];
-        let expected_withdraw_events = [Withdrawn {
+        let mut expected_withdraw_events = std::vec![Withdrawn {
             stream_id: expected_withdrawn["stream_id"]
                 .as_str()
                 .unwrap()
@@ -150,6 +155,22 @@ fn shared_client_parity_fixtures_match_event_xdr_and_balances() {
                 .unwrap(),
         }
         .to_xdr(&env, &contract_id)];
+        if depleted {
+            // Reputation (#574): a withdraw that depletes the stream
+            // settles it, crediting both parties their first completion
+            // (40 points, one completed stream each), sender first.
+            for subject in [&sender, &recipient] {
+                expected_withdraw_events.push(
+                    ReputationUpdated {
+                        subject: subject.clone(),
+                        stream_id,
+                        score: 40,
+                        completed_streams: 1,
+                    }
+                    .to_xdr(&env, &contract_id),
+                );
+            }
+        }
         assert_eq!(
             created_events, expected_create_events,
             "create-event XDR diverged for fixture {}",

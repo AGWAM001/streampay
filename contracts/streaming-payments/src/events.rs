@@ -1409,3 +1409,26 @@ pub struct HookFailed {
     pub callback_contract: Address,
     pub error_code: u32,
 }
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when an address's reputation record changes after a settled"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " outcome or a resolved dispute (issue #574). Carries the subject's new"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " raw (pre-decay) score and completion count so indexers can track the"
+)]
+#[cfg_attr(not(target_family = "wasm"), doc = " score without re-reading storage.")]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReputationUpdated {
+    #[topic]
+    pub subject: Address,
+    pub stream_id: u64,
+    pub score: u32,
+    pub completed_streams: u32,
+}

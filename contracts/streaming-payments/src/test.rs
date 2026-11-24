@@ -4730,12 +4730,30 @@ fn dispute_events_are_emitted_with_expected_payloads() {
         accept: false,
         bond: BOND,
     };
+    // Reputation (#574): rejecting the dispute as bad-faith credits the
+    // sender (dispute won, score 20) and debits the recipient (score 0).
+    let rep_sender = crate::ReputationUpdated {
+        subject: f.sender.clone(),
+        stream_id: id,
+        score: 20,
+        completed_streams: 0,
+    };
+    let rep_recipient = crate::ReputationUpdated {
+        subject: f.recipient.clone(),
+        stream_id: id,
+        score: 0,
+        completed_streams: 0,
+    };
     f.client
         .mock_all_auths()
         .resolve_dispute(&f.sender, &id, &false);
     assert_eq!(
         f.env.events().all().filter_by_contract(&f.client.address),
-        [resolved.to_xdr(&f.env, &f.client.address)],
+        [
+            resolved.to_xdr(&f.env, &f.client.address),
+            rep_sender.to_xdr(&f.env, &f.client.address),
+            rep_recipient.to_xdr(&f.env, &f.client.address),
+        ],
     );
 
     let d2 = f.raise_dispute(id);
@@ -4780,11 +4798,27 @@ fn dispute_resolve_accept_emits_cancelled_then_resolved() {
         accept: true,
         bond: BOND,
     };
+    // Reputation (#574): upholding the dispute credits the recipient
+    // (dispute won, score 20) and debits the sender (score 0).
+    let rep_recipient = crate::ReputationUpdated {
+        subject: f.recipient.clone(),
+        stream_id: id,
+        score: 20,
+        completed_streams: 0,
+    };
+    let rep_sender = crate::ReputationUpdated {
+        subject: f.sender.clone(),
+        stream_id: id,
+        score: 0,
+        completed_streams: 0,
+    };
     assert_eq!(
         f.env.events().all().filter_by_contract(&f.client.address),
         [
             cancelled.to_xdr(&f.env, &f.client.address),
             resolved.to_xdr(&f.env, &f.client.address),
+            rep_recipient.to_xdr(&f.env, &f.client.address),
+            rep_sender.to_xdr(&f.env, &f.client.address),
         ],
     );
 }
@@ -6023,7 +6057,12 @@ fn hot_path_footprint_harness() {
     let mem_withdraw_max = f.env.cost_estimate().budget().memory_bytes_cost();
     measured("withdraw_max", cpu_withdraw_max, mem_withdraw_max);
     assert!(
-        cpu_withdraw_max <= 560_000,
+        // 560k before #574; a withdraw_max that *depletes* the stream now
+        // also writes both parties' reputation records (two persistent
+        // read/write pairs with TTL extension, a refills lookup, and two
+        // ReputationUpdated events, ~182k). Non-depleting claims are
+        // unaffected: the credit fires only on the depletion transition.
+        cpu_withdraw_max <= 750_000,
         "withdraw_max exceeded budget: {}",
         cpu_withdraw_max
     );
@@ -11350,8 +11389,13 @@ fn withdraw_many_footprint_harness() {
     // it so a full batch leaves room for the caller's own footprint and rent.
     // 8,000,000 before pause/resume (#24): every entry now also looks up its
     // `StreamPause` side key (8,422,620 measured, 7,213,732 without it).
+    // #574: every entry that *depletes* its stream also writes both
+    // parties' reputation records (~250k per depleted stream, measured
+    // 19,042,329 for a full batch of depletions). The batch still costs
+    // less than the sum of its single claims and stays far below the
+    // 100M ceiling.
     assert!(
-        batch_cpu <= 14_000_000,
+        batch_cpu <= 20_000_000,
         "withdraw_many of {MAX_WITHDRAW_BATCH} streams exceeded budget: {batch_cpu}"
     );
 }

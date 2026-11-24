@@ -54,6 +54,10 @@
 //! - [`StreamingPayments::treasury_status`] /
 //!   [`StreamingPayments::stream_fee`] / [`StreamingPayments::verify_treasury`] —
 //!   open verification reads for the protocol-fee ledger (see `treasury.rs`)
+//! - [`StreamingPayments::get_reputation`] /
+//!   [`StreamingPayments::reputation_score`] — read-only views of the
+//!   non-transferable, wash-resistant stream credit reputation score
+//!   (see `reputation.rs`)
 //!
 //! # Invariants
 //!
@@ -105,6 +109,7 @@ mod events;
 mod governance;
 pub mod batch_amend;
 pub mod insurance;
+pub mod reputation;
 pub mod sender_policy;
 pub mod voting_power;
 #[cfg(test)]
@@ -113,6 +118,8 @@ pub mod hooks;
 pub mod oracle;
 mod policy;
 pub mod privacy_claims;
+#[cfg(test)]
+mod reputation_test;
 #[cfg(test)]
 mod privacy_session_keys_test;
 pub mod receivables;
@@ -167,7 +174,8 @@ pub use events::{
     HookRegistered, OperatorKeyRotated, OracleConfigUpdated, OracleStaleFallback,
     OracleTimeReported, OwnershipAccepted, OwnershipProposed, PolicyAssetExecuted,
     PolicyAssetQueued, PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed,
-    PolicyInitialized, RateChangeAccepted, RateChangeProposed, ScheduledIntentCancelled,
+    PolicyInitialized, RateChangeAccepted, RateChangeProposed, ReputationUpdated,
+    ScheduledIntentCancelled,
     ScheduledIntentExpired, ScheduledStreamExecuted, SenderTransferExpired, SenderTransferProposed,
     SenderTransferred, SponsorActiveSet, SponsorClaim, SponsorRegistered, StorageMigrated,
     StreamCancelled, StreamCreated, StreamPaused, StreamPolicySet, StreamRecordMigrated,
@@ -183,6 +191,7 @@ pub use policy::{
     validate_rate_args, validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy,
 };
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
+pub use reputation::{ReputationRecord, ReputationView};
 pub use sponsor::{PeriodSpend, SponsorConfig};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
 // calculators: it is a pure function requiring no `Env`.
@@ -1551,7 +1560,7 @@ impl StreamingPayments {
         let mut skipped: u32 = 0;
         for id in stream_ids.iter() {
             let result = Self::authorize_batch_withdrawal(&env, id, &recipient)
-                .and_then(|mut s| Self::settle_accrued(&env, id, &mut s));
+                .and_then(|mut s| Self::settle_accrued_mode(&env, id, &mut s, false));
             if strict {
                 // Any per-entry rejection aborts the batch, so the entries that
                 // already settled are rolled back with it.
@@ -1614,8 +1623,21 @@ impl StreamingPayments {
     /// balance, and pay it out. Takes the already-authorized stream so the two
     /// entrypoints differ only in how they authorize.
     fn settle_accrued(env: &Env, stream_id: u64, s: &mut Stream) -> Result<i128, StreamError> {
+        Self::settle_accrued_mode(env, stream_id, s, true)
+    }
+
+    /// [`Self::settle_accrued`] with explicit control over reputation event
+    /// emission on completion: batch paths (`withdraw_many`) pass `false`
+    /// so a batch of depletions cannot exceed the per-invocation event-size
+    /// budget (see `reputation::record_completion`).
+    fn settle_accrued_mode(
+        env: &Env,
+        stream_id: u64,
+        s: &mut Stream,
+        reputation_events: bool,
+    ) -> Result<i128, StreamError> {
         let amount = Self::accrued_balance(env, stream_id, s)?;
-        Self::pay_out(env, s, amount)?;
+        Self::pay_out_mode(env, s, amount, reputation_events)?;
         Ok(amount)
     }
 
@@ -1912,7 +1934,7 @@ impl StreamingPayments {
                         transfers.get_unchecked(i as u32).amount.checked_add(amount)
                     })
                     .ok_or_else(|| surface::reject(Branch::WithdrawManyTotalOverflow))?;
-                Self::record_payout(&env, &mut s, amount)?;
+                Self::record_payout(&env, &mut s, amount, false)?;
                 let transfer = AssetTransfer {
                     token: s.token.clone(),
                     amount: total,
@@ -1997,10 +2019,22 @@ impl StreamingPayments {
         doc = " moving tokens, so a reentrant token callback can never double-spend."
     )]
     fn pay_out(env: &Env, s: &mut Stream, amount: i128) -> Result<(), StreamError> {
+        Self::pay_out_mode(env, s, amount, true)
+    }
+
+    /// [`Self::pay_out`] with explicit control over reputation event
+    /// emission when the payout depletes the stream (see
+    /// [`Self::settle_accrued_mode`]).
+    fn pay_out_mode(
+        env: &Env,
+        s: &mut Stream,
+        amount: i128,
+        reputation_events: bool,
+    ) -> Result<(), StreamError> {
         let (net_recipient, intercept_lender, lender_opt) =
             receivables::intercept_repayment(env, s.id, amount);
 
-        Self::record_payout(env, s, amount)?;
+        Self::record_payout(env, s, amount, reputation_events)?;
 
         if intercept_lender > 0 {
             if let Some(lender) = lender_opt {
@@ -2034,12 +2068,19 @@ impl StreamingPayments {
 
     /// The checks-effects half of [`Self::pay_out`]: books `amount` as withdrawn
     /// and emits `Withdrawn`. The caller owes the recipient the token transfer.
-    fn record_payout(env: &Env, s: &mut Stream, amount: i128) -> Result<(), StreamError> {
+    fn record_payout(
+        env: &Env,
+        s: &mut Stream,
+        amount: i128,
+        reputation_events: bool,
+    ) -> Result<(), StreamError> {
         s.withdrawn = s
             .withdrawn
             .checked_add(amount)
             .ok_or_else(|| surface::reject(Branch::PayoutOverflow))?;
-        if s.withdrawn == s.deposit {
+        let newly_depleted =
+            s.status != StreamStatus::Depleted && s.withdrawn == s.deposit;
+        if newly_depleted {
             s.status = StreamStatus::Depleted;
         }
         stream::put_stream(env, s);
@@ -2053,6 +2094,19 @@ impl StreamingPayments {
             withdrawn_total: s.withdrawn,
         }
         .publish(env);
+        // Reputation (#574): a stream that has just run to depletion has
+        // *settled* — credit both parties. This is the only completion
+        // credit site; cancellations never pass through here as a
+        // depletion, so churn earns nothing.
+        if newly_depleted {
+            reputation::record_completion(
+                env,
+                s,
+                s.deposit,
+                env.ledger().timestamp(),
+                reputation_events,
+            );
+        }
         Ok(())
     }
 
@@ -2427,6 +2481,10 @@ impl StreamingPayments {
         if !new_segments.is_empty() {
             stream::put_rate_segments(&env, stream_id, &new_segments);
         }
+        // Reputation (#574): note the refill for the sender's refill-
+        // reliability credit. Unscored on its own — it only counts if the
+        // stream later completes (see reputation::record_completion).
+        reputation::note_top_up(&env, stream_id);
 
         #[cfg(test)]
         cei_trace::record("event StreamToppedUp");
@@ -2617,6 +2675,11 @@ impl StreamingPayments {
             bond: d.bond,
         }
         .publish(&env);
+
+        // Reputation (#574): a resolved dispute is a scored outcome — the
+        // favoured party gains, the other loses. Still effects-only: no
+        // tokens move here (the bond/settlement transfers follow below).
+        reputation::record_dispute_resolution(&env, &s, accept, env.ledger().timestamp());
 
         // Interactions last (CEI): bond refund/slash plus settlement.
         let token = TokenClient::new(&env, &s.token);
@@ -3779,6 +3842,51 @@ impl StreamingPayments {
     )]
     pub fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError> {
         stream::get_stream(&env, stream_id)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Read-only view of an address's non-transferable reputation"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " record plus its raw and inactivity-decayed scores (issue #574)."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Never reverts: an address with no settled history reads as a"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " zero record with score 0. O(1): one storage load plus fixed"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " arithmetic, independent of the address's stream count. There is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " deliberately no transfer/approval entrypoint — the score is"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " bound to the address that earned it.")]
+    pub fn get_reputation(env: Env, subject: Address) -> ReputationView {
+        reputation::view(&env, &subject, env.ledger().timestamp())
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The address's current (inactivity-decayed) reputation score in"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `0..=1000` — the cheap scalar read integrators gate access on."
+    )]
+    pub fn reputation_score(env: Env, subject: Address) -> u32 {
+        reputation::decayed_score(
+            &reputation::get_record(&env, &subject),
+            env.ledger().timestamp(),
+        )
     }
 
     #[cfg_attr(
