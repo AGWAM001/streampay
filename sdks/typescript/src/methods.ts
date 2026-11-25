@@ -484,7 +484,7 @@ export abstract class StreamPayMethods {
    * The entire batch call reverts if `entries` is empty ([`StreamError::BatchEmpty`])
    * or exceeds [`MAX_BATCH`] ([`StreamError::BatchTooLarge`]).
    */
-  createStreamsBatch(args: CreateStreamsBatchArgs): Promise<({ ok: bigint } | { error: StreamErrorName })[]> {
+  createStreamsBatch(args: CreateStreamsBatchArgs): Promise<(({ ok: bigint } | { error: StreamErrorName }))[]> {
     return this.call(METHODS.createStreamsBatch, encodeCreateStreamsBatchArgs(args), true, decodeCreateStreamsBatchResult);
   }
 

@@ -1,42 +1,12 @@
+@import "./theme.css";
+
 /*
- * StreamPay global styles — WCAG 2.1 AA compliant
+ * StreamPay global styles — WCAG 2.1 AA compliant.
  *
- * Contrast ratios (relative luminance per WCAG 1.4.3 / 1.4.11):
- *   --text  (#e8eefb) on --bg    (#0a0e16): ~17.6:1  ✓ AA/AAA
- *   --text  (#e8eefb) on --panel (#111725): ~14.4:1  ✓ AA/AAA
- *   --muted (#93a1b8) on --bg    (#0a0e16):  ~5.8:1  ✓ AA
- *   --muted (#93a1b8) on --panel (#111725):  ~4.8:1  ✓ AA
- *   --accent (#8b7cff) on --bg   (#0a0e16):  ~8.4:1  ✓ AA/AAA
- *   --accent2 (#39c5ff) on --bg  (#0a0e16): ~10.5:1  ✓ AA/AAA
- *   --green (#3ddc84) on --bg    (#0a0e16): ~10.2:1  ✓ AA/AAA
- *   --red   (#ff6b6b) on --bg    (#0a0e16):  ~9.7:1  ✓ AA/AAA
- *   --amber (#f59e0b) on --bg    (#0a0e16):  ~7.6:1  ✓ AA/AAA
- *   #ffffff on --accent (#8b7cff):           ~4.7:1  ✓ AA  (active filter-btn)
- *   #ffffff on --accent-dark (#6b5ce7):      ~5.9:1  ✓ AA  (button gradient fallback)
- *   #000000 on gradient #c9c2ff–#7ce7ff:     ≥8.5:1  ✓     (h1 gradient — dark bg)
- *
- * See frontend/docs/contrast-audit.md for full table with computed luminance values.
+ * Semantic light/dark colors and compatibility aliases are defined in
+ * app/theme.css. scripts/check-contrast.mjs audits those token pairings in both
+ * themes; this stylesheet deliberately contains no raw color literals.
  */
-
-:root {
-  --bg: #0a0e16;
-  --panel: #111725;
-  --panel-hover: #162033;
-  --line: #22304a;
-  --line-light: #2d3f61;
-  --text: #e8eefb;
-  --muted: #93a1b8;
-  --accent: #8b7cff;
-  /* --accent-dark is used where white text must sit on the accent colour (≥4.5:1) */
-  --accent-dark: #6b5ce7;
-  --accent2: #39c5ff;
-  --green: #3ddc84;
-  --red: #ff6b6b;
-  --amber: #f59e0b;
-
-  /* Focus ring — visible on all backgrounds (WCAG 2.4.7 / 2.4.11) */
-  --focus-ring: 0 0 0 3px #fff, 0 0 0 5px var(--accent);
-}
 
 /* --------------------------------------------------------------------------
  * Visually hidden — screen-reader-only text (WCAG 1.3.1 / 4.1.2)
@@ -67,6 +37,16 @@ body {
   font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Unclassed links still need theme-aware foregrounds and interaction states. */
+a:where(:not([class])) {
+  color: var(--accent-primary);
+  text-underline-offset: 0.18em;
+}
+
+a:where(:not([class])):hover {
+  color: var(--accent-primary-hover);
+}
+
 /* --------------------------------------------------------------------------
  * Layout
  * -------------------------------------------------------------------------- */
@@ -82,13 +62,10 @@ body {
 h1 {
   font-size: 30px;
   margin: 4px 0 8px;
-  background: linear-gradient(90deg, #c9c2ff, #7ce7ff);
+  background: linear-gradient(90deg, var(--heading-accent-start), var(--heading-accent-end));
   -webkit-background-clip: text;
   background-clip: text;
-  /* Gradient text is invisible to Windows High-Contrast mode and some AT;
-     the visible text contrast is checked against the dark background directly:
-     #c9c2ff on #0a0e16 ≈ 10.4:1, #7ce7ff on #0a0e16 ≈ 13.5:1 — both ✓ AA.
-     No additional fix needed; gradient is presentational enhancement only. */
+  /* Gradient text is decorative; the visible text remains available to AT. */
   color: transparent;
 }
 
@@ -119,17 +96,33 @@ label {
  * Form inputs (WCAG 1.4.3 contrast, 2.4.7 visible focus)
  * -------------------------------------------------------------------------- */
 input[type="text"],
+input[type="email"],
+input[type="url"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
 input[type="number"],
 input[type="range"],
 textarea,
 select {
   width: 100%;
-  background: #0d1320;
-  border: 1px solid var(--line);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-control);
   color: var(--text);
   border-radius: 8px;
   padding: 9px 12px;
   font: 14px ui-monospace, Consolas, monospace;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--foreground-muted);
+  opacity: 1;
 }
 
 input[type="range"] {
@@ -150,6 +143,11 @@ textarea {
 }
 
 input[type="text"]:focus-visible,
+input[type="email"]:focus-visible,
+input[type="url"]:focus-visible,
+input[type="password"]:focus-visible,
+input[type="search"]:focus-visible,
+input[type="tel"]:focus-visible,
 input[type="number"]:focus-visible,
 input[type="range"]:focus-visible,
 textarea:focus-visible,
@@ -163,9 +161,8 @@ select:focus-visible {
  * Buttons (WCAG 1.4.3 contrast: white on gradient ≥ 4.5:1)
  * -------------------------------------------------------------------------- */
 button {
-  background: linear-gradient(90deg, var(--accent-dark), var(--accent2));
-  /* White text on this gradient: #6b5ce7 → ~5.9:1 ✓, #39c5ff → ~10.5:1 ✓ */
-  color: #ffffff;
+  background: linear-gradient(90deg, var(--accent-strong), var(--accent-secondary-strong));
+  color: var(--foreground-on-accent);
   font-weight: 700;
   border: none;
   border-radius: 8px;
@@ -262,32 +259,28 @@ code,
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 600;
-  /* Default (fallback): dark purple text on pale lavender ~7.5:1 ✓ */
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--accent-subtle);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-border);
 }
 
 .status-active {
-  /* green (#3ddc84) on rgba(61,220,132,0.15) blended over --panel (#111725):
-     effective bg ≈ #163d2b → contrast vs #3ddc84 ≈ 5.2:1 ✓ AA */
-  background: rgba(61, 220, 132, 0.15);
-  color: var(--green);
-  border: 1px solid rgba(61, 220, 132, 0.3);
+  background: var(--status-success-subtle);
+  color: var(--status-success);
+  border: 1px solid var(--status-success-border);
 }
 
 .status-cancelled {
-  /* red (#ff6b6b) on blended bg ≈ #1e1520 → ~7.0:1 ✓ */
-  background: rgba(255, 107, 107, 0.15);
-  color: var(--red);
-  border: 1px solid rgba(255, 107, 107, 0.3);
+  background: var(--status-danger-subtle);
+  color: var(--status-danger);
+  border: 1px solid var(--status-danger-border);
 }
 
 .status-completed,
 .status-depleted {
-  /* cyan (#39c5ff) on blended bg ≈ #111f2d → ~8.8:1 ✓ */
-  background: rgba(57, 197, 255, 0.15);
-  color: var(--accent2);
-  border: 1px solid rgba(57, 197, 255, 0.3);
+  background: var(--status-info-subtle);
+  color: var(--status-info);
+  border: 1px solid var(--status-info-border);
 }
 
 /* --------------------------------------------------------------------------
@@ -335,8 +328,8 @@ code,
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: rgba(61, 220, 132, 0.1);
-  border: 1px solid rgba(61, 220, 132, 0.25);
+  background: var(--status-success-subtle);
+  border: 1px solid var(--status-success-border);
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
@@ -360,7 +353,7 @@ code,
 /* --------------------------------------------------------------------------
  * Filter controls / tab-like navigation
  * WCAG 1.4.1: active state uses background + font-weight change, not colour alone.
- * WCAG 1.4.3: white (#fff) on --accent (#8b7cff) ≈ 4.7:1 ✓ AA
+ * WCAG 1.4.3: the active control uses the AA-safe filled accent token.
  * -------------------------------------------------------------------------- */
 .filter-controls {
   display: flex;
@@ -375,8 +368,8 @@ code,
 
 .filter-group {
   display: inline-flex;
-  background: #0d1320;
-  border: 1px solid var(--line);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-control);
   border-radius: 8px;
   padding: 3px;
   gap: 4px;
@@ -399,13 +392,12 @@ code,
 
 .filter-btn:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-hover);
 }
 
 .filter-btn.active {
-  background: var(--accent);
-  /* Changed from #06080d (contrast ~1.8:1 ✗) → #ffffff (contrast ~4.7:1 ✓) */
-  color: #ffffff;
+  background: var(--accent-strong);
+  color: var(--foreground-on-accent);
   font-weight: 700;
 }
 
@@ -440,13 +432,36 @@ code,
 }
 
 /* --------------------------------------------------------------------------
- * Progress bar — decorative track, semantic data via role=progressbar in TSX
- * (WCAG 4.1.2: the role=progressbar element carries aria-valuenow/min/max)
+ * Progress bars — native and custom tracks use semantic theme tokens.
+ * Native <progress> exposes its value to assistive technology automatically.
  * -------------------------------------------------------------------------- */
+progress {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-inset);
+  color: var(--accent-primary);
+}
+
+progress::-webkit-progress-bar {
+  background: var(--surface-inset);
+}
+
+progress::-webkit-progress-value {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+}
+
+progress::-moz-progress-bar {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+}
+
 .progress-track {
   width: 100%;
   height: 6px;
-  background: #0d1320;
+  background: var(--surface-inset);
   border-radius: 999px;
   overflow: hidden;
   margin: 10px 0;
@@ -477,7 +492,7 @@ code,
 }
 
 .page-btn {
-  background: #0d1320;
+  background: var(--surface-inset);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -545,22 +560,96 @@ code,
 }
 
 .status-pending {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--status-warning-subtle);
+  color: var(--status-warning);
 }
 
 .status-submitted {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--status-success-subtle);
+  color: var(--status-success);
 }
 
 .status-failed,
 .status-expired {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--status-danger-subtle);
+  color: var(--status-danger);
 }
 
-/* Claim scheduler settings panel */
+/* --------------------------------------------------------------------------
+ * Appearance settings
+ * -------------------------------------------------------------------------- */
+.theme-fieldset {
+  margin: 16px 0;
+  padding: 18px 20px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  min-width: 0;
+}
+
+.theme-fieldset legend {
+  padding: 0 6px;
+  color: var(--foreground-default);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.theme-fieldset > p {
+  margin: 0 0 14px;
+}
+
+.theme-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.theme-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 14px;
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--foreground-default);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.theme-option:hover {
+  background: var(--surface-hover);
+}
+
+.theme-option.is-selected {
+  border-color: var(--accent-primary);
+  background: var(--accent-subtle);
+}
+
+.theme-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-primary);
+}
+
+.theme-option:has(input:focus-visible) {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.theme-status {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+/* --------------------------------------------------------------------------
+ * Claim scheduler settings panel
+ * -------------------------------------------------------------------------- */
 .sched-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -594,7 +683,7 @@ code,
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #0d1320;
+  background: var(--surface-inset);
   font-size: 13px;
 }
 
@@ -610,9 +699,9 @@ code,
   display: inline-block;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.09) 50%,
-    rgba(255, 255, 255, 0.04) 75%
+    var(--surface-subtle) 25%,
+    var(--skeleton-shine) 50%,
+    var(--surface-subtle) 75%
   );
   background-size: 200% 100%;
   animation: skeletonPulse 1.8s ease-in-out infinite;
@@ -648,7 +737,7 @@ code,
 
   .skeleton-shimmer {
     animation: none !important;
-    background: rgba(255, 255, 255, 0.06) !important;
+    background: var(--surface-subtle) !important;
   }
 }
 
@@ -680,7 +769,7 @@ code,
   color: var(--text);
   border-radius: 10px;
   padding: 12px 14px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px var(--shadow-card);
   font-size: 14px;
   line-height: 1.4;
   pointer-events: auto;
@@ -725,18 +814,18 @@ code,
 }
 
 .toast-success .toast-icon {
-  background: rgba(61, 220, 132, 0.15);
-  color: var(--green);
+  background: var(--status-success-subtle);
+  color: var(--status-success);
 }
 
 .toast-error .toast-icon {
-  background: rgba(255, 107, 107, 0.15);
-  color: var(--red);
+  background: var(--status-danger-subtle);
+  color: var(--status-danger);
 }
 
 .toast-info .toast-icon {
-  background: rgba(57, 197, 255, 0.15);
-  color: var(--accent2);
+  background: var(--status-info-subtle);
+  color: var(--status-info);
 }
 
 .toast-message {
@@ -812,17 +901,15 @@ code,
 }
 
 .network-chip-testnet {
-  /* amber on blended bg ≈ #1f1c1a → ~7.3:1 ✓ */
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--amber);
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  background: var(--status-warning-subtle);
+  color: var(--status-warning);
+  border: 1px solid var(--status-warning-border);
 }
 
 .network-chip-public {
-  /* green on blended bg ≈ #163d2b → ~5.2:1 ✓ */
-  background: rgba(61, 220, 132, 0.15);
-  color: var(--green);
-  border: 1px solid rgba(61, 220, 132, 0.4);
+  background: var(--status-success-subtle);
+  color: var(--status-success);
+  border: 1px solid var(--status-success-border);
 }
 
 .network-text {
@@ -849,8 +936,8 @@ code,
   align-items: flex-start;
   gap: 12px;
   padding: 10px 16px;
-  background: rgba(255, 107, 107, 0.12);
-  border-bottom: 1px solid rgba(255, 107, 107, 0.35);
+  background: var(--status-danger-subtle);
+  border-bottom: 1px solid var(--status-danger-border);
 }
 
 .network-warning-body {
@@ -904,8 +991,8 @@ code,
   position: absolute;
   top: -100%;
   left: 8px;
-  background: var(--accent);
-  color: #ffffff;
+  background: var(--accent-strong);
+  color: var(--foreground-on-accent);
   padding: 8px 16px;
   border-radius: 0 0 8px 8px;
   font-weight: 700;
@@ -939,9 +1026,26 @@ code,
     background: Highlight;
   }
 
+  progress {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  progress::-webkit-progress-value,
+  progress::-moz-progress-bar {
+    background: Highlight;
+  }
+
   .status-badge {
     forced-color-adjust: auto;
     border: 1px solid ButtonText;
+  }
+
+  h1,
+  .wallet-modal__title {
+    background: none;
+    color: CanvasText;
+    -webkit-text-fill-color: currentColor;
   }
 }
 
@@ -966,8 +1070,8 @@ code,
 .wallet-btn:active { transform: scale(0.97); }
 
 .wallet-btn--connect {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent-strong) 0%, var(--accent-secondary-strong) 100%);
+  color: var(--foreground-on-accent);
 }
 .wallet-btn--connect:hover { opacity: 0.88; }
 
@@ -984,7 +1088,7 @@ code,
   padding: 5px 12px;
   font-size: 13px;
 }
-.wallet-btn--disconnect:hover { background: rgba(255,107,107,0.1); }
+.wallet-btn--disconnect:hover { background: var(--status-danger-subtle); }
 
 .wallet-btn__group {
   display: inline-flex;
@@ -1038,12 +1142,12 @@ code,
   padding: 0;
   max-width: 380px;
   width: 94vw;
-  box-shadow: 0 24px 64px rgba(0,0,0,0.7);
+  box-shadow: 0 24px 64px var(--shadow-modal);
 }
 
 /* Native dialog backdrop */
 .wallet-modal::backdrop {
-  background: rgba(0,0,0,0.65);
+  background: var(--surface-scrim);
   backdrop-filter: blur(4px);
 }
 
@@ -1087,8 +1191,8 @@ code,
 .wallet-modal__error {
   margin: 0 0 14px;
   padding: 10px 12px;
-  background: rgba(255, 107, 107, 0.12);
-  border: 1px solid var(--red);
+  background: var(--status-danger-subtle);
+  border: 1px solid var(--status-danger-border);
   border-radius: 8px;
   font-size: 13px;
   color: var(--red);
@@ -1162,11 +1266,11 @@ code,
    ============================================================ */
 
 .selected-row {
-  background: rgba(139, 124, 255, 0.12);
+  background: var(--accent-subtle);
 }
 
 .selected-row td {
-  border-bottom-color: rgba(139, 124, 255, 0.3);
+  border-bottom-color: var(--accent-border);
 }
 
 .batch-container {
@@ -1177,7 +1281,7 @@ code,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(90deg, #182238, #111a2d);
+  background: linear-gradient(90deg, var(--surface-batch-start), var(--surface-batch-end));
   border: 1px solid var(--accent);
   border-radius: 10px;
   padding: 10px 16px;
@@ -1192,8 +1296,8 @@ code,
 }
 
 .batch-badge {
-  background: var(--accent);
-  color: #0b0f19;
+  background: var(--accent-strong);
+  color: var(--foreground-on-badge);
   font-weight: 700;
   border-radius: 999px;
   padding: 2px 10px;
@@ -1220,13 +1324,13 @@ code,
 }
 
 .btn-withdraw {
-  background: linear-gradient(90deg, var(--green), #20b26c);
-  color: #061e12;
+  background: linear-gradient(90deg, var(--status-success-button), var(--status-success-button-end));
+  color: var(--foreground-on-success);
 }
 
 .btn-cancel {
-  background: linear-gradient(90deg, #ff8585, var(--red));
-  color: #290808;
+  background: linear-gradient(90deg, var(--status-danger-button), var(--status-danger-button-end));
+  color: var(--foreground-on-danger);
 }
 
 .btn-clear {
@@ -1256,8 +1360,8 @@ code,
 }
 
 .batch-warning {
-  background: rgba(255, 107, 107, 0.12);
-  border: 1px solid var(--red);
+  background: var(--status-danger-subtle);
+  border: 1px solid var(--status-danger-border);
   border-radius: 8px;
   padding: 10px 14px;
   margin-bottom: 12px;
@@ -1275,14 +1379,14 @@ code,
   margin: 6px 0 0;
   padding-left: 20px;
   font-size: 12px;
-  color: #ffb4b4;
+  color: var(--foreground-danger-emphasis);
 }
 
 /* Modal Backdrop & Card */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(4, 7, 15, 0.75);
+  background: var(--surface-scrim);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -1299,7 +1403,7 @@ code,
   max-width: 720px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 20px 40px var(--shadow-modal);
   padding: 24px;
 }
 
@@ -1318,8 +1422,8 @@ code,
 }
 
 .simulation-mode-banner {
-  background: rgba(57, 197, 255, 0.08);
-  border: 1px solid rgba(57, 197, 255, 0.3);
+  background: var(--status-info-subtle);
+  border: 1px solid var(--status-info-border);
   border-radius: 8px;
   padding: 10px 14px;
   margin-bottom: 16px;
@@ -1354,23 +1458,23 @@ code,
 }
 
 .badge-ready {
-  background: rgba(61, 220, 132, 0.2);
-  color: var(--green);
+  background: var(--status-success-subtle);
+  color: var(--status-success);
 }
 
 .badge-ineligible {
-  background: rgba(255, 187, 0, 0.2);
-  color: #ffbb00;
+  background: var(--status-warning-subtle);
+  color: var(--status-warning);
 }
 
 .badge-failed {
-  background: rgba(255, 107, 107, 0.2);
-  color: var(--red);
+  background: var(--status-danger-subtle);
+  color: var(--status-danger);
 }
 
 .aggregate-panel {
-  background: #0d1320;
-  border: 1px solid var(--line);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-control);
   border-radius: 10px;
   padding: 14px 16px;
   margin: 16px 0;
@@ -1421,8 +1525,8 @@ code,
 }
 
 .btn-primary {
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
-  color: #06080d;
+  background: linear-gradient(90deg, var(--accent-strong), var(--accent-secondary-strong));
+  color: var(--foreground-on-accent);
 }
 
 .execution-progress {

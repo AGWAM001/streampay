@@ -3342,7 +3342,7 @@ export function encodeCreateStreamsBatchArgs(args: CreateStreamsBatchArgs): xdr.
   ];
 }
 
-export function decodeCreateStreamsBatchResult(value: xdr.ScVal): ({ ok: bigint } | { error: StreamErrorName })[] {
+export function decodeCreateStreamsBatchResult(value: xdr.ScVal): (({ ok: bigint } | { error: StreamErrorName }))[] {
   return decodeResultVec(value, (item) => asBigInt(asNative(item), "create_streams_batch result"), "create_streams_batch");
 }
 
@@ -5414,18 +5414,23 @@ export function contractErrorFromMessage(message: string): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
-/** Decodes a StreamPay contract event; `null` for foreign events. */
-export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent | null {
+/** Decodes a StreamPay contract event; supply `expectedContractId` to reject foreign contracts. */
+export function decodeStreamPayEvent(
+  event: xdr.ContractEvent,
+  expectedContractId?: string,
+): StreamPayEvent | null {
   const type = (event as unknown as { type?: { name?: string } }).type;
   if (type?.name !== "contract") return null;
+  const contractId = eventContractId(event);
+  if (expectedContractId !== undefined && contractId !== expectedContractId) return null;
   const body = (event as unknown as { body?: { v0?: { topics: xdr.ScVal[]; data: xdr.ScVal } } }).body;
   if (!body?.v0) throw new Error("unsupported ContractEvent body");
   const topics = body.v0.topics;
   const name = asString(asNative(topicValue(topics, 0, "<unknown>")), "event name");
-  const contractId = eventContractId(event);
   const data = asNative(body.v0.data) as Record<string, unknown>;
   switch (name) {
     case "stream_created": {
+      if (topics.length !== 2) throw new Error(`event stream_created has ${topics.length} topics; expected 2`);
       return {
         type: "StreamCreated",
         contractId,
@@ -5440,6 +5445,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "streams_created": {
+      if (topics.length !== 2) throw new Error(`event streams_created has ${topics.length} topics; expected 2`);
       return {
         type: "StreamsCreated",
         contractId,
@@ -5448,6 +5454,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "withdrawn": {
+      if (topics.length !== 2) throw new Error(`event withdrawn has ${topics.length} topics; expected 2`);
       return {
         type: "Withdrawn",
         contractId,
@@ -5458,6 +5465,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "batch_withdraw_summary": {
+      if (topics.length !== 2) throw new Error(`event batch_withdraw_summary has ${topics.length} topics; expected 2`);
       return {
         type: "BatchWithdrawSummary",
         contractId,
@@ -5469,6 +5477,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_cancelled": {
+      if (topics.length !== 2) throw new Error(`event stream_cancelled has ${topics.length} topics; expected 2`);
       return {
         type: "StreamCancelled",
         contractId,
@@ -5479,6 +5488,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_topped_up": {
+      if (topics.length !== 2) throw new Error(`event stream_topped_up has ${topics.length} topics; expected 2`);
       return {
         type: "StreamToppedUp",
         contractId,
@@ -5489,6 +5499,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_paused": {
+      if (topics.length !== 2) throw new Error(`event stream_paused has ${topics.length} topics; expected 2`);
       return {
         type: "StreamPaused",
         contractId,
@@ -5497,6 +5508,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_resumed": {
+      if (topics.length !== 2) throw new Error(`event stream_resumed has ${topics.length} topics; expected 2`);
       return {
         type: "StreamResumed",
         contractId,
@@ -5505,6 +5517,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_scheduled": {
+      if (topics.length !== 2) throw new Error(`event stream_scheduled has ${topics.length} topics; expected 2`);
       return {
         type: "StreamScheduled",
         contractId,
@@ -5524,6 +5537,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "scheduled_stream_executed": {
+      if (topics.length !== 2) throw new Error(`event scheduled_stream_executed has ${topics.length} topics; expected 2`);
       return {
         type: "ScheduledStreamExecuted",
         contractId,
@@ -5536,6 +5550,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "scheduled_intent_cancelled": {
+      if (topics.length !== 2) throw new Error(`event scheduled_intent_cancelled has ${topics.length} topics; expected 2`);
       return {
         type: "ScheduledIntentCancelled",
         contractId,
@@ -5545,6 +5560,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "scheduled_intent_expired": {
+      if (topics.length !== 2) throw new Error(`event scheduled_intent_expired has ${topics.length} topics; expected 2`);
       return {
         type: "ScheduledIntentExpired",
         contractId,
@@ -5554,6 +5570,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "fee_charged": {
+      if (topics.length !== 2) throw new Error(`event fee_charged has ${topics.length} topics; expected 2`);
       return {
         type: "FeeCharged",
         contractId,
@@ -5565,6 +5582,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "fee_withdrawn": {
+      if (topics.length !== 2) throw new Error(`event fee_withdrawn has ${topics.length} topics; expected 2`);
       return {
         type: "FeeWithdrawn",
         contractId,
@@ -5576,6 +5594,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "dispute_raised": {
+      if (topics.length !== 2) throw new Error(`event dispute_raised has ${topics.length} topics; expected 2`);
       return {
         type: "DisputeRaised",
         contractId,
@@ -5586,6 +5605,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "dispute_resolved": {
+      if (topics.length !== 2) throw new Error(`event dispute_resolved has ${topics.length} topics; expected 2`);
       return {
         type: "DisputeResolved",
         contractId,
@@ -5596,6 +5616,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "dispute_expired": {
+      if (topics.length !== 2) throw new Error(`event dispute_expired has ${topics.length} topics; expected 2`);
       return {
         type: "DisputeExpired",
         contractId,
@@ -5607,6 +5628,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "sponsor_registered": {
+      if (topics.length !== 3) throw new Error(`event sponsor_registered has ${topics.length} topics; expected 3`);
       return {
         type: "SponsorRegistered",
         contractId,
@@ -5619,6 +5641,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "sponsor_active_set": {
+      if (topics.length !== 3) throw new Error(`event sponsor_active_set has ${topics.length} topics; expected 3`);
       return {
         type: "SponsorActiveSet",
         contractId,
@@ -5628,6 +5651,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "beneficiary_enrolled": {
+      if (topics.length !== 3) throw new Error(`event beneficiary_enrolled has ${topics.length} topics; expected 3`);
       return {
         type: "BeneficiaryEnrolled",
         contractId,
@@ -5637,6 +5661,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "operator_key_rotated": {
+      if (topics.length !== 3) throw new Error(`event operator_key_rotated has ${topics.length} topics; expected 3`);
       return {
         type: "OperatorKeyRotated",
         contractId,
@@ -5646,6 +5671,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "sponsor_claim": {
+      if (topics.length !== 4) throw new Error(`event sponsor_claim has ${topics.length} topics; expected 4`);
       return {
         type: "SponsorClaim",
         contractId,
@@ -5658,6 +5684,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "policy_initialized": {
+      if (topics.length !== 1) throw new Error(`event policy_initialized has ${topics.length} topics; expected 1`);
       return {
         type: "PolicyInitialized",
         contractId,
@@ -5665,6 +5692,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "policy_asset_queued": {
+      if (topics.length !== 2) throw new Error(`event policy_asset_queued has ${topics.length} topics; expected 2`);
       return {
         type: "PolicyAssetQueued",
         contractId,
@@ -5674,6 +5702,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "policy_asset_executed": {
+      if (topics.length !== 2) throw new Error(`event policy_asset_executed has ${topics.length} topics; expected 2`);
       return {
         type: "PolicyAssetExecuted",
         contractId,
@@ -5682,6 +5711,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "policy_handoff_proposed": {
+      if (topics.length !== 2) throw new Error(`event policy_handoff_proposed has ${topics.length} topics; expected 2`);
       return {
         type: "PolicyHandoffProposed",
         contractId,
@@ -5690,6 +5720,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "policy_handoff_accepted": {
+      if (topics.length !== 2) throw new Error(`event policy_handoff_accepted has ${topics.length} topics; expected 2`);
       return {
         type: "PolicyHandoffAccepted",
         contractId,
@@ -5697,6 +5728,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "policy_handoff_cancelled": {
+      if (topics.length !== 2) throw new Error(`event policy_handoff_cancelled has ${topics.length} topics; expected 2`);
       return {
         type: "PolicyHandoffCancelled",
         contractId,
@@ -5704,6 +5736,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "upgrade_proposed": {
+      if (topics.length !== 2) throw new Error(`event upgrade_proposed has ${topics.length} topics; expected 2`);
       return {
         type: "UpgradeProposed",
         contractId,
@@ -5713,6 +5746,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "upgrade_cancelled": {
+      if (topics.length !== 2) throw new Error(`event upgrade_cancelled has ${topics.length} topics; expected 2`);
       return {
         type: "UpgradeCancelled",
         contractId,
@@ -5721,6 +5755,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "contract_upgraded": {
+      if (topics.length !== 2) throw new Error(`event contract_upgraded has ${topics.length} topics; expected 2`);
       return {
         type: "ContractUpgraded",
         contractId,
@@ -5729,6 +5764,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "contract_frozen_state_changed": {
+      if (topics.length !== 2) throw new Error(`event contract_frozen_state_changed has ${topics.length} topics; expected 2`);
       return {
         type: "ContractFrozenStateChanged",
         contractId,
@@ -5737,6 +5773,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "storage_migrated": {
+      if (topics.length !== 3) throw new Error(`event storage_migrated has ${topics.length} topics; expected 3`);
       return {
         type: "StorageMigrated",
         contractId,
@@ -5748,6 +5785,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_record_migrated": {
+      if (topics.length !== 2) throw new Error(`event stream_record_migrated has ${topics.length} topics; expected 2`);
       return {
         type: "StreamRecordMigrated",
         contractId,
@@ -5757,6 +5795,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_policy_set": {
+      if (topics.length !== 1) throw new Error(`event stream_policy_set has ${topics.length} topics; expected 1`);
       return {
         type: "StreamPolicySet",
         contractId,
@@ -5766,6 +5805,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "oracle_config_updated": {
+      if (topics.length !== 1) throw new Error(`event oracle_config_updated has ${topics.length} topics; expected 1`);
       return {
         type: "OracleConfigUpdated",
         contractId,
@@ -5774,6 +5814,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "oracle_time_reported": {
+      if (topics.length !== 2) throw new Error(`event oracle_time_reported has ${topics.length} topics; expected 2`);
       return {
         type: "OracleTimeReported",
         contractId,
@@ -5783,6 +5824,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "oracle_stale_fallback": {
+      if (topics.length !== 2) throw new Error(`event oracle_stale_fallback has ${topics.length} topics; expected 2`);
       return {
         type: "OracleStaleFallback",
         contractId,
@@ -5791,6 +5833,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "ownership_proposed": {
+      if (topics.length !== 2) throw new Error(`event ownership_proposed has ${topics.length} topics; expected 2`);
       return {
         type: "OwnershipProposed",
         contractId,
@@ -5802,6 +5845,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "ownership_accepted": {
+      if (topics.length !== 2) throw new Error(`event ownership_accepted has ${topics.length} topics; expected 2`);
       return {
         type: "OwnershipAccepted",
         contractId,
@@ -5812,6 +5856,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "rate_change_proposed": {
+      if (topics.length !== 2) throw new Error(`event rate_change_proposed has ${topics.length} topics; expected 2`);
       return {
         type: "RateChangeProposed",
         contractId,
@@ -5823,6 +5868,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "rate_change_accepted": {
+      if (topics.length !== 2) throw new Error(`event rate_change_accepted has ${topics.length} topics; expected 2`);
       return {
         type: "RateChangeAccepted",
         contractId,
@@ -5837,6 +5883,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "governance_signers_set": {
+      if (topics.length !== 2) throw new Error(`event governance_signers_set has ${topics.length} topics; expected 2`);
       return {
         type: "GovernanceSignersSet",
         contractId,
@@ -5846,6 +5893,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "governance_action_proposed": {
+      if (topics.length !== 2) throw new Error(`event governance_action_proposed has ${topics.length} topics; expected 2`);
       return {
         type: "GovernanceActionProposed",
         contractId,
@@ -5856,6 +5904,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "governance_action_signed": {
+      if (topics.length !== 2) throw new Error(`event governance_action_signed has ${topics.length} topics; expected 2`);
       return {
         type: "GovernanceActionSigned",
         contractId,
@@ -5865,6 +5914,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "governance_action_vetoed": {
+      if (topics.length !== 2) throw new Error(`event governance_action_vetoed has ${topics.length} topics; expected 2`);
       return {
         type: "GovernanceActionVetoed",
         contractId,
@@ -5873,6 +5923,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "governance_action_executed": {
+      if (topics.length !== 2) throw new Error(`event governance_action_executed has ${topics.length} topics; expected 2`);
       return {
         type: "GovernanceActionExecuted",
         contractId,
@@ -5883,6 +5934,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "sender_transfer_proposed": {
+      if (topics.length !== 2) throw new Error(`event sender_transfer_proposed has ${topics.length} topics; expected 2`);
       return {
         type: "SenderTransferProposed",
         contractId,
@@ -5895,6 +5947,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "sender_transferred": {
+      if (topics.length !== 2) throw new Error(`event sender_transferred has ${topics.length} topics; expected 2`);
       return {
         type: "SenderTransferred",
         contractId,
@@ -5906,6 +5959,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "sender_transfer_expired": {
+      if (topics.length !== 2) throw new Error(`event sender_transfer_expired has ${topics.length} topics; expected 2`);
       return {
         type: "SenderTransferExpired",
         contractId,
@@ -5916,6 +5970,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "stream_refund_target_changed": {
+      if (topics.length !== 2) throw new Error(`event stream_refund_target_changed has ${topics.length} topics; expected 2`);
       return {
         type: "StreamRefundTargetChanged",
         contractId,
@@ -5926,6 +5981,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "advance_drawn": {
+      if (topics.length !== 2) throw new Error(`event advance_drawn has ${topics.length} topics; expected 2`);
       return {
         type: "AdvanceDrawn",
         contractId,
@@ -5938,6 +5994,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "advance_repaid": {
+      if (topics.length !== 2) throw new Error(`event advance_repaid has ${topics.length} topics; expected 2`);
       return {
         type: "AdvanceRepaid",
         contractId,
@@ -5949,6 +6006,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "advance_liquidated": {
+      if (topics.length !== 2) throw new Error(`event advance_liquidated has ${topics.length} topics; expected 2`);
       return {
         type: "AdvanceLiquidated",
         contractId,
@@ -5960,6 +6018,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "condition_registered": {
+      if (topics.length !== 2) throw new Error(`event condition_registered has ${topics.length} topics; expected 2`);
       return {
         type: "ConditionRegistered",
         contractId,
@@ -5968,6 +6027,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "condition_met": {
+      if (topics.length !== 2) throw new Error(`event condition_met has ${topics.length} topics; expected 2`);
       return {
         type: "ConditionMet",
         contractId,
@@ -5976,6 +6036,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "condition_expired": {
+      if (topics.length !== 2) throw new Error(`event condition_expired has ${topics.length} topics; expected 2`);
       return {
         type: "ConditionExpired",
         contractId,
@@ -5984,6 +6045,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "template_approved": {
+      if (topics.length !== 2) throw new Error(`event template_approved has ${topics.length} topics; expected 2`);
       return {
         type: "TemplateApproved",
         contractId,
@@ -5994,6 +6056,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "template_instantiated": {
+      if (topics.length !== 2) throw new Error(`event template_instantiated has ${topics.length} topics; expected 2`);
       return {
         type: "TemplateInstantiated",
         contractId,
@@ -6006,6 +6069,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "hook_registered": {
+      if (topics.length !== 2) throw new Error(`event hook_registered has ${topics.length} topics; expected 2`);
       return {
         type: "HookRegistered",
         contractId,
@@ -6016,6 +6080,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "hook_invoked": {
+      if (topics.length !== 2) throw new Error(`event hook_invoked has ${topics.length} topics; expected 2`);
       return {
         type: "HookInvoked",
         contractId,
@@ -6025,6 +6090,7 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
       };
     }
     case "hook_failed": {
+      if (topics.length !== 2) throw new Error(`event hook_failed has ${topics.length} topics; expected 2`);
       return {
         type: "HookFailed",
         contractId,
@@ -6039,6 +6105,25 @@ export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent |
   }
 }
 
+/** Decodes a bare Result<T, StreamError>; Ok carries the raw inner ScVal. */
+function decodeResult<T>(
+  value: xdr.ScVal,
+  decodeOk: (value: xdr.ScVal) => T,
+): { ok: T } | { error: StreamErrorName } {
+  const errorValue = value as unknown as {
+    type?: string;
+    error?: { type?: string; contractCode?: number };
+  };
+  if (errorValue.type === "scvError") {
+    const code = errorValue.error?.contractCode;
+    if (typeof code !== "number") throw new Error("expected a contract error");
+    const name = contractErrorName(code);
+    if (name === undefined) throw new Error(`unknown StreamPay contract error #${code}`);
+    return { error: name };
+  }
+  return { ok: decodeOk(value) };
+}
+
 /** Decodes a Vec<Result<T, StreamError>> (batch per-entry results). */
 function decodeResultVec<T>(
   value: xdr.ScVal,
@@ -6049,18 +6134,7 @@ function decodeResultVec<T>(
   if (tagged.type !== "scvVec" || !Array.isArray(tagged.vec)) {
     throw new Error(`${label}: expected a vec`);
   }
-  return tagged.vec.map((item) => {
-    const errorValue = item as unknown as {
-      type?: string;
-      error?: { type?: string; contractCode?: number };
-    };
-    if (errorValue.type === "scvError") {
-      const code = errorValue.error?.contractCode;
-      const name = typeof code === "number" ? contractErrorName(code) : undefined;
-      return { error: (name ?? "UnknownContractError") as StreamErrorName };
-    }
-    return { ok: decodeOk(item) };
-  });
+  return tagged.vec.map((item) => decodeResult(item, decodeOk));
 }
 
 export type StreamErrorName =

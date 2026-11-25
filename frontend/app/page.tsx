@@ -233,7 +233,7 @@ export default function Home() {
             <Link href="/benchmarks" style={{ color: "var(--accent2)", fontSize: "0.85rem", textDecoration: "none" }}>
               Benchmarks 📊
             </Link>
-            <Link href="/docs" style={{ color: "#38bdf8", fontSize: "0.85rem", textDecoration: "none" }}>
+            <Link href="/docs" style={{ color: "var(--status-info)", fontSize: "0.85rem", textDecoration: "none" }}>
               {t("chrome.apiDocs")}
             </Link>
             <Link href="/settings" style={{ color: "var(--accent2)", fontSize: "0.85rem", textDecoration: "none" }}>
@@ -253,7 +253,7 @@ export default function Home() {
               display: "inline-block",
               marginTop: "14px",
               padding: "10px 18px",
-              background: "#161f30",
+              background: "var(--surface-subtle)",
               border: "1px solid var(--line)",
               borderRadius: "8px",
               color: "var(--accent2)",
@@ -377,11 +377,11 @@ export default function Home() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
-                  color: "#4ade80",
-                  background: "rgba(74, 222, 128, 0.1)",
+                  color: "var(--status-success)",
+                  background: "var(--status-success-subtle)",
                   padding: "4px 10px",
                   borderRadius: "999px",
-                  border: "1px solid rgba(74, 222, 128, 0.3)",
+                  border: "1px solid var(--status-success-border)",
                   fontWeight: 600,
                 }}
                 title="Connected to indexer live event feed via Server-Sent Events"
@@ -391,8 +391,8 @@ export default function Home() {
                     width: "8px",
                     height: "8px",
                     borderRadius: "50%",
-                    background: "#4ade80",
-                    boxShadow: "0 0 8px #4ade80",
+                    background: "var(--status-success)",
+                    boxShadow: "0 0 8px var(--status-success)",
                   }}
                 />
                 Live (SSE)
@@ -404,11 +404,11 @@ export default function Home() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
-                  color: "#fbbf24",
-                  background: "rgba(251, 191, 36, 0.1)",
+                  color: "var(--status-warning)",
+                  background: "var(--status-warning-subtle)",
                   padding: "4px 10px",
                   borderRadius: "999px",
-                  border: "1px solid rgba(251, 191, 36, 0.3)",
+                  border: "1px solid var(--status-warning-border)",
                   fontSize: "12px",
                 }}
                 title="SSE feed disconnected. Polling fallback active (every 12s)."
@@ -418,7 +418,7 @@ export default function Home() {
                     width: "8px",
                     height: "8px",
                     borderRadius: "50%",
-                    background: "#fbbf24",
+                    background: "var(--status-warning)",
                   }}
                 />
                 Fallback Polling
@@ -443,7 +443,7 @@ export default function Home() {
             {!isLive && !isPollingFallback && sseStatus === "connecting" && (
               <span
                 style={{
-                  color: "#94a3b8",
+                  color: "var(--foreground-muted)",
                   fontSize: "12px",
                   display: "inline-flex",
                   alignItems: "center",
@@ -455,7 +455,7 @@ export default function Home() {
                     width: "8px",
                     height: "8px",
                     borderRadius: "50%",
-                    background: "#94a3b8",
+                    background: "var(--foreground-muted)",
                   }}
                 />
                 Connecting stream feed…
@@ -473,8 +473,8 @@ export default function Home() {
             disabled={claimAllLoading}
             title="Claim all accrued funds across all your streams in one transaction"
             style={{
-              background: "var(--accent, #0ea5e9)",
-              color: "#fff",
+              background: "var(--accent-strong)",
+              color: "var(--foreground-on-accent)",
               fontWeight: 600,
             }}
           >

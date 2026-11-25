@@ -1,7 +1,26 @@
 export * from "./generated.js";
 
 export { StreamPayClient, signerFromKeypair } from "./client.js";
-export type { Signer, StreamPayClientOptions } from "./client.js";
+export type { BuildUnsignedOptions, ImportSignedOptions, Signer, StreamPayClientOptions, SubmitSignedOptions } from "./client.js";
+export {
+  AIRGAP_ENVELOPE_SCHEMA,
+  AirGapError,
+  createUnsignedEnvelope,
+  decodeQrChunks,
+  encodeQrChunks,
+  exportUnsignedEnvelope,
+  importSignedEnvelope,
+  parseUnsignedEnvelope,
+  verifySignedEnvelope,
+} from "./airgap.js";
+export type {
+  AirGapEnvelopeExpectation,
+  AirGapErrorCode,
+  AirGapSignedEnvelope,
+  AirGapUnsignedEnvelope,
+  QrChunkOptions,
+  SignedEnvelopeExpectation,
+} from "./airgap.js";
 export { StreamPayMethods } from "./methods.js";
 export { decodeError, StreamPayError } from "./errors.js";
 export type { ContractFailure, FailureKind, StreamPayErrorOptions } from "./errors.js";

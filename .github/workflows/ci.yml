@@ -349,6 +349,42 @@ jobs:
       - name: Compatibility checker tests
         run: node --test scripts/event_compat_check.test.mjs
 
+  sdk:
+    name: SDK — codegen freshness / TypeScript / Python / React
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Generated clients and artifact fingerprint are up to date
+        run: bash scripts/check_generated.sh sdk
+
+      - name: Generator IR and deterministic-output tests
+        run: npm run test:sdk:generator
+
+      - name: Python SDK and shared conformance vectors
+        run: npm run test:sdk:python
+
+      - name: TypeScript SDK typecheck and tests
+        run: |
+          npm run typecheck --workspace @streampay/sdk
+          npm test --workspace @streampay/sdk
+
+      - name: React package typecheck tests and builds
+        run: npm run ci:react
+
   frontend:
     name: Frontend — lint / typecheck / tests / build / audit
     runs-on: ubuntu-latest
@@ -385,6 +421,14 @@ jobs:
         # vitest.config.mts includes only lib/**/*.spec.ts, and node --test only
         # discovers *.test.ts.
         run: npm test
+
+      - name: Semantic theme tokens meet WCAG AA in both modes
+        run: |
+          npm run test:contrast:self-test
+          npm run test:contrast
+
+      - name: Raw-color guard catches a seeded violation
+        run: npm run test:theme-colors:self-test
 
       # The differential vector corpus is generated from the Rust reference
       # model's published spec file. Regenerating without diffing (the previous
@@ -532,6 +576,9 @@ jobs:
       # next.config.ts and resolves the app's own node_modules.
       - name: Storybook build
         run: npm run build-storybook
+
+      - name: Theme preference persistence system mode and no-flash tests
+        run: npm run test:theme
 
       # One full-page screenshot per story, compared with zero pixel tolerance
       # against frontend/visual/__screenshots__/linux. The run also includes

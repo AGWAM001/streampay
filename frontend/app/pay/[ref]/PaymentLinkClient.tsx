@@ -106,18 +106,18 @@ export default function PaymentLinkClient({
 
   if (!resolution?.valid || !resolution.stream) {
     return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-4">
-        <div className="bg-neutral-900 border border-red-500/30 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
-          <div className="w-12 h-12 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
+      <main className="min-h-screen bg-[var(--surface-canvas)] text-[var(--foreground-default)] flex items-center justify-center p-4">
+        <div className="bg-[var(--surface-raised)] border border-[var(--status-danger-border)] rounded-2xl p-8 max-w-md w-full text-center shadow-[var(--shadow-modal)]">
+          <div className="w-12 h-12 bg-[var(--status-danger-subtle)] text-[var(--status-danger)] rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
             ✕
           </div>
-          <h1 className="text-xl font-bold text-red-300 mb-2">{t("pay.invalid.title")}</h1>
-          <p className="text-sm text-neutral-400 mb-6">
+          <h1 className="text-xl font-bold text-[var(--status-danger)] mb-2">{t("pay.invalid.title")}</h1>
+          <p className="text-sm text-[var(--foreground-muted)] mb-6">
             {resolution?.error || t("pay.invalid.body")}
           </p>
           <Link
             href="/"
-            className="inline-block px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl text-sm font-medium transition"
+            className="inline-block px-5 py-2.5 bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--foreground-default)] rounded-xl text-sm font-medium transition"
           >
             {t("chrome.backToDashboard")}
           </Link>
@@ -152,32 +152,32 @@ export default function PaymentLinkClient({
   if (receipt) {
     const explorerUrl = `https://stellar.expert/explorer/${NETWORK_LABEL}/tx/${receipt.txHash}`;
     return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-4">
-        <div className="bg-neutral-900 border border-emerald-500/30 rounded-2xl p-8 max-w-lg w-full shadow-2xl text-center">
-          <div className="w-16 h-16 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+      <main className="min-h-screen bg-[var(--surface-canvas)] text-[var(--foreground-default)] flex items-center justify-center p-4">
+        <div className="bg-[var(--surface-raised)] border border-[var(--status-success-border)] rounded-2xl p-8 max-w-lg w-full shadow-[var(--shadow-modal)] text-center">
+          <div className="w-16 h-16 bg-[var(--status-success-subtle)] text-[var(--status-success)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
             ✓
           </div>
-          <h1 className="text-2xl font-bold text-emerald-300 mb-2">{t("pay.receipt.title")}</h1>
-          <p className="text-sm text-neutral-400 mb-6">{t("pay.receipt.body")}</p>
+          <h1 className="text-2xl font-bold text-[var(--status-success)] mb-2">{t("pay.receipt.title")}</h1>
+          <p className="text-sm text-[var(--foreground-muted)] mb-6">{t("pay.receipt.body")}</p>
 
-          <div className="bg-neutral-950/70 border border-neutral-800 rounded-xl p-5 mb-6 text-left space-y-3">
+          <div className="bg-[var(--surface-inset)] border border-[var(--border-default)] rounded-xl p-5 mb-6 text-left space-y-3">
             <div className="flex justify-between items-center text-sm">
-              <span className="text-neutral-400">{t("pay.terminal.streamId")}</span>
-              <span className="font-mono font-medium text-neutral-200">#{receipt.streamId}</span>
+              <span className="text-[var(--foreground-muted)]">{t("pay.terminal.streamId")}</span>
+              <span className="font-mono font-medium text-[var(--foreground-default)]">#{receipt.streamId}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
-              <span className="text-neutral-400">{t("pay.receipt.claimedAmount")}</span>
-              <span className="font-mono font-bold text-emerald-400">
+              <span className="text-[var(--foreground-muted)]">{t("pay.receipt.claimedAmount")}</span>
+              <span className="font-mono font-bold text-[var(--status-success)]">
                 {formatAmount(receipt.amount)} {t("pay.invoice.unit.tokens")}
               </span>
             </div>
             <div className="flex justify-between items-center text-sm">
-              <span className="text-neutral-400">{t("pay.receipt.recipientWallet")}</span>
-              <span className="font-mono text-neutral-300">{shortenAddress(address || "")}</span>
+              <span className="text-[var(--foreground-muted)]">{t("pay.receipt.recipientWallet")}</span>
+              <span className="font-mono text-[var(--foreground-default)]">{shortenAddress(address || "")}</span>
             </div>
-            <div className="border-t border-neutral-800/80 pt-3 flex flex-col gap-1 text-sm">
-              <span className="text-neutral-400">{t("pay.receipt.txHash")}</span>
-              <span className="font-mono text-xs text-neutral-400 break-all">{receipt.txHash}</span>
+            <div className="border-t border-[var(--border-default)] pt-3 flex flex-col gap-1 text-sm">
+              <span className="text-[var(--foreground-muted)]">{t("pay.receipt.txHash")}</span>
+              <span className="font-mono text-xs text-[var(--foreground-muted)] break-all">{receipt.txHash}</span>
             </div>
           </div>
 
@@ -186,13 +186,13 @@ export default function PaymentLinkClient({
               href={explorerUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold transition text-center shadow-lg shadow-emerald-900/30"
+              className="flex-1 px-4 py-3 bg-[var(--status-success-button)] hover:bg-[var(--status-success-button-end)] text-[var(--foreground-on-success)] rounded-xl text-sm font-semibold transition text-center shadow-[var(--shadow-card)]"
             >
               {t("pay.receipt.explorer")}
             </a>
             <Link
               href="/"
-              className="px-4 py-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-xl text-sm font-medium transition text-center"
+              className="px-4 py-3 bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--foreground-default)] rounded-xl text-sm font-medium transition text-center"
             >
               {t("chrome.dashboard")}
             </Link>
@@ -205,9 +205,9 @@ export default function PaymentLinkClient({
   // Dead state terminal cards
   if (isCancelled || isDepleted || (hasEnded && claimableNowBig === 0n)) {
     return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-4">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
-          <div className="w-12 h-12 bg-neutral-800 text-neutral-400 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
+      <main className="min-h-screen bg-[var(--surface-canvas)] text-[var(--foreground-default)] flex items-center justify-center p-4">
+        <div className="bg-[var(--surface-raised)] border border-[var(--border-default)] rounded-2xl p-8 max-w-md w-full text-center shadow-[var(--shadow-modal)]">
+          <div className="w-12 h-12 bg-[var(--surface-inset)] text-[var(--foreground-muted)] rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
             !
           </div>
           <h1 className="text-xl font-bold mb-2">
@@ -217,7 +217,7 @@ export default function PaymentLinkClient({
               ? t("pay.terminal.depletedTitle")
               : t("pay.terminal.completedTitle")}
           </h1>
-          <p className="text-sm text-neutral-400 mb-6">
+          <p className="text-sm text-[var(--foreground-muted)] mb-6">
             {isCancelled
               ? t("pay.terminal.cancelledBody")
               : isDepleted
@@ -225,28 +225,28 @@ export default function PaymentLinkClient({
               : t("pay.terminal.completedBody")}
           </p>
 
-          <div className="bg-neutral-950 border border-neutral-800/80 rounded-xl p-4 mb-6 text-left text-xs space-y-2 font-mono">
+          <div className="bg-[var(--surface-canvas)] border border-[var(--border-default)] rounded-xl p-4 mb-6 text-left text-xs space-y-2 font-mono">
             <div className="flex justify-between">
-              <span className="text-neutral-500">{t("pay.terminal.streamId")}</span>
-              <span className="text-neutral-300">#{stream.id}</span>
+              <span className="text-[var(--foreground-muted)]">{t("pay.terminal.streamId")}</span>
+              <span className="text-[var(--foreground-default)]">#{stream.id}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">{t("pay.terminal.totalFunded")}</span>
-              <span className="text-neutral-300">{formatAmount(stream.deposit)}</span>
+              <span className="text-[var(--foreground-muted)]">{t("pay.terminal.totalFunded")}</span>
+              <span className="text-[var(--foreground-default)]">{formatAmount(stream.deposit)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">{t("pay.terminal.totalWithdrawn")}</span>
-              <span className="text-neutral-300">{formatAmount(stream.withdrawn)}</span>
+              <span className="text-[var(--foreground-muted)]">{t("pay.terminal.totalWithdrawn")}</span>
+              <span className="text-[var(--foreground-default)]">{formatAmount(stream.withdrawn)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-neutral-500">{t("pay.terminal.status")}</span>
-              <span className="capitalize text-amber-400">{stream.status}</span>
+              <span className="text-[var(--foreground-muted)]">{t("pay.terminal.status")}</span>
+              <span className="capitalize text-[var(--status-warning)]">{stream.status}</span>
             </div>
           </div>
 
           <Link
             href="/"
-            className="inline-block px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl text-sm font-medium transition"
+            className="inline-block px-5 py-2.5 bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--foreground-default)] rounded-xl text-sm font-medium transition"
           >
             {t("chrome.goToAppHome")}
           </Link>
@@ -257,100 +257,100 @@ export default function PaymentLinkClient({
 
   // Active Stream Claim Surface
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between p-4 sm:p-8">
-      <header className="max-w-2xl mx-auto w-full flex justify-between items-center py-4 border-b border-neutral-800/60 mb-8">
+    <main className="min-h-screen bg-[var(--surface-canvas)] text-[var(--foreground-default)] flex flex-col justify-between p-4 sm:p-8">
+      <header className="max-w-2xl mx-auto w-full flex justify-between items-center py-4 border-b border-[var(--border-default)] mb-8">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[var(--accent-strong)] to-[var(--accent-secondary-strong)] flex items-center justify-center font-bold text-[var(--foreground-on-accent)] shadow-[var(--shadow-card)]">
             S
           </div>
-          <span className="font-bold tracking-tight text-lg text-white">{t("brand.name")}</span>
+          <span className="font-bold tracking-tight text-lg text-[var(--foreground-default)]">{t("brand.name")}</span>
         </Link>
         <div className="flex items-center gap-2 text-xs">
-          <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+          <span className="px-2.5 py-1 rounded-full bg-[var(--status-success-subtle)] text-[var(--status-success)] border border-[var(--status-success-border)] font-medium">
             {t("chrome.networkLive", { network: NETWORK_LABEL })}
           </span>
         </div>
       </header>
 
       <div className="max-w-xl mx-auto w-full my-auto">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xl">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="bg-[var(--surface-raised)] border border-[var(--border-default)] rounded-3xl p-6 sm:p-8 shadow-[var(--shadow-modal)] relative overflow-hidden backdrop-blur-xl">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--accent-subtle-soft)] rounded-full blur-3xl pointer-events-none" />
 
           {/* Header */}
           <div className="flex justify-between items-start mb-6">
             <div>
-              <span className="text-xs uppercase tracking-wider font-semibold text-indigo-400">
+              <span className="text-xs uppercase tracking-wider font-semibold text-[var(--accent-primary)]">
                 {t("pay.invoice.kicker")}
               </span>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--foreground-default)] mt-1">
                 {t("pay.invoice.title", { id: stream.id })}
               </h1>
             </div>
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[var(--status-success-subtle)] text-[var(--status-success)] border border-[var(--status-success-border)]">
               {t("pay.invoice.active")}
             </span>
           </div>
 
           {/* Accrued / Available Box */}
-          <div className="bg-gradient-to-br from-indigo-950/40 via-neutral-900 to-neutral-950 border border-indigo-500/20 rounded-2xl p-6 mb-6 text-center shadow-inner">
-            <span className="text-xs font-medium text-indigo-300 uppercase tracking-wide">
+          <div className="bg-gradient-to-br from-[var(--accent-subtle)] via-[var(--surface-raised)] to-[var(--surface-canvas)] border border-[var(--accent-border)] rounded-2xl p-6 mb-6 text-center shadow-[var(--shadow-card)]">
+            <span className="text-xs font-medium text-[var(--accent-primary)] uppercase tracking-wide">
               {t("pay.invoice.availableLabel")}
             </span>
-            <div className="text-3xl sm:text-4xl font-extrabold text-white font-mono my-2 tracking-tight">
+            <div className="text-3xl sm:text-4xl font-extrabold text-[var(--foreground-default)] font-mono my-2 tracking-tight">
               {formatAmount(claimableNowBig)}{" "}
-              <span className="text-sm font-sans font-medium text-neutral-400">{t("pay.invoice.unit.tokens")}</span>
+              <span className="text-sm font-sans font-medium text-[var(--foreground-muted)]">{t("pay.invoice.unit.tokens")}</span>
             </div>
-            <div className="text-xs text-neutral-400 flex items-center justify-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="text-xs text-[var(--foreground-muted)] flex items-center justify-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[var(--status-success)] animate-pulse" />
               {t("pay.invoice.streaming")}
             </div>
           </div>
 
           {/* Progress Bar */}
           <div className="mb-6">
-            <div className="flex justify-between text-xs text-neutral-400 mb-2">
+            <div className="flex justify-between text-xs text-[var(--foreground-muted)] mb-2">
               <span>{t("pay.invoice.progress", { percent: formatPercent(progressPercent, locale) })}</span>
               <span>
                 {t("pay.invoice.total", { amount: formatAmount(stream.deposit), unit: "tokens" })}
               </span>
             </div>
-            <div className="w-full bg-neutral-800 h-2.5 rounded-full overflow-hidden">
+            <div className="w-full bg-[var(--surface-inset)] h-2.5 rounded-full overflow-hidden">
               <div
-                className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full transition-all duration-1000 ease-linear rounded-full"
+                className="bg-gradient-to-r from-[var(--accent-primary)] to-[var(--accent-secondary)] h-full transition-all duration-1000 ease-linear rounded-full"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
           </div>
 
           {/* Details Table */}
-          <div className="bg-neutral-950/60 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 mb-6 space-y-3 text-sm">
+          <div className="bg-[var(--surface-inset)] border border-[var(--border-default)] rounded-2xl p-4 sm:p-5 mb-6 space-y-3 text-sm">
             <div className="flex justify-between items-center">
-              <span className="text-neutral-400 text-xs sm:text-sm">{t("pay.invoice.payer")}</span>
-              <span className="font-mono text-xs sm:text-sm text-neutral-200">
+              <span className="text-[var(--foreground-muted)] text-xs sm:text-sm">{t("pay.invoice.payer")}</span>
+              <span className="font-mono text-xs sm:text-sm text-[var(--foreground-default)]">
                 {shortenAddress(stream.sender)}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-neutral-400 text-xs sm:text-sm">{t("pay.invoice.payee")}</span>
-              <span className="inline-flex items-center gap-1.5 text-xs text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded-lg border border-indigo-500/20">
+              <span className="text-[var(--foreground-muted)] text-xs sm:text-sm">{t("pay.invoice.payee")}</span>
+              <span className="inline-flex items-center gap-1.5 text-xs text-[var(--accent-primary)] bg-[var(--accent-subtle)] px-2.5 py-1 rounded-lg border border-[var(--accent-border)]">
                 {t("pay.invoice.payeeProtected")}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-neutral-400 text-xs sm:text-sm">{t("pay.invoice.token")}</span>
-              <span className="font-mono text-xs text-neutral-400">
+              <span className="text-[var(--foreground-muted)] text-xs sm:text-sm">{t("pay.invoice.token")}</span>
+              <span className="font-mono text-xs text-[var(--foreground-muted)]">
                 {shortenAddress(stream.token)}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-neutral-400 text-xs sm:text-sm">{t("pay.invoice.alreadyClaimed")}</span>
-              <span className="font-mono text-xs sm:text-sm text-neutral-300">
+              <span className="text-[var(--foreground-muted)] text-xs sm:text-sm">{t("pay.invoice.alreadyClaimed")}</span>
+              <span className="font-mono text-xs sm:text-sm text-[var(--foreground-default)]">
                 {formatAmount(stream.withdrawn)} {t("pay.invoice.unit.tokens")}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-neutral-400 text-xs sm:text-sm">{t("pay.invoice.endTime")}</span>
-              <span className="text-xs text-neutral-400">
+              <span className="text-[var(--foreground-muted)] text-xs sm:text-sm">{t("pay.invoice.endTime")}</span>
+              <span className="text-xs text-[var(--foreground-muted)]">
                 {formatDateTime(stream.endTime, locale)}
               </span>
             </div>
@@ -358,18 +358,18 @@ export default function PaymentLinkClient({
 
           {/* Wallet and Verification Status */}
           {address && (
-            <div className="mb-6 p-4 rounded-xl border text-xs flex items-center justify-between gap-3 bg-neutral-950/80 border-neutral-800">
+            <div className="mb-6 p-4 rounded-xl border border-[var(--border-default)] text-xs flex items-center justify-between gap-3 bg-[var(--surface-inset)]">
               <div>
-                <span className="text-neutral-400 block mb-0.5">{t("pay.wallet.connected")}</span>
-                <span className="font-mono text-neutral-200 font-medium">{shortenAddress(address)}</span>
+                <span className="text-[var(--foreground-muted)] block mb-0.5">{t("pay.wallet.connected")}</span>
+                <span className="font-mono text-[var(--foreground-default)] font-medium">{shortenAddress(address)}</span>
               </div>
               {isRecipientMatch === true && (
-                <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center gap-1">
+                <span className="px-2.5 py-1 rounded-full bg-[var(--status-success-subtle)] text-[var(--status-success)] border border-[var(--status-success-border)] font-semibold flex items-center gap-1">
                   {t("pay.wallet.verified")}
                 </span>
               )}
               {isRecipientMatch === false && (
-                <span className="px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-semibold flex items-center gap-1">
+                <span className="px-2.5 py-1 rounded-full bg-[var(--status-danger-subtle)] text-[var(--status-danger)] border border-[var(--status-danger-border)] font-semibold flex items-center gap-1">
                   {t("pay.wallet.mismatch")}
                 </span>
               )}
@@ -380,7 +380,7 @@ export default function PaymentLinkClient({
           {claimError && (
             <div
               role="alert"
-              className="p-4 mb-6 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs space-y-1"
+              className="p-4 mb-6 rounded-xl bg-[var(--status-danger-subtle)] border border-[var(--status-danger-border)] text-[var(--status-danger)] text-xs space-y-1"
             >
               <div className="font-semibold flex items-center gap-1.5">
                 <span>⚠️</span> {t("pay.error.heading")}
@@ -395,7 +395,7 @@ export default function PaymentLinkClient({
               type="button"
               id="connect-claim-button"
               onClick={connectWallet}
-              className="w-full py-4 px-6 rounded-2xl font-bold text-white bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 text-base"
+              className="w-full py-4 px-6 rounded-2xl font-bold text-[var(--foreground-on-accent)] bg-gradient-to-r from-[var(--accent-strong)] via-[var(--accent-strong)] to-[var(--accent-secondary-strong)] hover:from-[var(--accent-strong-hover)] hover:to-[var(--accent-secondary-strong-hover)] transition shadow-[var(--shadow-card)] flex items-center justify-center gap-2 text-base"
             >
               {t("pay.action.connectAndClaim")}
             </button>
@@ -405,17 +405,17 @@ export default function PaymentLinkClient({
               id="claim-now-button"
               disabled={claiming || isRecipientMatch === false || claimableNowBig === 0n}
               onClick={handleClaim}
-              className={`w-full py-4 px-6 rounded-2xl font-bold text-white transition shadow-lg flex items-center justify-center gap-2 text-base ${
+              className={`w-full py-4 px-6 rounded-2xl font-bold transition shadow-[var(--shadow-card)] flex items-center justify-center gap-2 text-base ${
                 isRecipientMatch === false || claimableNowBig === 0n
-                  ? "bg-neutral-800 text-neutral-500 cursor-not-allowed shadow-none"
+                  ? "bg-[var(--surface-inset)] text-[var(--foreground-muted)] cursor-not-allowed shadow-none"
                   : claiming
-                  ? "bg-indigo-700 cursor-wait shadow-indigo-700/30"
-                  : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-600/30"
+                  ? "bg-[var(--accent-strong-hover)] text-[var(--foreground-on-accent)] cursor-wait"
+                  : "bg-gradient-to-r from-[var(--status-success-button)] to-[var(--status-success-button-end)] hover:from-[var(--status-success-button-end)] hover:to-[var(--status-success-button)] text-[var(--foreground-on-success)]"
               }`}
             >
               {claiming ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   {t("pay.action.claiming")}
                 </>
               ) : isRecipientMatch === false ? (
@@ -428,7 +428,7 @@ export default function PaymentLinkClient({
             </button>
           )}
 
-          <p className="text-center text-neutral-500 text-xs mt-4">
+          <p className="text-center text-[var(--foreground-muted)] text-xs mt-4">
             {t("pay.note")}
           </p>
         </div>
@@ -438,7 +438,7 @@ export default function PaymentLinkClient({
         <PaymentShareActions refValue={refValue} />
       </div>
 
-      <footer className="max-w-2xl mx-auto w-full text-center py-6 text-xs text-neutral-500 border-t border-neutral-900 mt-8">
+      <footer className="max-w-2xl mx-auto w-full text-center py-6 text-xs text-[var(--foreground-muted)] border-t border-[var(--border-default)] mt-8">
         {t("brand.footer")}
       </footer>
 

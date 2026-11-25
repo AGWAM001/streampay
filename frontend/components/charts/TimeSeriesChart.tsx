@@ -81,7 +81,7 @@ export default function TimeSeriesChart({ points, title, width = 760, height = 2
 
   if (points.length < 2) {
     return (
-      <div style={{ padding: "1rem", color: "#6b7280", fontSize: "0.875rem" }}>
+      <div style={{ padding: "1rem", color: "var(--foreground-muted)", fontSize: "0.875rem" }}>
         Not enough data to render chart.
       </div>
     );
@@ -90,7 +90,7 @@ export default function TimeSeriesChart({ points, title, width = 760, height = 2
   return (
     <figure style={{ margin: 0 }} aria-label={title ?? "Stream time-series chart"}>
       {title && (
-        <figcaption style={{ fontSize: "0.875rem", color: "#374151", marginBottom: 4 }}>
+        <figcaption style={{ fontSize: "0.875rem", color: "var(--foreground-default)", marginBottom: 4 }}>
           {title}
         </figcaption>
       )}
@@ -110,39 +110,39 @@ export default function TimeSeriesChart({ points, title, width = 760, height = 2
               y1={y}
               x2={width - PAD.right}
               y2={y}
-              stroke="#e5e7eb"
+              stroke="var(--chart-grid)"
               strokeDasharray="4 4"
             />
-            <text x={PAD.left - 4} y={y + 4} textAnchor="end" fontSize={10} fill="#9ca3af">
+            <text x={PAD.left - 4} y={y + 4} textAnchor="end" fontSize={10} fill="var(--foreground-muted)">
               {label}
             </text>
           </g>
         ))}
 
         {/* Available area fill */}
-        <polygon points={availableArea} fill="#bfdbfe" fillOpacity={0.4} />
+        <polygon points={availableArea} fill="var(--chart-available)" fillOpacity={0.4} />
 
         {/* Accrued line */}
-        <path d={accruedPath} fill="none" stroke="#2563eb" strokeWidth={2} />
+        <path d={accruedPath} fill="none" stroke="var(--chart-accrued)" strokeWidth={2} />
 
         {/* Claimed line */}
-        <path d={claimedPath} fill="none" stroke="#16a34a" strokeWidth={2} />
+        <path d={claimedPath} fill="none" stroke="var(--chart-claimed)" strokeWidth={2} />
 
         {/* X-axis labels */}
         {xLabels.map(({ x, label }) => (
-          <text key={label} x={x} y={height - 4} textAnchor="middle" fontSize={10} fill="#9ca3af">
+          <text key={label} x={x} y={height - 4} textAnchor="middle" fontSize={10} fill="var(--foreground-muted)">
             {label}
           </text>
         ))}
 
         {/* Legend */}
         <g transform={`translate(${PAD.left}, ${PAD.top})`}>
-          <rect x={0} y={0} width={10} height={10} fill="#2563eb" rx={2} />
-          <text x={14} y={9} fontSize={10} fill="#374151">Accrued</text>
-          <rect x={70} y={0} width={10} height={10} fill="#16a34a" rx={2} />
-          <text x={84} y={9} fontSize={10} fill="#374151">Claimed</text>
-          <rect x={140} y={0} width={10} height={10} fill="#bfdbfe" rx={2} />
-          <text x={154} y={9} fontSize={10} fill="#374151">Available</text>
+          <rect x={0} y={0} width={10} height={10} fill="var(--chart-accrued)" rx={2} />
+          <text x={14} y={9} fontSize={10} fill="var(--foreground-default)">Accrued</text>
+          <rect x={70} y={0} width={10} height={10} fill="var(--chart-claimed)" rx={2} />
+          <text x={84} y={9} fontSize={10} fill="var(--foreground-default)">Claimed</text>
+          <rect x={140} y={0} width={10} height={10} fill="var(--chart-available)" rx={2} />
+          <text x={154} y={9} fontSize={10} fill="var(--foreground-default)">Available</text>
         </g>
       </svg>
     </figure>

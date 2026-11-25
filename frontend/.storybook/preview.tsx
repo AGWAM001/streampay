@@ -1,5 +1,6 @@
 import type { Preview } from "@storybook/nextjs-vite";
 import { fn, mocked, sb } from "storybook/test";
+import { useEffect } from "react";
 
 import "../app/globals.css";
 
@@ -13,6 +14,12 @@ import {
 import { LocaleProvider } from "../lib/i18n/provider";
 import { SUPPORTED_LOCALES, localeDir, type Locale } from "../lib/i18n/locales";
 import { checkWalletNetwork } from "../lib/network";
+import {
+  applyTheme,
+  subscribeToSystemTheme,
+  systemPrefersDark,
+  type ThemePreference,
+} from "../lib/theme";
 import { useWallet, type WalletState } from "../lib/wallet-context";
 import { FIXED_NOW_MS, installFakeClock } from "./fake-clock";
 import {
@@ -77,6 +84,23 @@ function applyLocale(locale: Locale) {
   document.documentElement.dir = localeDir(locale);
 }
 
+/** Keep the toolbar's System option live without persisting into app settings. */
+function StorybookThemeSync({ preference }: { preference: ThemePreference }) {
+  useEffect(() => {
+    if (preference !== "system") return;
+    return subscribeToSystemTheme(() => {
+      applyTheme(preference, systemPrefersDark(), { storage: null });
+    });
+  }, [preference]);
+  return null;
+}
+
+const THEME_ITEMS: { value: ThemePreference; title: string }[] = [
+  { value: "light", title: "Light" },
+  { value: "dark", title: "Dark" },
+  { value: "system", title: "System" },
+];
+
 const preview: Preview = {
   parameters: {
     // The components are App Router client components: `next/navigation`
@@ -101,15 +125,29 @@ const preview: Preview = {
         dynamicTitle: true,
       },
     },
+    theme: {
+      description: "Color theme",
+      toolbar: {
+        title: "Theme",
+        icon: "circlehollow",
+        items: THEME_ITEMS,
+        dynamicTitle: true,
+      },
+    },
   },
-  initialGlobals: { locale: "en" },
+  initialGlobals: { locale: "en", theme: "dark" },
 
   decorators: [
     (Story, context) => {
       const locale = (context.globals.locale ?? "en") as Locale;
+      const preference = (context.globals.theme ?? "dark") as ThemePreference;
       applyLocale(locale);
+      // Apply during render, not in an effect: screenshots must never capture
+      // the previous theme for one frame. Toolbar changes do not write storage.
+      applyTheme(preference, systemPrefersDark(), { storage: null });
       return (
         <LocaleProvider locale={locale}>
+          <StorybookThemeSync preference={preference} />
           <Story />
         </LocaleProvider>
       );

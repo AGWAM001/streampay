@@ -462,7 +462,7 @@ export default function StreamForm({
           <div
             className="stream-preview"
             style={{
-              background: "rgba(255, 255, 255, 0.02)",
+              background: "var(--surface-subtle)",
               border: "1px solid var(--line)",
               borderRadius: "8px",
               padding: "12px 16px",
@@ -544,7 +544,7 @@ export default function StreamForm({
       )}
 
       {formError && (
-        <div role="alert" style={{ color: "#ef4444", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div role="alert" style={{ color: "var(--status-danger)", marginBottom: "1rem", fontSize: "0.9rem" }}>
           {formError}
         </div>
       )}

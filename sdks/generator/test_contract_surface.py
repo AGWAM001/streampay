@@ -318,7 +318,14 @@ class GeneratedCodecNamesTest(unittest.TestCase):
 
     def test_the_rule_fires_on_a_synthetic_collision(self) -> None:
         spec = {
-            "contract": {"version": "0"},
+            "schema": "streampay-spec/v3",
+            "generator": "sdks/generator/generate.py",
+            "contract": {
+                "name": "Demo",
+                "crate": "demo",
+                "version": "0",
+                "description": "",
+            },
             "constants": {},
             "enums": [],
             "unions": [],

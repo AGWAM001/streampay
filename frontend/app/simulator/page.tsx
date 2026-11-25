@@ -295,7 +295,7 @@ export default function SimulatorPage() {
         </div>
 
         <div className="row" style={{ marginTop: "16px" }}>
-          <div style={{ padding: "12px", background: "#0b121e", borderRadius: "8px", border: "1px solid var(--line)" }}>
+          <div style={{ padding: "12px", background: "var(--surface-inset)", borderRadius: "8px", border: "1px solid var(--line)" }}>
             <span className="muted" id={vestingLabelId}>
               Claimable at t (Vesting Schedule)
             </span>
@@ -311,7 +311,7 @@ export default function SimulatorPage() {
             </span>
           </div>
 
-          <div style={{ padding: "12px", background: "#0b121e", borderRadius: "8px", border: "1px solid var(--line)" }}>
+          <div style={{ padding: "12px", background: "var(--surface-inset)", borderRadius: "8px", border: "1px solid var(--line)" }}>
             <span className="muted" id={linearLabelId}>
               Contract Pure streamed_at (Linear)
             </span>
@@ -347,7 +347,7 @@ export default function SimulatorPage() {
             style={{
               width: "100%",
               maxWidth: `${svgWidth}px`,
-              background: "#080c14",
+              background: "var(--surface-chart)",
               borderRadius: "8px",
               border: "1px solid var(--line)",
             }}
@@ -369,13 +369,13 @@ export default function SimulatorPage() {
             <line
               x1={padding} y1={svgHeight - padding}
               x2={svgWidth - padding} y2={svgHeight - padding}
-              stroke="#22304a"
+              stroke="var(--chart-grid)"
               aria-hidden="true"
             />
             <line
               x1={padding} y1={padding}
               x2={padding} y2={svgHeight - padding}
-              stroke="#22304a"
+              stroke="var(--chart-grid)"
               aria-hidden="true"
             />
 
@@ -424,7 +424,7 @@ export default function SimulatorPage() {
               cy={cursorY}
               r="5"
               fill="var(--green)"
-              stroke="#fff"
+              stroke="var(--focus-ring-inner)"
               strokeWidth="2"
               aria-hidden="true"
             />

@@ -1,0 +1,7 @@
+{
+  "schema": "streampay-airgap-negative-vector/v1",
+  "tamperedHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "wrongNetwork": "Public Global Stellar Network ; September 2015",
+  "missingChunkIndex": 0,
+  "conflictingChunkIndex": 1
+}

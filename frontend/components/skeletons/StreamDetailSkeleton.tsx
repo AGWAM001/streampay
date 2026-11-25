@@ -22,7 +22,7 @@ export function StreamDetailSkeleton({ streamId }: StreamDetailSkeletonProps) {
             gap: "6px",
             padding: "2px 8px",
             borderRadius: "999px",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
+            border: "1px solid var(--border-default)",
           }}
         >
           <Skeleton width="50px" height="12px" />

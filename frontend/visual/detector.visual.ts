@@ -23,7 +23,7 @@
 
 import fs from "node:fs";
 import { expect, test } from "@playwright/test";
-import { renderStory } from "./storybook";
+import { projectTheme, renderStory, snapshotName } from "./storybook";
 
 /** The regression: someone "tightens" the status pills in app/globals.css. */
 const STATUS_BADGE_REGRESSION = `.status-badge { padding: 0.1rem 0.4rem; }`;
@@ -33,7 +33,8 @@ const LIVE_STORY = "pages-streamdetail--connected-recipient";
 
 test.describe("visual gate self-test", () => {
   test("a one-line CSS regression fails the screenshot comparison", async ({ page }, testInfo) => {
-    const name = `${REGRESSION_STORY}.png`;
+    const theme = projectTheme(testInfo.project.name);
+    const name = snapshotName(REGRESSION_STORY, theme);
     const baseline = testInfo.snapshotPath(name, { kind: "screenshot" });
 
     // Updating baselines must never record the deliberately broken render.
@@ -44,7 +45,7 @@ test.describe("visual gate self-test", () => {
     // Without a baseline toHaveScreenshot would *write* the regressed render.
     expect(fs.existsSync(baseline), `no baseline at ${baseline} to compare against`).toBe(true);
 
-    await renderStory(page, REGRESSION_STORY);
+    await renderStory(page, REGRESSION_STORY, theme);
     await page.addStyleTag({ content: STATUS_BADGE_REGRESSION });
 
     const failure = await expect(page)
@@ -59,7 +60,7 @@ test.describe("visual gate self-test", () => {
   });
 
   test("the injected clock freezes the live-accrual counter", async ({ page }, testInfo) => {
-    await renderStory(page, LIVE_STORY);
+    await renderStory(page, LIVE_STORY, projectTheme(testInfo.project.name));
     const counter = page.getByLabel(/^Available balance:/);
 
     // Evidence capture, not a relaxation: the byte comparison below is exactly

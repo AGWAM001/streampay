@@ -238,7 +238,7 @@ export default function DiscoveryBrowsePage() {
                   display: "flex",
                   flexDirection: "column",
                   gap: "10px",
-                  borderColor: l.anonymityFlag === "low" ? "rgba(255, 170, 0, 0.3)" : "var(--line)",
+                  borderColor: l.anonymityFlag === "low" ? "var(--status-warning-border)" : "var(--line)",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
@@ -257,7 +257,7 @@ export default function DiscoveryBrowsePage() {
                       {l.anonymityFlag === "low" ? (
                         <span
                           className="status-badge"
-                          style={{ background: "#451a03", color: "#fcd34d", border: "1px solid #78350f" }}
+                          style={{ background: "var(--status-warning-subtle)", color: "var(--status-warning)", border: "1px solid var(--status-warning-border)" }}
                           title="Less than k streams share this exact asset, rate, and duration band"
                         >
                           ⚠️ Low Anonymity ({l.anonymitySetSize})
@@ -265,7 +265,7 @@ export default function DiscoveryBrowsePage() {
                       ) : (
                         <span
                           className="status-badge"
-                          style={{ background: "#064e3b", color: "#6ee7b7", border: "1px solid #047857" }}
+                          style={{ background: "var(--status-success-subtle)", color: "var(--status-success)", border: "1px solid var(--status-success-border)" }}
                         >
                           ✓ {l.anonymitySetSize}-Anonymous
                         </span>
@@ -371,7 +371,7 @@ export default function DiscoveryBrowsePage() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: "rgba(10, 14, 22, 0.85)",
+            backgroundColor: "var(--surface-scrim)",
             backdropFilter: "blur(4px)",
             display: "flex",
             alignItems: "center",
@@ -438,7 +438,7 @@ export default function DiscoveryBrowsePage() {
             </table>
 
             {selectedListing.sender && selectedListing.recipient ? (
-              <div style={{ marginBottom: "16px", padding: "12px", background: "#0d1320", borderRadius: "8px" }}>
+              <div style={{ marginBottom: "16px", padding: "12px", background: "var(--surface-inset)", borderRadius: "8px" }}>
                 <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "4px" }}>
                   Block Explorer Links (Disclosed by mutual opt-in)
                 </div>
@@ -466,8 +466,8 @@ export default function DiscoveryBrowsePage() {
                 style={{
                   marginBottom: "16px",
                   padding: "12px",
-                  background: "rgba(61, 220, 132, 0.08)",
-                  border: "1px solid rgba(61, 220, 132, 0.2)",
+                  background: "var(--status-success-subtle)",
+                  border: "1px solid var(--status-success-border)",
                   borderRadius: "8px",
                   fontSize: "13px",
                   color: "var(--text)",

@@ -30,6 +30,17 @@ class ConformanceTest(unittest.TestCase):
         self.assertEqual(event.deposit, 10_000_000_000)
         self.assertFalse(event.cancelable)
 
+    def test_event_decoder_rejects_a_different_contract(self):
+        vector = json.loads((VECTORS / "create-stream.json").read_text())
+        expected = vector["expected"]["events"][0]["contract"]
+        self.assertIsNotNone(decode_event_xdr(vector["eventsXdr"][0], expected))
+        self.assertIsNone(
+            decode_event_xdr(
+                vector["eventsXdr"][0],
+                "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
+            )
+        )
+
     def test_malformed_event_is_a_decode_error(self):
         with self.assertRaises(StreamPayError) as caught:
             decode_event_xdr("not-xdr")

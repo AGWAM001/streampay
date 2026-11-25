@@ -35,7 +35,7 @@ function CodeBlock({ title, value }: { title: string; value: string }) {
         style={{
           margin: 0,
           padding: 10,
-          background: "#0d1320",
+          background: "var(--surface-inset)",
           border: "1px solid var(--line)",
           borderRadius: 8,
           maxHeight: 260,
