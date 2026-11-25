@@ -178,6 +178,38 @@ Three things to know:
   generated artifact's filename must not collide with another's when the
   filesystem ignores case.
 
+### How CI is organised
+
+`ci.yml` is the **only** pull-request workflow and reports **six** checks:
+Contract, Frontend, Data plane, Storybook, Security, Docs. GitHub publishes one
+check run per job, so a shorter review surface means fewer jobs, not shorter
+names. The thirteen jobs this file used to have are the same steps re-homed,
+with the migration recorded per job in
+[`.github/ci-gates.json`](./.github/ci-gates.json) under `moved`.
+
+The specialist workflows keep their release, scheduled and manual triggers, but
+no longer create PR checks. Their PR validations run as path-aware steps inside
+the six jobs. `scripts/ci_changed_paths.py` compares the PR merge base with its
+head and emits the flags consumed by those steps; a change to the CI workflow,
+the detector or its tests selects every specialist group, and a Git or pattern
+error fails closed rather than skipping a gate.
+
+Three rules follow from that, and `scripts/check_ci_integrity.py` enforces all
+three on every pull request:
+
+- A job's steps may move, but none may vanish. A gate that disappears cannot
+  fail, so the checker compares the merge base against your branch and reports
+  any named step that no job runs — unless `.github/ci-gates.json` records it
+  under `retired` with a reason, in the same diff.
+- Independence survives as `if: ${{ always() && !cancelled() }}`. The devcontainer
+  build steps used to be a separate check so that a compile error still showed
+  up when the job had already stopped at a formatting complaint; inside the
+  Contract job they carry that condition and keep behaving the same way.
+- The `prcap` rule rejects another PR workflow, a matrix, a reusable-workflow job
+  or write permission. The `prmoves` rule checks every inventory-recorded
+  specialist move for one equivalent copy with the same payload, environment,
+  working directory and original condition, plus its path guard.
+
 ### Other mechanical gates, in one place
 
 `cargo fmt` and the frontend toolchain account for most other first-push
@@ -208,7 +240,7 @@ the next free code above whichever is higher — labelled with where the number
 came from — so you never have to guess; CI runs it as the *first* step of the
 Contract job, before the toolchain even installs, so a collision is a
 file/line annotation within seconds instead of a compile error four minutes
-later in two jobs at once. A branch that is behind main gets a warning instead
+later. A branch that is behind main gets a warning instead
 of advice, because "the highest code I can see plus one" is exactly how two PRs
 pick the same number.
 
@@ -216,7 +248,7 @@ The same script then checks the registry in `contracts/streaming-payments/src/su
 which maps every rejection branch to the code it returns: a code no branch
 produces (and that is not in `RETIRED_CODES`) and a `Branch::…` name the mapping
 uses without declaring it are the two ways a merge leaves the contract not
-compiling — the red `Devcontainer — wasm build` check that says nothing about
+compiling — the red `Wasm build (devcontainer path)` step that says nothing about
 what to add. Both are reported here with the file, the line and the exact fix
 (`pub enum Branch` variant + an arm in `Branch::error()`). This mirrors the
 contract's own matrix test (`every_error_code_is_produced_or_retired`), which
