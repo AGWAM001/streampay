@@ -9,6 +9,7 @@ import {
   isNativeXlm,
   readAvailable,
   readBeneficiaryKey,
+  readRateSegments,
   readRefundTarget,
   readSponsor,
   readStream,
@@ -32,6 +33,7 @@ import {
   type LiveAccrualState,
 } from "@/lib/live-accrual";
 import { useClaimScheduler } from "@/lib/use-claim-scheduler";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import ClaimSchedulerSettings from "@/components/ClaimSchedulerSettings";
 import {
   consentPublicKeyHex,
@@ -97,7 +99,13 @@ export default function StreamDetailClient() {
     if (!id) return;
     const engine = startLiveAccrual({
       readStream: async () => {
-        const s = await readStream(id);
+        // The schedule is read alongside the stream so the per-second counter
+        // mirrors a renegotiated stream too; a failed schedule read leaves it
+        // out and the engine freezes the counter if the mirror disagrees.
+        const [s, segments] = await Promise.all([
+          readStream(id),
+          readRateSegments(id).catch(() => null),
+        ]);
         setStream(s);
         fetchAssetMeta(s.token).then((meta) => setAssetMeta(meta));
         return {
@@ -106,6 +114,7 @@ export default function StreamDetailClient() {
           endTime: s.endTime,
           withdrawn: BigInt(s.withdrawn),
           status: s.status,
+          ...(segments ? { segments } : {}),
         };
       },
       readAvailable: () => readAvailable(id),
@@ -134,6 +143,10 @@ export default function StreamDetailClient() {
   const available = live.available;
   const snapshot = live.snapshot;
   const displayAvailable = live.displayAvailable;
+  // Reduced motion: no per-second ticking; the figure moves only when a 15s
+  // chain read lands, exactly as before the live counter (issue #39).
+  const reducedMotion = usePrefersReducedMotion();
+  const tickingLive = live.ticking && !reducedMotion;
   const loadError = live.error ? describeError(live.error) : "";
 
   // Auto-prefill the input with the accrued balance while the user has not
@@ -462,15 +475,34 @@ export default function StreamDetailClient() {
             <tr>
               <th>Available now</th>
               <td className="mono">
-                {(() => {
-                  const availVal =
-                    snapshot?.status === "Active"
-                      ? (displayAvailable ?? available)
-                      : available;
-                  if (availVal === null) return "…";
-                  if (!assetMeta) return availVal.toString();
-                  return `${formatAmount(availVal, assetMeta.decimals)} ${assetMeta.code}`;
-                })()}
+                <span
+                  className="accrual-counter"
+                  data-live={tickingLive ? "true" : "false"}
+                  title={
+                    tickingLive
+                      ? "Ticks every second from the contract's accrual formula; re-synced with the chain every 15s"
+                      : "On-chain value, refreshed every 15s"
+                  }
+                >
+                  {(() => {
+                    const availVal =
+                      tickingLive && snapshot?.status === "Active"
+                        ? (displayAvailable ?? available)
+                        : available;
+                    if (availVal === null) return "…";
+                    if (!assetMeta) return availVal.toString();
+                    return `${formatAmount(availVal, assetMeta.decimals)} ${assetMeta.code}`;
+                  })()}
+                </span>
+                {tickingLive && (
+                  // The dot is decorative; the text "Live" carries the meaning.
+                  // The counter itself is deliberately not an aria-live region,
+                  // so screen readers are not interrupted every second.
+                  <span className="live-indicator accrual-live" aria-label="Live accrual — updates every second">
+                    <span className="live-dot" aria-hidden="true" />
+                    Live
+                  </span>
+                )}
                 {stream.status === "Active" && (
                   <button
                     onClick={async () => {
