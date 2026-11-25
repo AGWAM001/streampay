@@ -103,6 +103,8 @@ mod event_registry;
 mod events;
 mod governance;
 #[cfg(test)]
+mod governance_property_test;
+#[cfg(test)]
 mod governance_test;
 pub mod hooks;
 #[cfg(test)]
