@@ -238,6 +238,19 @@ export interface HookRegisteredEvent {
   selector: string;
 }
 
+/** Emitted when `merge_streams` merges two streams into `child_id`. Both parents become `Cancelled` with no payout; their histories and summed remainders stream on the child until `end_time`, the earlier parent end. */
+/** Event key `merge_stream` — fingerprint `sha256:70a8dd6e5d4ae8d5fe0b3359d32845f91dcc91471c59dbb79ab5a1c0ce46599f`. */
+export interface MergeStreamEvent {
+  child_id: bigint;
+  first_parent_id: bigint;
+  second_parent_id: bigint;
+  merged_at: bigint;
+  remaining: bigint;
+  end_time: bigint;
+  claimable: bigint;
+  withdrawn: bigint;
+}
+
 /** Emitted when a sponsor rotates its authorized operator (relayer) key. The previous operator key stops validating relay signatures immediately. */
 /** Event key `operator_key_rotated` — fingerprint `sha256:e173c61697b4045d0fb1e94358fe8b4675bfca312369ac887f2ff23f21fb413b`. */
 export interface OperatorKeyRotatedEvent {
@@ -405,6 +418,21 @@ export interface SenderTransferredEvent {
   sender_to: string;
   nonce: bigint;
   refund_rights_transferred: boolean;
+}
+
+/** Emitted when `split_stream` splits a stream into two children. The parent becomes `Cancelled` with no payout; its history (accrued amount and cumulative `withdrawn`) moves to `first_child_id`, and its unaccrued remainder is divided between the two children from `split_at` on. */
+/** Event key `split_stream` — fingerprint `sha256:38f05ba0dac924929ccf0fc69bdf97ea3ed9d8833f57f21a0154af857f46b674`. */
+export interface SplitStreamEvent {
+  parent_id: bigint;
+  first_child_id: bigint;
+  second_child_id: bigint;
+  split_at: bigint;
+  first_remaining: bigint;
+  second_remaining: bigint;
+  first_end_time: bigint;
+  second_end_time: bigint;
+  claimable: bigint;
+  withdrawn: bigint;
 }
 
 /** Emitted when a sponsor pauses or resumes its budget. */
@@ -611,6 +639,7 @@ export const EVENT_KEYS = {
   HookFailed: "hook_failed",
   HookInvoked: "hook_invoked",
   HookRegistered: "hook_registered",
+  MergeStream: "merge_stream",
   OperatorKeyRotated: "operator_key_rotated",
   OracleConfigUpdated: "oracle_config_updated",
   OracleStaleFallback: "oracle_stale_fallback",
@@ -631,6 +660,7 @@ export const EVENT_KEYS = {
   SenderTransferExpired: "sender_transfer_expired",
   SenderTransferProposed: "sender_transfer_proposed",
   SenderTransferred: "sender_transferred",
+  SplitStream: "split_stream",
   SponsorActiveSet: "sponsor_active_set",
   SponsorClaim: "sponsor_claim",
   SponsorRegistered: "sponsor_registered",
@@ -656,7 +686,7 @@ export const EVENT_KEYS = {
 export type ContractEventName = (typeof EVENT_KEYS)[keyof typeof EVENT_KEYS];
 
 /** Every event this registry knows about, even if a consumer ignores it. */
-export const ALL_CONTRACT_EVENT_NAMES: readonly ContractEventName[] = ["advance_drawn", "advance_liquidated", "advance_repaid", "batch_withdraw_summary", "beneficiary_enrolled", "condition_expired", "condition_met", "condition_registered", "contract_frozen_state_changed", "contract_upgraded", "dispute_expired", "dispute_raised", "dispute_resolved", "fee_charged", "fee_withdrawn", "governance_action_executed", "governance_action_proposed", "governance_action_signed", "governance_action_vetoed", "governance_signers_set", "hook_failed", "hook_invoked", "hook_registered", "operator_key_rotated", "oracle_config_updated", "oracle_stale_fallback", "oracle_time_reported", "ownership_accepted", "ownership_proposed", "policy_asset_executed", "policy_asset_queued", "policy_handoff_accepted", "policy_handoff_cancelled", "policy_handoff_proposed", "policy_initialized", "rate_change_accepted", "rate_change_proposed", "scheduled_intent_cancelled", "scheduled_intent_expired", "scheduled_stream_executed", "sender_transfer_expired", "sender_transfer_proposed", "sender_transferred", "sponsor_active_set", "sponsor_claim", "sponsor_registered", "storage_migrated", "stream_cancelled", "stream_created", "stream_paused", "stream_policy_set", "stream_record_migrated", "stream_refund_target_changed", "stream_resumed", "stream_scheduled", "stream_topped_up", "streams_created", "template_approved", "template_instantiated", "upgrade_cancelled", "upgrade_proposed", "withdrawn"] as const;
+export const ALL_CONTRACT_EVENT_NAMES: readonly ContractEventName[] = ["advance_drawn", "advance_liquidated", "advance_repaid", "batch_withdraw_summary", "beneficiary_enrolled", "condition_expired", "condition_met", "condition_registered", "contract_frozen_state_changed", "contract_upgraded", "dispute_expired", "dispute_raised", "dispute_resolved", "fee_charged", "fee_withdrawn", "governance_action_executed", "governance_action_proposed", "governance_action_signed", "governance_action_vetoed", "governance_signers_set", "hook_failed", "hook_invoked", "hook_registered", "merge_stream", "operator_key_rotated", "oracle_config_updated", "oracle_stale_fallback", "oracle_time_reported", "ownership_accepted", "ownership_proposed", "policy_asset_executed", "policy_asset_queued", "policy_handoff_accepted", "policy_handoff_cancelled", "policy_handoff_proposed", "policy_initialized", "rate_change_accepted", "rate_change_proposed", "scheduled_intent_cancelled", "scheduled_intent_expired", "scheduled_stream_executed", "sender_transfer_expired", "sender_transfer_proposed", "sender_transferred", "split_stream", "sponsor_active_set", "sponsor_claim", "sponsor_registered", "storage_migrated", "stream_cancelled", "stream_created", "stream_paused", "stream_policy_set", "stream_record_migrated", "stream_refund_target_changed", "stream_resumed", "stream_scheduled", "stream_topped_up", "streams_created", "template_approved", "template_instantiated", "upgrade_cancelled", "upgrade_proposed", "withdrawn"] as const;
 
 /** Narrow an arbitrary RPC event name to a registered contract event. */
 export function isContractEventName(name: string): name is ContractEventName {
@@ -688,6 +718,7 @@ export const EVENT_STRUCT_BY_KEY: Record<ContractEventName, string> = {
   "hook_failed": "HookFailed",
   "hook_invoked": "HookInvoked",
   "hook_registered": "HookRegistered",
+  "merge_stream": "MergeStream",
   "operator_key_rotated": "OperatorKeyRotated",
   "oracle_config_updated": "OracleConfigUpdated",
   "oracle_stale_fallback": "OracleStaleFallback",
@@ -708,6 +739,7 @@ export const EVENT_STRUCT_BY_KEY: Record<ContractEventName, string> = {
   "sender_transfer_expired": "SenderTransferExpired",
   "sender_transfer_proposed": "SenderTransferProposed",
   "sender_transferred": "SenderTransferred",
+  "split_stream": "SplitStream",
   "sponsor_active_set": "SponsorActiveSet",
   "sponsor_claim": "SponsorClaim",
   "sponsor_registered": "SponsorRegistered",
@@ -771,6 +803,7 @@ export const EVENT_SHAPES: Record<ContractEventName, EventShape> = {
   "hook_failed": { struct: "HookFailed", eventKey: "hook_failed", fingerprint: "sha256:7fba9960155e2e33b3f357c702946c62c9a7d873c054d4e85e6acba47894324f", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"event_class","type":"Symbol"},{"name":"callback_contract","type":"Address"},{"name":"error_code","type":"u32"}] },
   "hook_invoked": { struct: "HookInvoked", eventKey: "hook_invoked", fingerprint: "sha256:11cae2306cfb934411dc921d7d98e1441f494b980474db591c2f7f9ff6555a2e", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"event_class","type":"Symbol"},{"name":"callback_contract","type":"Address"}] },
   "hook_registered": { struct: "HookRegistered", eventKey: "hook_registered", fingerprint: "sha256:be27fe4f3537259a7dbc0b805c963dd2393d49967ca47f74de98d438b47fb9c0", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"event_class","type":"Symbol"},{"name":"callback_contract","type":"Address"},{"name":"selector","type":"Symbol"}] },
+  "merge_stream": { struct: "MergeStream", eventKey: "merge_stream", fingerprint: "sha256:70a8dd6e5d4ae8d5fe0b3359d32845f91dcc91471c59dbb79ab5a1c0ce46599f", topics: [{"name":"child_id","type":"u64"}], data: [{"name":"first_parent_id","type":"u64"},{"name":"second_parent_id","type":"u64"},{"name":"merged_at","type":"u64"},{"name":"remaining","type":"i128"},{"name":"end_time","type":"u64"},{"name":"claimable","type":"i128"},{"name":"withdrawn","type":"i128"}] },
   "operator_key_rotated": { struct: "OperatorKeyRotated", eventKey: "operator_key_rotated", fingerprint: "sha256:e173c61697b4045d0fb1e94358fe8b4675bfca312369ac887f2ff23f21fb413b", topics: [{"name":"sponsor","type":"Address"},{"name":"kind","type":"Symbol"}], data: [{"name":"new_operator_key","type":"BytesN<32>"}] },
   "oracle_config_updated": { struct: "OracleConfigUpdated", eventKey: "oracle_config_updated", fingerprint: "sha256:91f894797f41c1566560dd5c04581611fb8d29bd0ac48bfc022d0ab4de0e6099", topics: [], data: [{"name":"threshold","type":"u32"},{"name":"max_stale_seconds","type":"u64"}] },
   "oracle_stale_fallback": { struct: "OracleStaleFallback", eventKey: "oracle_stale_fallback", fingerprint: "sha256:d1baed22ab39c524cd1297b2a5f14d39eeec300ef27ce95583562f1e2e26dbec", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"ledger_time","type":"u64"}] },
@@ -791,6 +824,7 @@ export const EVENT_SHAPES: Record<ContractEventName, EventShape> = {
   "sender_transfer_expired": { struct: "SenderTransferExpired", eventKey: "sender_transfer_expired", fingerprint: "sha256:52f1ec5001642966297a3a1d96e94c2a155edfeccf6622164a0834724863ba60", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"sender_from","type":"Address"},{"name":"new_sender","type":"Address"},{"name":"nonce","type":"u64"}] },
   "sender_transfer_proposed": { struct: "SenderTransferProposed", eventKey: "sender_transfer_proposed", fingerprint: "sha256:7012eae001bbc92c7ecce6275cab31714970ba85e5ab1bde135e93dff4ec0f92", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"sender_from","type":"Address"},{"name":"new_sender","type":"Address"},{"name":"nonce","type":"u64"},{"name":"expires_at","type":"u64"},{"name":"transfer_refund_rights","type":"bool"}] },
   "sender_transferred": { struct: "SenderTransferred", eventKey: "sender_transferred", fingerprint: "sha256:db820aba8791ee0f230ae1ae551812251458457ad061bd13b996b21a2c18cf0d", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"sender_from","type":"Address"},{"name":"sender_to","type":"Address"},{"name":"nonce","type":"u64"},{"name":"refund_rights_transferred","type":"bool"}] },
+  "split_stream": { struct: "SplitStream", eventKey: "split_stream", fingerprint: "sha256:38f05ba0dac924929ccf0fc69bdf97ea3ed9d8833f57f21a0154af857f46b674", topics: [{"name":"parent_id","type":"u64"}], data: [{"name":"first_child_id","type":"u64"},{"name":"second_child_id","type":"u64"},{"name":"split_at","type":"u64"},{"name":"first_remaining","type":"i128"},{"name":"second_remaining","type":"i128"},{"name":"first_end_time","type":"u64"},{"name":"second_end_time","type":"u64"},{"name":"claimable","type":"i128"},{"name":"withdrawn","type":"i128"}] },
   "sponsor_active_set": { struct: "SponsorActiveSet", eventKey: "sponsor_active_set", fingerprint: "sha256:7bbd39680d30fd7bd9d76fcd1adbf06561b0a338af9de46d09960a87476ba8a5", topics: [{"name":"sponsor","type":"Address"},{"name":"kind","type":"Symbol"}], data: [{"name":"active","type":"bool"}] },
   "sponsor_claim": { struct: "SponsorClaim", eventKey: "sponsor_claim", fingerprint: "sha256:0fcc98031e4670bce6e2722764f5033590803a9c84681e2f7dccf74f8457c864", topics: [{"name":"sponsor","type":"Address"},{"name":"kind","type":"Symbol"},{"name":"stream_id","type":"u64"}], data: [{"name":"beneficiary","type":"Address"},{"name":"amount","type":"i128"},{"name":"nonce","type":"u64"}] },
   "sponsor_registered": { struct: "SponsorRegistered", eventKey: "sponsor_registered", fingerprint: "sha256:d725d4b0decb76963259805f48770b81d0c2530094f16d2241daa27e41bc28c5", topics: [{"name":"sponsor","type":"Address"},{"name":"kind","type":"Symbol"}], data: [{"name":"token","type":"Address"},{"name":"per_period_limit","type":"i128"},{"name":"per_beneficiary_limit","type":"i128"},{"name":"window_seconds","type":"u64"}] },
@@ -837,6 +871,7 @@ export const EVENT_FINGERPRINTS: Record<string, string> = {
   "HookFailed": "sha256:7fba9960155e2e33b3f357c702946c62c9a7d873c054d4e85e6acba47894324f",
   "HookInvoked": "sha256:11cae2306cfb934411dc921d7d98e1441f494b980474db591c2f7f9ff6555a2e",
   "HookRegistered": "sha256:be27fe4f3537259a7dbc0b805c963dd2393d49967ca47f74de98d438b47fb9c0",
+  "MergeStream": "sha256:70a8dd6e5d4ae8d5fe0b3359d32845f91dcc91471c59dbb79ab5a1c0ce46599f",
   "OperatorKeyRotated": "sha256:e173c61697b4045d0fb1e94358fe8b4675bfca312369ac887f2ff23f21fb413b",
   "OracleConfigUpdated": "sha256:91f894797f41c1566560dd5c04581611fb8d29bd0ac48bfc022d0ab4de0e6099",
   "OracleStaleFallback": "sha256:d1baed22ab39c524cd1297b2a5f14d39eeec300ef27ce95583562f1e2e26dbec",
@@ -857,6 +892,7 @@ export const EVENT_FINGERPRINTS: Record<string, string> = {
   "SenderTransferExpired": "sha256:52f1ec5001642966297a3a1d96e94c2a155edfeccf6622164a0834724863ba60",
   "SenderTransferProposed": "sha256:7012eae001bbc92c7ecce6275cab31714970ba85e5ab1bde135e93dff4ec0f92",
   "SenderTransferred": "sha256:db820aba8791ee0f230ae1ae551812251458457ad061bd13b996b21a2c18cf0d",
+  "SplitStream": "sha256:38f05ba0dac924929ccf0fc69bdf97ea3ed9d8833f57f21a0154af857f46b674",
   "SponsorActiveSet": "sha256:7bbd39680d30fd7bd9d76fcd1adbf06561b0a338af9de46d09960a87476ba8a5",
   "SponsorClaim": "sha256:0fcc98031e4670bce6e2722764f5033590803a9c84681e2f7dccf74f8457c864",
   "SponsorRegistered": "sha256:d725d4b0decb76963259805f48770b81d0c2530094f16d2241daa27e41bc28c5",

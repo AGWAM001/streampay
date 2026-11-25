@@ -910,6 +910,60 @@ pub enum StreamError {
         doc = " so the number is never reused. See `docs/ERROR_SURFACE.md`."
     )]
     CapExceededStream = 129,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A lineage operation (`split_stream` / `merge_streams`) hit a stream that"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " is paused, disputed, hook-bound, release-gated, carries an outstanding"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " advance, or has a pending rate, ownership or sender-transfer proposal."
+    )]
+    StreamEncumbered = 130,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `split_stream`: the first child's share of the unaccrued remainder is not"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " strictly between zero and the remainder, so one child would carry nothing."
+    )]
+    InvalidSplitAllocation = 131,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `split_stream`: a child would end before the parent's `end_time` (which"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " would accelerate the sender's payout without the sender's consent)."
+    )]
+    InvalidLineageEndTime = 132,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `split_stream` / `merge_streams`: nothing is left to stream; the window"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " (the earlier one, for a merge) has already elapsed."
+    )]
+    LineageWindowElapsed = 133,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `merge_streams`: both ids name the same stream."
+    )]
+    MergeSameStream = 134,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `merge_streams`: the streams differ in sender, recipient, token, status,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " cancelability, oracle clock or refund target."
+    )]
+    MergeIncompatibleStreams = 135,
 }
 
 impl StreamError {
@@ -1046,6 +1100,12 @@ impl StreamError {
         StreamError::AgentExpired,
         StreamError::CapExceededPeriod,
         StreamError::CapExceededStream,
+        StreamError::StreamEncumbered,
+        StreamError::InvalidSplitAllocation,
+        StreamError::InvalidLineageEndTime,
+        StreamError::LineageWindowElapsed,
+        StreamError::MergeSameStream,
+        StreamError::MergeIncompatibleStreams,
     ];
 
     /// The stable numeric value carried across the contract boundary

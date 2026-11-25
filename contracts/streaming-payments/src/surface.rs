@@ -362,13 +362,36 @@ pub enum Branch {
     HookReentrancyBlocked,
     HookExecutionFailed,
     InvalidHookSelector,
+    // ------------------------------------------- stream lineage (#197)
+    /// `split_stream` / `merge_streams`: an input is paused, disputed,
+    /// hook-bound, release-gated, carries an outstanding advance, or has a
+    /// pending rate, ownership or sender-transfer proposal.
+    LineageStreamEncumbered,
+    /// `split_stream`: `first_remaining` is not strictly between zero and the
+    /// unaccrued remainder.
+    SplitAllocationOutOfRange,
+    /// `split_stream`: a child would end before the parent.
+    SplitEndBeforeParent,
+    /// `split_stream`: a child window would exceed `MAX_DURATION_SECONDS`.
+    SplitDurationTooLong,
+    /// `split_stream` / `merge_streams`: the (earlier) window has elapsed, so
+    /// nothing is left to re-allocate.
+    LineageWindowElapsed,
+    /// `merge_streams`: both ids name the same stream.
+    MergeSameStream,
+    /// `merge_streams`: the streams differ in sender, recipient, token, status,
+    /// cancelability, clock or refund target.
+    MergeIncompatible,
+    /// `lineage::check_conservation`: the outputs do not carry exactly the
+    /// inputs' withdrawn, claimable and refundable value.
+    LineageConservationViolated,
 }
 
 impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 159] = [
+    pub const ALL: [Branch; 167] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -528,6 +551,14 @@ impl Branch {
         Branch::HookReentrancyBlocked,
         Branch::HookExecutionFailed,
         Branch::InvalidHookSelector,
+        Branch::LineageStreamEncumbered,
+        Branch::SplitAllocationOutOfRange,
+        Branch::SplitEndBeforeParent,
+        Branch::SplitDurationTooLong,
+        Branch::LineageWindowElapsed,
+        Branch::MergeSameStream,
+        Branch::MergeIncompatible,
+        Branch::LineageConservationViolated,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -588,6 +619,8 @@ impl Branch {
                 "sender_history",
                 "pause_stream",
                 "resume_stream",
+                "split_stream",
+                "merge_streams",
             ],
             Branch::StreamNotActive => &[
                 "withdraw",
@@ -607,8 +640,16 @@ impl Branch {
                 "set_refund_target",
                 "pause_stream",
                 "resume_stream",
+                "split_stream",
+                "merge_streams",
             ],
-            Branch::CapacityOverflow => &["create_stream", "top_up", "accept_rate_change"],
+            Branch::CapacityOverflow => &[
+                "create_stream",
+                "top_up",
+                "accept_rate_change",
+                "split_stream",
+                "merge_streams",
+            ],
             Branch::RateProductOverflow => &[
                 "streamed_at",
                 "available",
@@ -878,6 +919,14 @@ impl Branch {
             Branch::HookAlreadyRegistered | Branch::InvalidHookSelector => &["register_hook"],
             Branch::HookNotFound => &["unregister_hook"],
             Branch::HookReentrancyBlocked | Branch::HookExecutionFailed => &["dispatch_hook"],
+            // ------------------------------------------- stream lineage (#197)
+            Branch::LineageStreamEncumbered
+            | Branch::LineageWindowElapsed
+            | Branch::LineageConservationViolated => &["split_stream", "merge_streams"],
+            Branch::SplitAllocationOutOfRange
+            | Branch::SplitEndBeforeParent
+            | Branch::SplitDurationTooLong => &["split_stream"],
+            Branch::MergeSameStream | Branch::MergeIncompatible => &["merge_streams"],
         }
     }
 
@@ -1056,6 +1105,15 @@ impl Branch {
             Branch::HookReentrancyBlocked => StreamError::HookReentrancyBlocked,
             Branch::HookExecutionFailed => StreamError::HookExecutionFailed,
             Branch::InvalidHookSelector => StreamError::InvalidHookSelector,
+            // ------------------------------------------- stream lineage (#197)
+            Branch::LineageStreamEncumbered => StreamError::StreamEncumbered,
+            Branch::SplitAllocationOutOfRange => StreamError::InvalidSplitAllocation,
+            Branch::SplitEndBeforeParent => StreamError::InvalidLineageEndTime,
+            Branch::SplitDurationTooLong => StreamError::DurationTooLong,
+            Branch::LineageWindowElapsed => StreamError::LineageWindowElapsed,
+            Branch::MergeSameStream => StreamError::MergeSameStream,
+            Branch::MergeIncompatible => StreamError::MergeIncompatibleStreams,
+            Branch::LineageConservationViolated => StreamError::MathOverflow,
         }
     }
 
@@ -1394,6 +1452,27 @@ impl Branch {
                 "callback contract invocation failed or reverted under Revert failure policy"
             }
             Branch::InvalidHookSelector => "callback selector is invalid",
+            // ------------------------------------------- stream lineage (#197)
+            Branch::LineageStreamEncumbered => {
+                "an input stream is paused, disputed, hook-bound, release-gated, has an outstanding advance or a pending proposal"
+            }
+            Branch::SplitAllocationOutOfRange => {
+                "first_remaining is not strictly between zero and the unaccrued remainder"
+            }
+            Branch::SplitEndBeforeParent => "a child end_time is before the parent end_time",
+            Branch::SplitDurationTooLong => {
+                "a child window exceeds MAX_DURATION_SECONDS (100 years)"
+            }
+            Branch::LineageWindowElapsed => {
+                "the (earlier) stream window has elapsed; nothing is left to re-allocate"
+            }
+            Branch::MergeSameStream => "both ids name the same stream",
+            Branch::MergeIncompatible => {
+                "the streams differ in sender, recipient, token, status, cancelability, clock or refund target"
+            }
+            Branch::LineageConservationViolated => {
+                "split/merge outputs do not carry exactly the inputs' withdrawn, claimable and refundable value"
+            }
         }
     }
 
@@ -1426,7 +1505,12 @@ impl Branch {
             | Branch::CancelSplitOverflow
             | Branch::RateSegmentSumOverflow
             | Branch::RateHeadroomUnderflow
-            | Branch::WithdrawManyTotalOverflow => Reachability::Defensive,
+            | Branch::WithdrawManyTotalOverflow
+            // `lineage::check_conservation` re-derives, from the planned
+            // records, an identity the construction already guarantees: clipped
+            // segments accrue exactly the input history, and each tail carries
+            // exactly its share of `deposit - accrued`.
+            | Branch::LineageConservationViolated => Reachability::Defensive,
             _ => Reachability::Reachable,
         }
     }
