@@ -1,0 +1,24 @@
+[package]
+name = "streampay-multisig"
+version = "0.1.0"
+edition = "2021"
+description = "StreamPay reference K-of-N multisig: a Soroban custom account (__check_auth) plus an on-chain propose/approve/execute flow, so a signer set can create, top up, cancel and receive payment streams."
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk.workspace = true
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+# Real ed25519 signatures: __check_auth and proposal approvals verify them
+# on-chain, so the tests sign with actual keys instead of mocking auth.
+ed25519-dalek = "3.0.0"
+# Integration tests drive the real streaming contract through the multisig.
+# Dev-only: nothing from streaming-payments reaches the multisig Wasm.
+streampay-contract = { version = "0.1.0", path = "../streaming-payments", features = ["testutils"] }

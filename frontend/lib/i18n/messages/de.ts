@@ -233,7 +233,8 @@ export const de: Record<MessageKey, string> = {
   "form.tokenPlaceholder": "C… (Stellar-Asset-Contract-ID des Assets)",
   "form.tokenHint":
     "Gib die Stellar Asset Contract (SAC) ID des Tokens ein, den du streamen möchtest. Sie beginnt mit dem Buchstaben C.",
-  "form.recipientHint": "Gib den öffentlichen Schlüssel (G…-Adresse) des Stream-Empfängers ein.",
+  "form.recipientHint":
+    "Gib die Stellar-Adresse des Stream-Empfängers ein: einen öffentlichen Schlüssel (G…) oder einen Vertrag (C…), etwa eine Multisig.",
   "form.nativeContractNote": "Natives XLM streamt über seinen Stellar Asset Contract: {contractId}",
   "form.asset": "Asset",
   "form.assetNative": "Natives XLM",
@@ -273,7 +274,15 @@ export const de: Record<MessageKey, string> = {
     "Dieses Token hat höchstens {decimals, number} Nachkommastellen — der eingegebene Betrag müsste gerundet werden.",
   "form.amountInvalid": "Das ist kein lesbarer Betrag.",
   "form.recipientRequired": "Gib eine Empfängeradresse ein.",
-  "form.recipientInvalid": "Gib eine gültige Stellar-Adresse ein (G… mit gültiger Prüfsumme).",
+  "form.recipientInvalid": "Gib eine gültige Stellar-Adresse ein (G… oder C… mit gültiger Prüfsumme).",
+  "form.multisigSender":
+    "Du sendest von einer {threshold}-von-{signers}-Multisig: Erstellen, Aufstocken und Abbrechen dieses Streams brauchen jeweils {threshold} Freigaben.",
+  "form.multisigRecipient":
+    "Der Empfänger ist eine {threshold}-von-{signers}-Multisig: jede Auszahlung braucht {threshold} Freigaben.",
+  "form.multisigCancel":
+    "{count, plural, one {Jeder einzelne Unterzeichner kann ihre Streams abbrechen.} other {Je # Unterzeichner können ihre Streams abbrechen.}}",
+  "form.contractRecipient":
+    "Der Empfänger ist ein Vertrag. Stelle sicher, dass er Auszahlungen autorisieren kann (zum Beispiel eine Multisig oder Smart Wallet).",
   "form.tokenRequired": "Gib eine Token-Vertrags-ID ein.",
   "form.tokenInvalid": "Gib eine gültige Token-Vertrags-ID ein (C… mit gültiger Prüfsumme).",
   "form.durationInvalid": "Gib eine Laufzeit in Tagen größer als null ein (bis zu 36.500 Tagen).",

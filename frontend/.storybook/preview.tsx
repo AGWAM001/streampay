@@ -8,6 +8,7 @@ import {
   readAvailableAction,
   readRefundTargetAction,
   readStreamAction,
+  readMultisigConfigAction,
   readStreamPolicyAction,
 } from "../app/actions";
 import { LocaleProvider } from "../lib/i18n/provider";
@@ -144,6 +145,7 @@ const preview: Preview = {
     );
     mocked(fetchStreamIdsPageAction).mockResolvedValue({ ids: [], hasMore: false });
     mocked(readStreamPolicyAction).mockResolvedValue(openPolicy);
+    mocked(readMultisigConfigAction).mockResolvedValue(null);
     // Token metadata: `fetchAssetMeta` answers from this session cache before
     // it would simulate `symbol()` / `decimals()` against the RPC.
     sessionStorage.setItem(
