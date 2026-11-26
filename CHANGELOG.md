@@ -10,6 +10,10 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- Frontend: consent-gated real-user monitoring of Core Web Vitals (LCP, INP, CLS)
+  per route, with sampling, rate limits, a remote kill switch, boundary
+  redaction, a field dashboard at `/rum`, and a lab budget gate
+  (`npm run rum:gate`) that fails on regression. See `docs/RUM.md`.
 - Frontend: stream comparison workbench at `/compare`. Overlays accrual curves,
   exhaustion forecast and fee estimates for up to 5 streams or hypothetical
   parameter sets, simulated client-side with a shareable parameter URL.
