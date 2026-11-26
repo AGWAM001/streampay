@@ -20,6 +20,14 @@ interface: they are only ever appended to, never renumbered or reused.
   withdraws. The create form accepts a contract (`C…`) recipient and shows a
   multisig's signer requirements. Design, fees and security notes in
   `docs/MULTISIG.md`. The streaming contract's auth logic is unchanged.
+- Frontend: the stream detail page's "Available now" figure ticks every
+  second between the 15 s chain reads (#39). The counter evaluates a BigInt
+  mirror of the contract's accrual math (`elapsed_seconds_at`, `streamed_at`,
+  rate segments, `withdrawn`, cancel) at the ledger second recovered from the
+  confirmed `available` read, and freezes at the confirmed value when the
+  stream is ended, cancelled, paused or otherwise not reproducible locally.
+  Honors `prefers-reduced-motion`. Detail refreshes now also read
+  `rate_segments`.
 - Frontend: consent-gated real-user monitoring of Core Web Vitals (LCP, INP, CLS)
   per route, with sampling, rate limits, a remote kill switch, boundary
   redaction, a field dashboard at `/rum`, and a lab budget gate

@@ -26,6 +26,14 @@ Counts below are Soroban `simulateTransaction` requests, not HTTP requests. They
 | Cold `/stream/[id]` detail | 2: `get_stream` + `available`, both after hydration | 2: server `get_stream` + client `available` | Same chain call count; stream fields are in the initial streamed HTML instead of waiting for client hydration. |
 | Detail refresh, every 15 seconds | 2 | 2 | `get_stream` and `available` remain concurrent. |
 
+### Live accrual counter on `/stream/[id]` (issue #39)
+
+The "Available now" figure ticks every second on the client between the 15-second reads; the polling interval itself is unchanged. Each tick evaluates `frontend/lib/accrual.ts`, a one-to-one BigInt mirror of the contract's `elapsed_seconds_at` / `streamed_at` / `available_amount_at_segments` (half-open window, floor division, cap at the allocation, `withdrawn` subtracted, zero when cancelled, rate schedule summed per segment), at the ledger second the last read was taken plus the whole local seconds elapsed since.
+
+RPC simulation does not report the ledger timestamp, so the client recovers it from the confirmed `available` value: the second within ±10 s of the local clock at which the mirror reproduces it. When none does (the stream is paused, release-gated, settles against an oracle clock outside that window, or the read raced a state change), or the stream is not `Active`, the counter freezes at the confirmed value until the next read. Withdraw validation always uses the confirmed value, never the ticking one. With `prefers-reduced-motion: reduce` the counter does not tick and moves only when a read lands.
+
+To mirror renegotiated streams, each detail refresh also reads `rate_segments`, concurrently with `get_stream` and `available`: three simulations per refresh instead of two. A failed schedule read is tolerated; the counter then freezes if the single-window mirror disagrees with the chain.
+
 ### TTI measurement
 
 No before/after Lighthouse or browser trace was available in the implementation environment: Node/npm and frontend dependencies are not installed here. Do not treat the bundle split or SSR change as a measured TTI win.

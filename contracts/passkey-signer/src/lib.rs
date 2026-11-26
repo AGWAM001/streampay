@@ -95,10 +95,10 @@ mod registry;
 #[cfg(test)]
 mod tests;
 
-use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, Vec};
 
 pub use errors::PasskeyError;
-pub use registry::{Credential, REGISTRATION_FLAGS_REQUIRE_UV};
+pub use registry::{Credential, CredentialRecord, REGISTRATION_FLAGS_REQUIRE_UV};
 
 /// The passkey signer contract.
 #[contract]
@@ -229,6 +229,137 @@ impl PasskeySigner {
     /// successful `verify_and_record` call.
     pub fn is_nonce_used(env: Env, challenge: BytesN<32>) -> bool {
         registry::is_challenge_used(&env, &challenge)
+    }
+
+    /// Lists all registered multi-device credentials for `owner`.
+    pub fn list_credentials(env: Env, owner: Address) -> Vec<CredentialRecord> {
+        registry::list_devices(&env, &owner)
+    }
+
+    /// Registers an additional device passkey credential for `owner`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn register_device(
+        env: Env,
+        owner: Address,
+        id: BytesN<32>,
+        device_label: String,
+        rp_id_hash: BytesN<32>,
+        x: BytesN<32>,
+        y: BytesN<32>,
+        flags: u32,
+    ) -> Result<(), PasskeyError> {
+        owner.require_auth();
+        let now = env.ledger().timestamp();
+        registry::put_device(
+            &env,
+            &owner,
+            &CredentialRecord {
+                id,
+                device_label,
+                rp_id_hash,
+                x,
+                y,
+                flags,
+                created_at: now,
+                last_used_at: 0,
+                sign_count: 0,
+                revoked: false,
+            },
+        );
+        Ok(())
+    }
+
+    /// Revokes a registered device credential for `owner`.
+    pub fn revoke_device(
+        env: Env,
+        owner: Address,
+        id: BytesN<32>,
+        allow_last: bool,
+    ) -> Result<(), PasskeyError> {
+        owner.require_auth();
+        registry::revoke_device(&env, &owner, &id, allow_last)
+    }
+
+    /// Recovers account access by binding a replacement device credential.
+    ///
+    /// Requires either an active remaining credential for `owner` OR `governance_approved == true`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn recover_device(
+        env: Env,
+        owner: Address,
+        new_id: BytesN<32>,
+        device_label: String,
+        rp_id_hash: BytesN<32>,
+        x: BytesN<32>,
+        y: BytesN<32>,
+        flags: u32,
+        governance_approved: bool,
+    ) -> Result<(), PasskeyError> {
+        owner.require_auth();
+        let active = registry::active_device_count(&env, &owner);
+        if active == 0 && !governance_approved {
+            return Err(PasskeyError::RecoveryNotAuthorized);
+        }
+        let now = env.ledger().timestamp();
+        registry::put_device(
+            &env,
+            &owner,
+            &CredentialRecord {
+                id: new_id,
+                device_label,
+                rp_id_hash,
+                x,
+                y,
+                flags,
+                created_at: now,
+                last_used_at: 0,
+                sign_count: 0,
+                revoked: false,
+            },
+        );
+        Ok(())
+    }
+
+    /// Verifies a WebAuthn assertion with challenge-expiry and sign-count monotonicity guards.
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_and_record_with_guards(
+        env: Env,
+        owner: Address,
+        cred_id: BytesN<32>,
+        auth_data: Bytes,
+        client_data_json: Bytes,
+        challenge: BytesN<32>,
+        challenge_expires_at: u64,
+        sig_r: BytesN<32>,
+        sig_s: BytesN<32>,
+    ) -> Result<(), PasskeyError> {
+        let now = env.ledger().timestamp();
+        if now > challenge_expires_at {
+            return Err(PasskeyError::ChallengeExpired);
+        }
+
+        let cred = registry::get_active_device(&env, &owner, &cred_id)?;
+        crypto::verify_auth_data(&env, &auth_data, &cred.rp_id_hash, cred.flags)?;
+
+        let new_sign_count = crypto::extract_sign_count(&auth_data)?;
+        if cred.sign_count > 0 && new_sign_count <= cred.sign_count {
+            return Err(PasskeyError::SignCountRegression);
+        }
+
+        cbor::verify_client_data_json(&env, &client_data_json, &challenge)?;
+        crypto::verify_p256_assertion(
+            &env,
+            &auth_data,
+            &client_data_json,
+            &cred.x,
+            &cred.y,
+            &sig_r,
+            &sig_s,
+        )?;
+
+        registry::record_challenge(&env, &challenge)?;
+        registry::update_device_usage(&env, &owner, &cred_id, new_sign_count, now)?;
+        Ok(())
     }
 }
 
