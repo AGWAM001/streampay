@@ -43,6 +43,7 @@ import {
   Networks,
   nativeToScVal,
   rpc,
+  scValToNative,
   TransactionBuilder,
   xdr,
 } from "@stellar/stellar-sdk";
@@ -438,19 +439,28 @@ export function createSorobanPasskeyTransport(): PasskeyContractTransport {
         .build();
       const sim = await server.simulateTransaction(tx);
       if (rpc.Api.isSimulationError(sim) || !sim.result?.retval) return [];
-      const items = (sim.result.retval.vec() ?? []) as xdr.ScVal[];
-      return items.map((entry, index) => {
-        const fields = new Map<string, xdr.ScVal>();
-        for (const kv of entry.map() ?? []) {
-          fields.set(kv.key().sym().toString(), kv.val());
-        }
-        const idBytes = fields.get("id")?.bytes() ?? Buffer.alloc(32);
-        const label = fields.get("device_label")?.str().toString() ?? `Device ${index + 1}`;
-        const createdAt = Number(fields.get("created_at")?.u64().toString() ?? "0");
-        const lastUsedRaw = Number(fields.get("last_used_at")?.u64().toString() ?? "0");
-        const signCount = fields.get("sign_count")?.u32() ?? 0;
-        const flags = fields.get("flags")?.u32() ?? 0;
-        const revoked = fields.get("revoked")?.b() ?? false;
+      // scValToNative converts the vec-of-maps into native values (an array
+      // of plain objects). The previous code read the ScVal union variants
+      // as properties (.vec()/.map()/.bytes()/...), which the SDK's types do
+      // not allow — those accessors only exist on the matching variant.
+      const items = (scValToNative(sim.result.retval) ?? []) as Array<
+        Record<string, unknown>
+      >;
+      return items.map((fields, index) => {
+        const idBytes =
+          (fields["id"] as Buffer | undefined) ?? Buffer.alloc(32);
+        const label =
+          (fields["device_label"] as string | undefined) ??
+          `Device ${index + 1}`;
+        const createdAt = Number(
+          (fields["created_at"] as bigint | number | undefined) ?? 0,
+        );
+        const lastUsedRaw = Number(
+          (fields["last_used_at"] as bigint | number | undefined) ?? 0,
+        );
+        const signCount = (fields["sign_count"] as number | undefined) ?? 0;
+        const flags = (fields["flags"] as number | undefined) ?? 0;
+        const revoked = (fields["revoked"] as boolean | undefined) ?? false;
         return {
           id: Buffer.from(idBytes).toString("hex"),
           deviceLabel: label,
