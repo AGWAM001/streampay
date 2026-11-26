@@ -132,6 +132,8 @@ function usage(): string {
   streampay key encrypt --out <file> [--secret-env <name>] [--password-env <name>]
   streampay completion <bash|zsh|fish>
   streampay profile <list|show|set|remove|use|resolve> [name] [settings]
+  streampay batch --manifest <file> [--confirm yes] [--checkpoint <file>]
+  streampay abi --spec <file> [--kind <function|error|event>] [--name <name>] [--diff <file>]
 
 Global options:
   --contract <C...>       StreamPay contract id
@@ -153,6 +155,8 @@ Commands:
   cancel --stream-id <n>
   top-up --stream-id <n> --amount <units>
   claim-all
+  batch --manifest <file> [--confirm yes] [--checkpoint <file>]
+  abi --spec <file> [--kind <function|error|event>] [--name <name>] [--diff <file>]
   profile set <name> --network <testnet|mainnet> [--rpc-url ...] [--contract C...] [--signer ...]
   profile list | show <name> | remove <name> | use <name> | resolve
   status, get             Read and print one decoded stream snapshot
