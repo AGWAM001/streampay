@@ -238,7 +238,8 @@ export const es: Record<MessageKey, string> = {
   "form.tokenPlaceholder": "C… (ID del Stellar Asset Contract del activo)",
   "form.tokenHint":
     "Introduce el ID del Stellar Asset Contract (SAC) del token que quieres transmitir. Empieza por la letra C.",
-  "form.recipientHint": "Introduce la clave pública (dirección G…) del beneficiario del stream.",
+  "form.recipientHint":
+    "Introduce la dirección de Stellar del beneficiario del stream: una clave pública (G…) o un contrato (C…), como una multifirma.",
   "form.nativeContractNote": "XLM nativo se transmite a través de su Stellar Asset Contract: {contractId}",
   "form.asset": "Activo",
   "form.assetNative": "XLM nativo",
@@ -280,7 +281,15 @@ export const es: Record<MessageKey, string> = {
 
   "form.recipientRequired": "Introduce una dirección de beneficiario.",
   "form.recipientInvalid":
-    "Introduce una dirección de Stellar válida (G… con una suma de comprobación válida).",
+    "Introduce una dirección de Stellar válida (G… o C… con una suma de comprobación válida).",
+  "form.multisigSender":
+    "Envías desde una multifirma {threshold} de {signers}: crear, recargar y cancelar este stream necesitan {threshold} aprobaciones cada uno.",
+  "form.multisigRecipient":
+    "El beneficiario es una multifirma {threshold} de {signers}: cada retiro necesita {threshold} aprobaciones.",
+  "form.multisigCancel":
+    "{count, plural, one {Cualquier firmante puede cancelar sus streams.} other {Cualesquiera # firmantes pueden cancelar sus streams.}}",
+  "form.contractRecipient":
+    "El beneficiario es un contrato. Asegúrate de que pueda autorizar retiros (por ejemplo, una multifirma o una billetera inteligente).",
   "form.tokenRequired": "Introduce un ID de contrato de token.",
   "form.tokenInvalid":
     "Introduce un ID de contrato de token válido (C… con una suma de comprobación válida).",

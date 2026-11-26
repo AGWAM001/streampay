@@ -23,5 +23,6 @@ export const readAvailableAction = fn<typeof actual.readAvailableAction>();
 export const readRefundTargetAction = fn<typeof actual.readRefundTargetAction>();
 export const fetchStreamIdsPageAction = fn<typeof actual.fetchStreamIdsPageAction>();
 export const readStreamPolicyAction = fn<typeof actual.readStreamPolicyAction>();
+export const readMultisigConfigAction = fn<typeof actual.readMultisigConfigAction>();
 export const readPaymentLinkAction = fn<typeof actual.readPaymentLinkAction>();
 export const createPaymentLinkAction = fn<typeof actual.createPaymentLinkAction>();

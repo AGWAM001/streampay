@@ -10,6 +10,16 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- Reference K-of-N multisig, `contracts/multisig` (`streampay-multisig`) (#50):
+  an ed25519 custom account (`__check_auth`) plus an on-chain
+  propose / approve / revoke / execute flow with per-function thresholds (e.g.
+  a 1-of-N `cancel_stream`), config epochs that invalidate in-flight proposals,
+  and domain-separated proposal signatures. Integration tests drive the
+  unmodified streaming contract with real authorization: a 2-of-3 multisig
+  creates and tops up a stream, one signer cancels, and a multisig recipient
+  withdraws. The create form accepts a contract (`C…`) recipient and shows a
+  multisig's signer requirements. Design, fees and security notes in
+  `docs/MULTISIG.md`. The streaming contract's auth logic is unchanged.
 - Frontend: the stream detail page's "Available now" figure ticks every
   second between the 15 s chain reads (#39). The counter evaluates a BigInt
   mirror of the contract's accrual math (`elapsed_seconds_at`, `streamed_at`,
