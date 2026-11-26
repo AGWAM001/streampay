@@ -8,7 +8,7 @@ _streampay() {
   for ((i = 1; i < COMP_CWORD; i++)); do
     w="${COMP_WORDS[i]}"
     case "$w" in
-      --contract|--network|--rpc-url|--passphrase|--signer|--source|--key-file|--secret-env|--password-env|--signed-xdr|--profile|--config|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--out|--unset) ((i++)); continue ;;
+      --contract|--network|--rpc-url|--passphrase|--signer|--source|--key-file|--secret-env|--password-env|--signed-xdr|--profile|--config|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--out|--unset|--manifest|--confirm|--checkpoint|--spec|--kind|--name|--diff) ((i++)); continue ;;
       -*) continue ;;
     esac
     if [[ -z "$cmd" ]]; then cmd="$w"; elif [[ -z "$sub" ]]; then sub="$w"; fi
@@ -17,15 +17,16 @@ _streampay() {
   case "$prev" in
     --network) COMPREPLY=($(compgen -W "testnet mainnet" -- "$cur")); return 0 ;;
     --signer) COMPREPLY=($(compgen -W "env file ledger" -- "$cur")); return 0 ;;
-    --key-file|--signed-xdr|--config|--out) COMPREPLY=($(compgen -f -- "$cur")); return 0 ;;
-    --contract|--rpc-url|--passphrase|--source|--secret-env|--password-env|--profile|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--unset) return 0 ;;
+    --kind) COMPREPLY=($(compgen -W "function error event" -- "$cur")); return 0 ;;
+    --key-file|--signed-xdr|--config|--out|--manifest|--checkpoint|--spec|--diff) COMPREPLY=($(compgen -f -- "$cur")); return 0 ;;
+    --contract|--rpc-url|--passphrase|--source|--secret-env|--password-env|--profile|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--unset|--confirm|--name) return 0 ;;
   esac
 
   opts="--contract --network --rpc-url --passphrase --signer --source --key-file --secret-env --password-env --dry-run --signed-xdr --profile --config --json --help"
   case "$cmd" in
     "")
       if [[ "$cur" != -* ]]; then
-        COMPREPLY=($(compgen -W "create withdraw cancel top-up claim-all status get key profile completion help" -- "$cur"))
+        COMPREPLY=($(compgen -W "create withdraw cancel top-up claim-all status get tui key profile completion batch abi help" -- "$cur"))
         return 0
       fi
       ;;
@@ -36,6 +37,7 @@ _streampay() {
     claim-all) ;;
     status) opts="$opts --stream-id --watch --interval" ;;
     get) opts="$opts --stream-id --watch --interval" ;;
+    tui) opts="$opts --recipient --interval" ;;
     key)
       if [[ -z "$sub" && "$cur" != -* ]]; then
         COMPREPLY=($(compgen -W "encrypt" -- "$cur"))
@@ -65,6 +67,8 @@ _streampay() {
         return 0
       fi
       ;;
+    batch) opts="$opts --manifest --confirm --checkpoint" ;;
+    abi) opts="$opts --spec --kind --name --diff" ;;
     help) ;;
   esac
   COMPREPLY=($(compgen -W "$opts" -- "$cur"))

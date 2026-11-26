@@ -191,6 +191,12 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
             "persistent",
             DataKey::StreamPause(1)
         ),
+        (
+            "StreamLineage",
+            "StreamLineage(u64)",
+            "persistent",
+            DataKey::StreamLineage(1)
+        ),
     ];
 
     let sponsor_key_cases: StdVec<(&str, &str, &str, SponsorKey)> = std::vec![
@@ -1108,6 +1114,71 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
                 previous_target: sender.clone(),
                 new_target: recipient.clone(),
                 at_creation: false,
+            }
+        ),
+        event_case!(
+            StreamSwept,
+            topics: [("stream_id", "u64")],
+            data: [
+                ("refund_target", "Address"),
+                ("depleted", "bool"),
+                ("entries_removed", "u32")
+            ],
+            StreamSwept {
+                stream_id: 1,
+                refund_target: sender.clone(),
+                depleted: true,
+                entries_removed: 2,
+            }
+        ),
+        event_case!(
+            SplitStream,
+            topics: [("parent_id", "u64")],
+            data: [
+                ("first_child_id", "u64"),
+                ("second_child_id", "u64"),
+                ("split_at", "u64"),
+                ("first_remaining", "i128"),
+                ("second_remaining", "i128"),
+                ("first_end_time", "u64"),
+                ("second_end_time", "u64"),
+                ("claimable", "i128"),
+                ("withdrawn", "i128")
+            ],
+            SplitStream {
+                parent_id: 1,
+                first_child_id: 2,
+                second_child_id: 3,
+                split_at: 150,
+                first_remaining: 300,
+                second_remaining: 200,
+                first_end_time: 300,
+                second_end_time: 400,
+                claimable: 50,
+                withdrawn: 450,
+            }
+        ),
+        event_case!(
+            MergeStream,
+            topics: [("child_id", "u64")],
+            data: [
+                ("first_parent_id", "u64"),
+                ("second_parent_id", "u64"),
+                ("merged_at", "u64"),
+                ("remaining", "i128"),
+                ("end_time", "u64"),
+                ("claimable", "i128"),
+                ("withdrawn", "i128")
+            ],
+            MergeStream {
+                child_id: 4,
+                first_parent_id: 2,
+                second_parent_id: 3,
+                merged_at: 200,
+                remaining: 400,
+                end_time: 300,
+                claimable: 50,
+                withdrawn: 450,
             }
         ),
     ];

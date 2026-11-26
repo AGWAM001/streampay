@@ -101,7 +101,11 @@ export interface ValidationOptions {
 export function validateRecipientAddress(value: string, t: Formatter): string | null {
   const trimmed = value.trim();
   if (!trimmed) return t("form.recipientRequired");
-  if (!StrKey.isValidEd25519PublicKey(trimmed)) return t("form.recipientInvalid");
+  // A contract (`C…`) recipient is allowed: a multisig or other custom
+  // account withdraws through its own `__check_auth` (issue #50).
+  if (!StrKey.isValidEd25519PublicKey(trimmed) && !StrKey.isValidContract(trimmed)) {
+    return t("form.recipientInvalid");
+  }
   return null;
 }
 

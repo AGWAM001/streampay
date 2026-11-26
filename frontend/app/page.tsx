@@ -330,6 +330,7 @@ export default function Home() {
       </p>
 
       <StreamForm
+        sender={address}
         onCreate={async (args) => {
           try {
             const id = await createStream(address, args, signTransaction);

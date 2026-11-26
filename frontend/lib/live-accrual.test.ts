@@ -185,17 +185,24 @@ describe("anchored engine under a skewed local clock", () => {
   });
 });
 
-describe("unanchored (legacy) ticker characterisation", () => {
-  it("a 10s-fast clock without a ledger anchor DOES over-up — the documented hazard", async () => {
+describe("unanchored reads (no ledger timestamp, as RPC simulation returns them)", () => {
+  it("a 10s-fast clock no longer over-ups: the anchor is recovered from the confirmed available (issue #39)", async () => {
     const engine = startEngine({ anchor: false, skew: 10 });
     await flush();
     await tickSeconds(20);
+    for (const update of updates) {
+      if (update.displayAvailable === null) continue;
+      const ledger = BigInt(update.ledgerAt);
+      assert.ok(
+        update.displayAvailable <=
+          contractAvailableAt(chain.snapshot(), ledger) +
+            epsilonUnits(chain.snapshot(), ledger),
+        `display ${update.displayAvailable} over-reports at ledger ${ledger}`
+      );
+    }
     const last = updates[updates.length - 1];
-    const cap = chain.oracleAtNow() + chain.epsilonNow();
-    assert.ok(
-      (last.displayAvailable ?? 0n) > cap,
-      "legacy unanchored display is expected to over-report with a fast clock"
-    );
+    assert.strictEqual(last.ticking, true);
+    assert.strictEqual(last.displayAvailable, chain.oracleAtNow());
     engine.stop();
   });
 

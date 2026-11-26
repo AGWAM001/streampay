@@ -385,7 +385,10 @@ pub fn run(
         stream_fees,
         sender_indexes,
         recipient_indexes,
+        merkle_root: None,
+        merkle_leaf_count: None,
     };
+    let snapshot = crate::merkle::seal(snapshot);
 
     let json_output = serde_json::to_string_pretty(&snapshot)?;
     std::fs::write(out_path, &json_output)?;
