@@ -7,7 +7,7 @@ _streampay() {
   for ((i = 2; i < CURRENT; i++)); do
     w=${words[i]}
     case $w in
-      (--contract|--network|--rpc-url|--passphrase|--signer|--source|--key-file|--secret-env|--password-env|--signed-xdr|--profile|--config|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--out|--unset) ((i++)); continue ;;
+      (--contract|--network|--rpc-url|--passphrase|--signer|--source|--key-file|--secret-env|--password-env|--signed-xdr|--profile|--config|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--out|--unset|--manifest|--confirm|--checkpoint|--spec|--kind|--name|--diff) ((i++)); continue ;;
       (-*) continue ;;
     esac
     if [[ -z $cmd ]]; then cmd=$w; elif [[ -z $sub ]]; then sub=$w; fi
@@ -16,15 +16,16 @@ _streampay() {
   case $prev in
     (--network) compadd -- testnet mainnet; return ;;
     (--signer) compadd -- env file ledger; return ;;
-    (--key-file|--signed-xdr|--config|--out) _files; return ;;
-    (--contract|--rpc-url|--passphrase|--source|--secret-env|--password-env|--profile|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--unset) return 1 ;;
+    (--kind) compadd -- function error event; return ;;
+    (--key-file|--signed-xdr|--config|--out|--manifest|--checkpoint|--spec|--diff) _files; return ;;
+    (--contract|--rpc-url|--passphrase|--source|--secret-env|--password-env|--profile|--token|--recipient|--deposit|--days|--stream-id|--amount|--interval|--unset|--confirm|--name) return 1 ;;
   esac
 
   opts=(--contract --network --rpc-url --passphrase --signer --source --key-file --secret-env --password-env --dry-run --signed-xdr --profile --config --json --help)
   case $cmd in
     ("")
       if [[ $cur != -* ]]; then
-        compadd -- create withdraw cancel top-up claim-all status get tui key profile completion help
+        compadd -- create withdraw cancel top-up claim-all status get tui key profile completion batch abi help
         return
       fi
       ;;
@@ -65,6 +66,8 @@ _streampay() {
         return
       fi
       ;;
+    (batch) opts+=(--manifest --confirm --checkpoint) ;;
+    (abi) opts+=(--spec --kind --name --diff) ;;
     (help) ;;
   esac
   compadd -- $opts

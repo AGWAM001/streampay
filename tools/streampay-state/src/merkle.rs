@@ -12,6 +12,9 @@ use sha2::{Digest, Sha256};
 use crate::model::Snapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+// Proof types are the module's public API: exercised by tests, not yet
+// wired into the binary's CLI (same pattern as model.rs).
+#[allow(dead_code)]
 pub struct InclusionProof {
     pub index: usize,
     pub leaf: String,
@@ -20,6 +23,9 @@ pub struct InclusionProof {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+// Proof types are the module's public API: exercised by tests, not yet
+// wired into the binary's CLI (same pattern as model.rs).
+#[allow(dead_code)]
 pub struct MigrationProof {
     pub schema_from: u32,
     pub schema_to: u32,
@@ -54,6 +60,8 @@ pub fn verify_snapshot(snapshot: &Snapshot) -> Result<()> {
     }
 }
 
+// Proof API: exercised by tests, not yet wired into the binary's CLI.
+#[allow(dead_code)]
 pub fn inclusion_proof(snapshot: &Snapshot, index: usize) -> Result<InclusionProof> {
     verify_snapshot(snapshot)?;
     let leaves = snapshot_leaves(snapshot);
@@ -78,11 +86,13 @@ pub fn inclusion_proof(snapshot: &Snapshot, index: usize) -> Result<InclusionPro
     Ok(proof)
 }
 
+// Proof API: exercised by tests, not yet wired into the binary's CLI.
+#[allow(dead_code)]
 pub fn verify_inclusion(proof: &InclusionProof) -> bool {
     let mut current = proof.leaf.clone();
     let mut index = proof.index;
     for sibling in &proof.siblings {
-        current = if index % 2 == 0 {
+        current = if index.is_multiple_of(2) {
             hash_pair(&current, sibling)
         } else {
             hash_pair(sibling, &current)
@@ -92,6 +102,8 @@ pub fn verify_inclusion(proof: &InclusionProof) -> bool {
     current == proof.root
 }
 
+// Proof API: exercised by tests, not yet wired into the binary's CLI.
+#[allow(dead_code)]
 pub fn verify_migration<F>(old: &Snapshot, new: &Snapshot, migrate: F) -> Result<MigrationProof>
 where
     F: Fn(&Snapshot) -> Snapshot,
@@ -178,6 +190,8 @@ fn merkle_root(leaves: &[String]) -> String {
     level.remove(0)
 }
 
+// Proof API helper: exercised by tests, not yet wired into the binary's CLI.
+#[allow(dead_code)]
 fn proof_siblings(leaves: &[String], mut index: usize) -> Vec<String> {
     if leaves.is_empty() {
         return Vec::new();
@@ -189,7 +203,11 @@ fn proof_siblings(leaves: &[String], mut index: usize) -> Vec<String> {
             let last = level[level.len() - 1].clone();
             level.push(last);
         }
-        let sibling_index = if index % 2 == 0 { index + 1 } else { index - 1 };
+        let sibling_index = if index.is_multiple_of(2) {
+            index + 1
+        } else {
+            index - 1
+        };
         siblings.push(level[sibling_index].clone());
         let mut next = Vec::with_capacity(level.len() / 2);
         for pair in level.chunks(2) {

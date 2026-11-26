@@ -9,7 +9,7 @@ function __streampay_positionals
             continue
         end
         switch $t
-            case --contract --network --rpc-url --passphrase --signer --source --key-file --secret-env --password-env --signed-xdr --profile --config --token --recipient --deposit --days --stream-id --amount --interval --out --unset
+            case --contract --network --rpc-url --passphrase --signer --source --key-file --secret-env --password-env --signed-xdr --profile --config --token --recipient --deposit --days --stream-id --amount --interval --out --unset --manifest --confirm --checkpoint --spec --kind --name --diff
                 set skip 1
             case '-*'
             case '*'
@@ -60,6 +60,8 @@ complete -c streampay -n '__streampay_depth 0' -f -a tui -d 'Interactive dashboa
 complete -c streampay -n '__streampay_depth 0' -f -a key -d 'Manage encrypted signer keys'
 complete -c streampay -n '__streampay_depth 0' -f -a profile -d 'Manage named network profiles (secrets are never stored)'
 complete -c streampay -n '__streampay_depth 0' -f -a completion -d 'Print a shell completion script'
+complete -c streampay -n '__streampay_depth 0' -f -a batch -d 'Execute a batch manifest offline (dry-run preview unless --confirm yes)'
+complete -c streampay -n '__streampay_depth 0' -f -a abi -d 'Explore a contract spec offline'
 complete -c streampay -n '__streampay_depth 0' -f -a help -d 'Show usage'
 
 # create
@@ -112,3 +114,14 @@ complete -c streampay -n '__streampay_is profile; and __streampay_depth 1' -f -a
 
 # completion
 complete -c streampay -n '__streampay_is completion; and __streampay_depth 1' -f -a 'bash zsh fish'
+
+# batch
+complete -c streampay -n '__streampay_is batch' -l manifest -r -F -d 'Batch manifest file (JSON)'
+complete -c streampay -n '__streampay_is batch' -l confirm -x -d 'Confirm execution: --confirm yes executes, otherwise prints a dry-run preview'
+complete -c streampay -n '__streampay_is batch' -l checkpoint -r -F -d 'Checkpoint file for resumable batch execution'
+
+# abi
+complete -c streampay -n '__streampay_is abi' -l spec -r -F -d 'Contract spec JSON file'
+complete -c streampay -n '__streampay_is abi' -l kind -x -a 'function error event' -d 'Surface kind to show'
+complete -c streampay -n '__streampay_is abi' -l name -x -d 'Filter surface entries by name'
+complete -c streampay -n '__streampay_is abi' -l diff -r -F -d 'Second contract spec JSON file to diff against'
