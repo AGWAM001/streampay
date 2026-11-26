@@ -399,3 +399,141 @@ export async function isPasskeyRegistered(owner: string): Promise<boolean> {
   // If simulation succeeded without error, a credential exists.
   return true;
 }
+
+import type {
+  PasskeyContractTransport,
+  PasskeyCredentialInfo,
+} from "./passkey-manager";
+
+export async function extractPublicKeyFromCredential(cred: PublicKeyCredential): Promise<{
+  id: string;
+  xHex: string;
+  yHex: string;
+  rpIdHashHex: string;
+}> {
+  const response = cred.response as AuthenticatorAttestationResponse;
+  const authData = new Uint8Array(response.getAuthenticatorData());
+  const { x, y } = extractP256KeyFromAuthData(authData);
+  const rpHash = await rpIdHash();
+  const rawId = new Uint8Array(cred.rawId);
+  const idHash = new Uint8Array(await crypto.subtle.digest("SHA-256", rawId));
+  return {
+    id: bufferToHex(idHash),
+    xHex: bufferToHex(x),
+    yHex: bufferToHex(y),
+    rpIdHashHex: bufferToHex(rpHash),
+  };
+}
+
+export function createSorobanPasskeyTransport(): PasskeyContractTransport {
+  return {
+    async listCredentials(owner: string): Promise<PasskeyCredentialInfo[]> {
+      if (!PASSKEY_CONTRACT_ID) return [];
+      const server = new rpc.Server(RPC_URL);
+      const contract = passkeyContract();
+      const op = contract.call("list_credentials", scAddr(owner));
+      const tx = new TransactionBuilder(DUMMY_SOURCE, { fee: "100", networkPassphrase: NETWORK })
+        .addOperation(op)
+        .setTimeout(30)
+        .build();
+      const sim = await server.simulateTransaction(tx);
+      if (rpc.Api.isSimulationError(sim) || !sim.result?.retval) return [];
+      const items = (sim.result.retval.vec() ?? []) as xdr.ScVal[];
+      return items.map((entry, index) => {
+        const fields = new Map<string, xdr.ScVal>();
+        for (const kv of entry.map() ?? []) {
+          fields.set(kv.key().sym().toString(), kv.val());
+        }
+        const idBytes = fields.get("id")?.bytes() ?? Buffer.alloc(32);
+        const label = fields.get("device_label")?.str().toString() ?? `Device ${index + 1}`;
+        const createdAt = Number(fields.get("created_at")?.u64().toString() ?? "0");
+        const lastUsedRaw = Number(fields.get("last_used_at")?.u64().toString() ?? "0");
+        const signCount = fields.get("sign_count")?.u32() ?? 0;
+        const flags = fields.get("flags")?.u32() ?? 0;
+        const revoked = fields.get("revoked")?.b() ?? false;
+        return {
+          id: Buffer.from(idBytes).toString("hex"),
+          deviceLabel: label,
+          attachment: "platform",
+          createdAt,
+          lastUsedAt: lastUsedRaw > 0 ? lastUsedRaw : null,
+          signCount,
+          requireUV: (flags & 1) !== 0,
+          status: revoked ? "revoked" : "active",
+        };
+      });
+    },
+    async registerDevice({ owner, id, deviceLabel, xHex, yHex, rpIdHashHex, requireUV }) {
+      const op = passkeyContract().call(
+        "register_device",
+        scAddr(owner),
+        scBytes32(id),
+        nativeToScVal(deviceLabel, { type: "string" }),
+        scBytes32(rpIdHashHex),
+        scBytes32(xHex),
+        scBytes32(yHex),
+        nativeToScVal(requireUV ? 1 : 0, { type: "u32" })
+      );
+      const txHash = await sendAndWait(owner, op);
+      return { txHash };
+    },
+    async revokeDevice({ owner, id, allowLast }) {
+      const op = passkeyContract().call(
+        "revoke_device",
+        scAddr(owner),
+        scBytes32(id),
+        nativeToScVal(allowLast, { type: "bool" })
+      );
+      const txHash = await sendAndWait(owner, op);
+      return { txHash };
+    },
+    async recoverDevice({
+      owner,
+      newId,
+      deviceLabel,
+      xHex,
+      yHex,
+      rpIdHashHex,
+      requireUV,
+      governanceApproved,
+    }) {
+      const op = passkeyContract().call(
+        "recover_device",
+        scAddr(owner),
+        scBytes32(newId),
+        nativeToScVal(deviceLabel, { type: "string" }),
+        scBytes32(rpIdHashHex),
+        scBytes32(xHex),
+        scBytes32(yHex),
+        nativeToScVal(requireUV ? 1 : 0, { type: "u32" }),
+        nativeToScVal(governanceApproved, { type: "bool" })
+      );
+      const txHash = await sendAndWait(owner, op);
+      return { txHash };
+    },
+    async verifyAndRecordWithGuards({
+      owner,
+      credId,
+      authData,
+      clientDataJson,
+      challenge,
+      challengeExpiresAtSec,
+      sigR,
+      sigS,
+    }) {
+      const op = passkeyContract().call(
+        "verify_and_record_with_guards",
+        scAddr(owner),
+        scBytes32(credId),
+        nativeToScVal(Buffer.from(authData), { type: "bytes" }),
+        nativeToScVal(Buffer.from(clientDataJson), { type: "bytes" }),
+        nativeToScVal(Buffer.from(challenge), { type: "bytes" }),
+        nativeToScVal(BigInt(challengeExpiresAtSec), { type: "u64" }),
+        nativeToScVal(Buffer.from(sigR), { type: "bytes" }),
+        nativeToScVal(Buffer.from(sigS), { type: "bytes" })
+      );
+      const txHash = await sendAndWait(owner, op);
+      return { txHash };
+    },
+  };
+}
