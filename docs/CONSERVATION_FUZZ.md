@@ -72,6 +72,13 @@ alphabet does not carry yet — see §2.1):
 14. `resume_stream`: the sender credits the paused interval back onto the
     window, so accrual continues at the original rate and the full deposit still
     streams.
+15. `split_stream` (#197): the recipient splits a stream into two children. The
+    campaign asserts that the children's summed `withdrawn`, `available` and
+    refundable remainder equal the parent's at the split, and that the
+    contract's token balance does not move.
+16. `merge_streams` (#197): two compatible streams merge into one, with the same
+    before/after value check. Split and merge children join the stream set, so
+    every later op (and Invariants 1–3) runs on them too.
 
 After every step the campaign checks the schedule invariant on top of balance
 conservation: for each Active stream with a non-empty `rate_segments`, the

@@ -2227,6 +2227,65 @@
       "returns": "bool",
       "error": null,
       "mutating": true
+    },
+    {
+      "name": "split_stream",
+      "doc": "Splits an active stream into two children without moving tokens.\n\nOnly the recipient can call this (their authorization is required). At the\nsplit boundary `b` (now, or the stream's start if it has not started) the\nparent's history, meaning what it accrued before `b` and its cumulative\n`withdrawn`, moves to the first child, and the unaccrued remainder is\ndivided: `first_remaining` streams on the first child over\n`[b, first_end_time)` and the rest on the second over `[b, second_end_time)`.\nBoth children keep the parent's `start_time`, parties, token, cancelability\nand clock, and inherit its refund target. The parent becomes `Cancelled`\nwith no payout. Returns `[first_child_id, second_child_id]`.\n\nNeither child may end before the parent does, so the recipient alone can\nnever accelerate the sender's payout. Value conservation\n(`deposit == withdrawn + claimable + refundable`, per stream and summed\nacross the operation) is checked in-crate before anything is written.\nEncumbered streams (paused, disputed, hook-bound, release-gated, with an\noutstanding advance or a pending proposal) are refused with\n[`StreamError::StreamEncumbered`].",
+      "args": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        },
+        {
+          "name": "first_remaining",
+          "type": "i128"
+        },
+        {
+          "name": "first_end_time",
+          "type": "u64"
+        },
+        {
+          "name": "second_end_time",
+          "type": "u64"
+        }
+      ],
+      "returns": {
+        "vec": "u64"
+      },
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "merge_streams",
+      "doc": "Merges two active streams with the same sender, recipient, token,\ncancelability, clock and refund target into one new stream, without moving\ntokens. Both the sender and the recipient must authorize it.\n\nAt the boundary `b` (now, or the later start if either has not started)\nboth histories and the sum of both `withdrawn` move to the merged stream,\nwhich starts at the earlier start and ends at the earlier end. Both\nremainders stream over `[b, end_time)`: the summed rate, plus the longer\nstream's surplus re-allocated into the shared window, never truncated.\nBoth parents become `Cancelled` with no payout. Returns the merged id.",
+      "args": [
+        {
+          "name": "first_id",
+          "type": "u64"
+        },
+        {
+          "name": "second_id",
+          "type": "u64"
+        }
+      ],
+      "returns": "u64",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "split_merge_lineage",
+      "doc": "Split/merge lineage of a stream, if it was ever split, merged or created by one.",
+      "args": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        }
+      ],
+      "returns": {
+        "option": "StreamLineage"
+      },
+      "error": null,
+      "mutating": true
     }
   ],
   "structs": [
@@ -2367,6 +2426,26 @@
         {
           "name": "registered_by",
           "type": "address",
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "StreamLineage",
+      "doc": "Split/merge lineage of one stream, stored under `DataKey::StreamLineage`.\n`parents` are the streams this one was created from (one for a split\nchild, two for a merge child); `children` are the streams its value moved\nto when it was split or merged.",
+      "fields": [
+        {
+          "name": "parents",
+          "type": {
+            "vec": "u64"
+          },
+          "doc": ""
+        },
+        {
+          "name": "children",
+          "type": {
+            "vec": "u64"
+          },
           "doc": ""
         }
       ]
@@ -5364,6 +5443,114 @@
           "name": "entries_removed",
           "type": "u32",
           "doc": "Number of per-stream persistent entries deleted."
+        }
+      ]
+    },
+    {
+      "name": "SplitStream",
+      "topic": "split_stream",
+      "doc": "Emitted when `split_stream` splits a stream into two children. The parent\nbecomes `Cancelled` with no payout; its history (accrued amount and\ncumulative `withdrawn`) moves to `first_child_id`, and its unaccrued\nremainder is divided between the two children from `split_at` on.",
+      "topicFields": [
+        {
+          "name": "parent_id",
+          "type": "u64",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "first_child_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "second_child_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "split_at",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "first_remaining",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "second_remaining",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "first_end_time",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "second_end_time",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "claimable",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "withdrawn",
+          "type": "i128",
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "MergeStream",
+      "topic": "merge_stream",
+      "doc": "Emitted when `merge_streams` merges two streams into `child_id`. Both\nparents become `Cancelled` with no payout; their histories and summed\nremainders stream on the child until `end_time`, the earlier parent end.",
+      "topicFields": [
+        {
+          "name": "child_id",
+          "type": "u64",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "first_parent_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "second_parent_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "merged_at",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "remaining",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "end_time",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "claimable",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "withdrawn",
+          "type": "i128",
+          "doc": ""
         }
       ]
     }

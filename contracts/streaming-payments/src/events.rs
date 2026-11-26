@@ -1416,3 +1416,61 @@ pub struct StreamSwept {
     )]
     pub entries_removed: u32,
 }
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when `split_stream` splits a stream into two children. The parent"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " becomes `Cancelled` with no payout; its history (accrued amount and"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " cumulative `withdrawn`) moves to `first_child_id`, and its unaccrued"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " remainder is divided between the two children from `split_at` on."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SplitStream {
+    #[topic]
+    pub parent_id: u64,
+    pub first_child_id: u64,
+    pub second_child_id: u64,
+    pub split_at: u64,
+    pub first_remaining: i128,
+    pub second_remaining: i128,
+    pub first_end_time: u64,
+    pub second_end_time: u64,
+    pub claimable: i128,
+    pub withdrawn: i128,
+}
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when `merge_streams` merges two streams into `child_id`. Both"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " parents become `Cancelled` with no payout; their histories and summed"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " remainders stream on the child until `end_time`, the earlier parent end."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MergeStream {
+    #[topic]
+    pub child_id: u64,
+    pub first_parent_id: u64,
+    pub second_parent_id: u64,
+    pub merged_at: u64,
+    pub remaining: i128,
+    pub end_time: u64,
+    pub claimable: i128,
+    pub withdrawn: i128,
+}

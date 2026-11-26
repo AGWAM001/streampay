@@ -110,6 +110,9 @@ mod governance_test;
 pub mod hooks;
 #[cfg(test)]
 mod hostile_token_fuzz_test;
+mod lineage;
+#[cfg(test)]
+mod lineage_test;
 pub mod oracle;
 mod policy;
 pub mod receivables;
@@ -138,6 +141,7 @@ mod treasury;
 pub mod verification;
 
 pub use hooks::{HookEventClass, HookFailurePolicy, StreamHook};
+pub use lineage::StreamLineage;
 pub use oracle::{ConditionPredicate, ConditionStatus, StreamCondition};
 pub use receivables::{Advance, ReceivablesConfig};
 pub use templates::{StreamTemplate, TemplateLineage};
@@ -161,15 +165,16 @@ pub use events::{
     ContractUpgraded, DisputeExpired, DisputeRaised, DisputeResolved, FeeCharged, FeeWithdrawn,
     GovernanceActionExecuted, GovernanceActionProposed, GovernanceActionSigned,
     GovernanceActionVetoed, GovernanceSignersSet, HookFailed, HookInvoked, HookRegistered,
-    OperatorKeyRotated, OracleConfigUpdated, OracleStaleFallback, OracleTimeReported,
+    MergeStream, OperatorKeyRotated, OracleConfigUpdated, OracleStaleFallback, OracleTimeReported,
     OwnershipAccepted, OwnershipProposed, PolicyAssetExecuted, PolicyAssetQueued,
     PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized,
     RateChangeAccepted, RateChangeProposed, ScheduledIntentCancelled, ScheduledIntentExpired,
     ScheduledStreamExecuted, SenderTransferExpired, SenderTransferProposed, SenderTransferred,
-    SponsorActiveSet, SponsorClaim, SponsorRegistered, StorageMigrated, StreamCancelled,
-    StreamCreated, StreamPaused, StreamPolicySet, StreamRecordMigrated, StreamRefundTargetChanged,
-    StreamResumed, StreamScheduled, StreamSwept, StreamToppedUp, StreamsCreated, TemplateApproved,
-    TemplateInstantiated, UpgradeCancelled, UpgradeProposed, Withdrawn,
+    SplitStream, SponsorActiveSet, SponsorClaim, SponsorRegistered, StorageMigrated,
+    StreamCancelled, StreamCreated, StreamPaused, StreamPolicySet, StreamRecordMigrated,
+    StreamRefundTargetChanged, StreamResumed, StreamScheduled, StreamSwept, StreamToppedUp,
+    StreamsCreated, TemplateApproved, TemplateInstantiated, UpgradeCancelled, UpgradeProposed,
+    Withdrawn,
 };
 pub use governance::{
     GovernanceAction, Proposal, DEFAULT_VETO_WINDOW_SECONDS, MAX_SIGNERS, MIN_VETO_WINDOW_SECONDS,
@@ -5738,5 +5743,280 @@ impl StreamingPayments {
     pub fn is_sweepable(env: Env, stream_id: u64) -> bool {
         stream::get_stream(&env, stream_id)
             .is_ok_and(|s| dust::sweep_blocker(&env, &s, env.ledger().timestamp()).is_none())
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Splits an active stream into two children without moving tokens."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Only the recipient can call this (their authorization is required). At the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " split boundary `b` (now, or the stream's start if it has not started) the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " parent's history, meaning what it accrued before `b` and its cumulative"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `withdrawn`, moves to the first child, and the unaccrued remainder is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " divided: `first_remaining` streams on the first child over"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `[b, first_end_time)` and the rest on the second over `[b, second_end_time)`."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Both children keep the parent's `start_time`, parties, token, cancelability"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " and clock, and inherit its refund target. The parent becomes `Cancelled`"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " with no payout. Returns `[first_child_id, second_child_id]`."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Neither child may end before the parent does, so the recipient alone can"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " never accelerate the sender's payout. Value conservation"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " (`deposit == withdrawn + claimable + refundable`, per stream and summed"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " across the operation) is checked in-crate before anything is written."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Encumbered streams (paused, disputed, hook-bound, release-gated, with an"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " outstanding advance or a pending proposal) are refused with"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " [`StreamError::StreamEncumbered`]."
+    )]
+    pub fn split_stream(
+        env: Env,
+        stream_id: u64,
+        first_remaining: i128,
+        first_end_time: u64,
+        second_end_time: u64,
+    ) -> Result<Vec<u64>, StreamError> {
+        Self::require_not_frozen(&env)?;
+        let parent = Self::lineage_input(&env, stream_id)?;
+        parent.stream.recipient.require_auth();
+
+        let boundary = Self::lineage_boundary(&env, &[&parent.stream]);
+        let first_id = stream::peek_stream_id(&env);
+        let second_id = first_id.checked_add(1).ok_or(StreamError::MathOverflow)?;
+        let (first, second) = lineage::plan_split(
+            &env,
+            &parent,
+            boundary,
+            first_id,
+            first_remaining,
+            first_end_time,
+            second_id,
+            second_end_time,
+        )?;
+        let claimable = lineage::breakdown_at(&first.stream, &first.segments, boundary)?.claimable;
+        let second_remaining = second.stream.deposit;
+
+        // Effects only: no token moves in a split.
+        stream::reserve_stream_ids(&env, 2)?;
+        Self::retire_lineage_parent(&env, &parent.stream);
+        Self::persist_lineage_child(&env, &first, &parent.stream);
+        Self::persist_lineage_child(&env, &second, &parent.stream);
+        lineage::record_lineage(&env, &[stream_id], &[first_id, second_id]);
+
+        #[cfg(test)]
+        cei_trace::record("event SplitStream");
+        SplitStream {
+            parent_id: stream_id,
+            first_child_id: first_id,
+            second_child_id: second_id,
+            split_at: boundary,
+            first_remaining,
+            second_remaining,
+            first_end_time,
+            second_end_time,
+            claimable,
+            withdrawn: parent.stream.withdrawn,
+        }
+        .publish(&env);
+        Ok(soroban_sdk::vec![&env, first_id, second_id])
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Merges two active streams with the same sender, recipient, token,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " cancelability, clock and refund target into one new stream, without moving"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " tokens. Both the sender and the recipient must authorize it."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " At the boundary `b` (now, or the later start if either has not started)"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " both histories and the sum of both `withdrawn` move to the merged stream,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " which starts at the earlier start and ends at the earlier end. Both"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " remainders stream over `[b, end_time)`: the summed rate, plus the longer"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " stream's surplus re-allocated into the shared window, never truncated."
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Both parents become `Cancelled` with no payout. Returns the merged id."
+    )]
+    pub fn merge_streams(env: Env, first_id: u64, second_id: u64) -> Result<u64, StreamError> {
+        Self::require_not_frozen(&env)?;
+        if first_id == second_id {
+            return Err(surface::reject(Branch::MergeSameStream));
+        }
+        let first = Self::lineage_input(&env, first_id)?;
+        let second = Self::lineage_input(&env, second_id)?;
+        if !lineage::mergeable(&first.stream, &second.stream)
+            || stream::refund_target(&env, &first.stream)
+                != stream::refund_target(&env, &second.stream)
+        {
+            return Err(surface::reject(Branch::MergeIncompatible));
+        }
+        first.stream.sender.require_auth();
+        first.stream.recipient.require_auth();
+
+        let boundary = Self::lineage_boundary(&env, &[&first.stream, &second.stream]);
+        let merged_id = stream::peek_stream_id(&env);
+        let merged = lineage::plan_merge(&env, &first, &second, boundary, merged_id)?;
+        let claimable =
+            lineage::breakdown_at(&merged.stream, &merged.segments, boundary)?.claimable;
+
+        // Effects only: no token moves in a merge.
+        stream::reserve_stream_ids(&env, 1)?;
+        Self::retire_lineage_parent(&env, &first.stream);
+        Self::retire_lineage_parent(&env, &second.stream);
+        Self::persist_lineage_child(&env, &merged, &first.stream);
+        lineage::record_lineage(&env, &[first_id, second_id], &[merged_id]);
+
+        #[cfg(test)]
+        cei_trace::record("event MergeStream");
+        MergeStream {
+            child_id: merged_id,
+            first_parent_id: first_id,
+            second_parent_id: second_id,
+            merged_at: boundary,
+            remaining: merged.stream.deposit - merged.stream.withdrawn - claimable,
+            end_time: merged.stream.end_time,
+            claimable,
+            withdrawn: merged.stream.withdrawn,
+        }
+        .publish(&env);
+        Ok(merged_id)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Split/merge lineage of a stream, if it was ever split, merged or created by one."
+    )]
+    pub fn split_merge_lineage(env: Env, stream_id: u64) -> Option<StreamLineage> {
+        lineage::get_lineage(&env, stream_id)
+    }
+
+    /// Loads a stream for a lineage operation and refuses anything that is not
+    /// a plain, active stream.
+    fn lineage_input(env: &Env, stream_id: u64) -> Result<lineage::Planned, StreamError> {
+        if hooks::is_stream_locked(env, stream_id) {
+            return Err(surface::reject(Branch::HookReentrancyBlocked));
+        }
+        let s = stream::get_stream(env, stream_id)?;
+        if s.status != StreamStatus::Active {
+            return Err(surface::reject(Branch::StreamNotActive));
+        }
+        let encumbered = stream::get_paused_at(env, stream_id).is_some()
+            || dispute::get_dispute_opt(env, stream_id).is_some()
+            || stream::get_pending_rate_change(env, stream_id).is_some()
+            || stream::get_pending_ownership(env, stream_id).is_some()
+            || stream::get_pending_sender_transfer(env, stream_id).is_some()
+            || receivables::get_advance(env, stream_id).is_some_and(|a| a.repaid < a.total_owed)
+            || oracle::is_release_gated(env, stream_id)
+            || [
+                HookEventClass::Withdraw,
+                HookEventClass::Cancel,
+                HookEventClass::Complete,
+            ]
+            .into_iter()
+            .any(|class| hooks::get_hook(env, stream_id, class).is_some());
+        if encumbered {
+            return Err(surface::reject(Branch::LineageStreamEncumbered));
+        }
+        let segments = stream::get_rate_segments(env, stream_id);
+        Ok(lineage::Planned {
+            stream: s,
+            segments,
+        })
+    }
+
+    /// The timestamp a lineage operation is evaluated at: the resolved clock,
+    /// moved up to the latest input start so nothing streams early.
+    fn lineage_boundary(env: &Env, inputs: &[&Stream]) -> u64 {
+        let mut boundary = 0;
+        for s in inputs {
+            let now = oracle::resolve_stream_time(env, s.id, s.uses_oracle()).timestamp;
+            boundary = boundary.max(now).max(s.start_time);
+        }
+        boundary
+    }
+
+    /// Ends a parent: `Cancelled`, with no payout (its value moved to children).
+    fn retire_lineage_parent(env: &Env, parent: &Stream) {
+        let mut retired = parent.clone();
+        retired.status = StreamStatus::Cancelled;
+        stream::put_stream(env, &retired);
+    }
+
+    /// Persists a lineage child, its schedule, refund target and index entries.
+    fn persist_lineage_child(env: &Env, child: &lineage::Planned, parent: &Stream) {
+        stream::put_stream(env, &child.stream);
+        stream::put_rate_segments(env, child.stream.id, &child.segments);
+        let target = stream::refund_target(env, parent);
+        if target != child.stream.sender {
+            stream::put_refund_target(env, child.stream.id, &target);
+        }
+        stream::index_stream(env, &child.stream);
     }
 }
