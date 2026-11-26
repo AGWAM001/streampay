@@ -118,6 +118,25 @@ export const COMMANDS: readonly CommandSpec[] = [
     options: [],
     positional: { name: "shell", values: COMPLETION_SHELLS },
   },
+  {
+    name: "batch",
+    description: "Execute a batch manifest offline (dry-run preview unless --confirm yes)",
+    options: [
+      { name: "manifest", kind: "file", description: "Batch manifest file (JSON)" },
+      { name: "confirm", kind: "value", description: "Confirm execution: --confirm yes executes, otherwise prints a dry-run preview" },
+      { name: "checkpoint", kind: "file", description: "Checkpoint file for resumable batch execution" },
+    ],
+  },
+  {
+    name: "abi",
+    description: "Explore a contract spec offline",
+    options: [
+      { name: "spec", kind: "file", description: "Contract spec JSON file" },
+      { name: "kind", kind: "enum", values: ["function", "error", "event"], description: "Surface kind to show" },
+      { name: "name", kind: "value", description: "Filter surface entries by name" },
+      { name: "diff", kind: "file", description: "Second contract spec JSON file to diff against" },
+    ],
+  },
   { name: "help", description: "Show usage", options: [] },
 ];
 

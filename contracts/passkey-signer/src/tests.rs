@@ -63,10 +63,7 @@ pub trait PasskeySignerApi {
         sig_s: BytesN<32>,
     ) -> Result<(), PasskeyError>;
     fn is_nonce_used(env: Env, challenge: BytesN<32>) -> bool;
-    fn list_credentials(
-        env: Env,
-        owner: Address,
-    ) -> Vec<crate::registry::CredentialRecord>;
+    fn list_credentials(env: Env, owner: Address) -> Vec<crate::registry::CredentialRecord>;
     #[allow(clippy::too_many_arguments)]
     fn register_device(
         env: Env,
