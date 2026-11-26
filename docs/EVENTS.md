@@ -29,6 +29,7 @@ Every event the contract emits, with its on-chain topic layout and decoded data 
 | `hook_failed` | `HookFailed` | `stream_id: u64` | `event_class: Symbol`, `callback_contract: Address`, `error_code: u32` | `sha256:7fba9960155…` |
 | `hook_invoked` | `HookInvoked` | `stream_id: u64` | `event_class: Symbol`, `callback_contract: Address` | `sha256:11cae2306cf…` |
 | `hook_registered` | `HookRegistered` | `stream_id: u64` | `event_class: Symbol`, `callback_contract: Address`, `selector: Symbol` | `sha256:be27fe4f353…` |
+| `merge_stream` | `MergeStream` | `child_id: u64` | `first_parent_id: u64`, `second_parent_id: u64`, `merged_at: u64`, `remaining: i128`, `end_time: u64`, `claimable: i128`, `withdrawn: i128` | `sha256:70a8dd6e5d4…` |
 | `operator_key_rotated` | `OperatorKeyRotated` | `sponsor: Address`, `kind: Symbol` | `new_operator_key: BytesN<32>` | `sha256:e173c61697b…` |
 | `oracle_config_updated` | `OracleConfigUpdated` | — | `threshold: u32`, `max_stale_seconds: u64` | `sha256:91f894797f4…` |
 | `oracle_stale_fallback` | `OracleStaleFallback` | `stream_id: u64` | `ledger_time: u64` | `sha256:d1baed22ab3…` |
@@ -49,6 +50,7 @@ Every event the contract emits, with its on-chain topic layout and decoded data 
 | `sender_transfer_expired` | `SenderTransferExpired` | `stream_id: u64` | `sender_from: Address`, `new_sender: Address`, `nonce: u64` | `sha256:52f1ec50016…` |
 | `sender_transfer_proposed` | `SenderTransferProposed` | `stream_id: u64` | `sender_from: Address`, `new_sender: Address`, `nonce: u64`, `expires_at: u64`, `transfer_refund_rights: bool` | `sha256:7012eae001b…` |
 | `sender_transferred` | `SenderTransferred` | `stream_id: u64` | `sender_from: Address`, `sender_to: Address`, `nonce: u64`, `refund_rights_transferred: bool` | `sha256:db820aba879…` |
+| `split_stream` | `SplitStream` | `parent_id: u64` | `first_child_id: u64`, `second_child_id: u64`, `split_at: u64`, `first_remaining: i128`, `second_remaining: i128`, `first_end_time: u64`, `second_end_time: u64`, `claimable: i128`, `withdrawn: i128` | `sha256:38f05ba0dac…` |
 | `sponsor_active_set` | `SponsorActiveSet` | `sponsor: Address`, `kind: Symbol` | `active: bool` | `sha256:7bbd39680d3…` |
 | `sponsor_claim` | `SponsorClaim` | `sponsor: Address`, `kind: Symbol`, `stream_id: u64` | `beneficiary: Address`, `amount: i128`, `nonce: u64` | `sha256:0fcc98031e4…` |
 | `sponsor_registered` | `SponsorRegistered` | `sponsor: Address`, `kind: Symbol` | `token: Address`, `per_period_limit: i128`, `per_beneficiary_limit: i128`, `window_seconds: u64` | `sha256:d725d4b0dec…` |
