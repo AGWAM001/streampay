@@ -19,12 +19,16 @@ use soroban_sdk::{
     },
     Address, Bytes, BytesN, Env, FromVal, IntoVal, Symbol, TryFromVal, Val, Vec,
 };
-use streampay_contract::{test_client::StreamingPaymentsClient, StreamStatus, StreamingPayments};
+use streampay_contract::{
+    test_client::StreamingPaymentsClient, StreamStatus, StreamingPayments, MIN_STREAM_DEPOSIT,
+};
 use streampay_multisig::{
     Action, Call, FnPolicy, Multisig, MultisigClient, MultisigError, Op, SignerSignature,
 };
 
-const DEPOSIT: i128 = 1_000_000;
+/// The streaming contract refuses deposits below `MIN_STREAM_DEPOSIT`; half of
+/// it (the halfway withdrawal below) still clears `MIN_CLAIM_AMOUNT`.
+const DEPOSIT: i128 = MIN_STREAM_DEPOSIT;
 const START: u64 = 10_000;
 const DURATION: u64 = 1_000;
 
