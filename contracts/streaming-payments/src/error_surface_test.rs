@@ -2197,6 +2197,80 @@ fn probe(branch: Branch) -> Option<StreamError> {
             f.advance_time(DAY + SWEEP_GRACE_SECONDS);
             Some(rejected!(f.client.try_sweep_stream(&id)))
         }
+        // ------------------------------------------- stream lineage (#197)
+        Branch::LineageStreamEncumbered => {
+            let f = Fixture::setup_quiet();
+            let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            f.client.mock_all_auths().pause_stream(&f.sender, &id);
+            let end = f.client.get_stream(&id).end_time;
+            Some(rejected!(f.client.mock_all_auths().try_split_stream(
+                &id,
+                &(DEPOSIT / 2),
+                &end,
+                &end
+            )))
+        }
+        Branch::SplitAllocationOutOfRange => {
+            let f = Fixture::setup_quiet();
+            let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            let end = f.client.get_stream(&id).end_time;
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_split_stream(&id, &0, &end, &end)))
+        }
+        Branch::SplitEndBeforeParent => {
+            let f = Fixture::setup_quiet();
+            let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            let end = f.client.get_stream(&id).end_time;
+            Some(rejected!(f.client.mock_all_auths().try_split_stream(
+                &id,
+                &(DEPOSIT / 2),
+                &(end - 1),
+                &end
+            )))
+        }
+        Branch::SplitDurationTooLong => {
+            let f = Fixture::setup_quiet();
+            let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            let s = f.client.get_stream(&id);
+            Some(rejected!(f.client.mock_all_auths().try_split_stream(
+                &id,
+                &(DEPOSIT / 2),
+                &s.end_time,
+                &(s.start_time + MAX_DURATION_SECONDS + 1)
+            )))
+        }
+        Branch::LineageWindowElapsed => {
+            let f = Fixture::setup_quiet();
+            let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            let end = f.client.get_stream(&id).end_time;
+            f.advance_time(12 * DAY);
+            Some(rejected!(f.client.mock_all_auths().try_split_stream(
+                &id,
+                &(DEPOSIT / 2),
+                &end,
+                &end
+            )))
+        }
+        Branch::MergeSameStream => {
+            let f = Fixture::setup_quiet();
+            let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_merge_streams(&id, &id)))
+        }
+        Branch::MergeIncompatible => {
+            let f = Fixture::setup_quiet();
+            let a = f.create_stream(DEPOSIT / 2, DAY, 10 * DAY, false);
+            let b = f.create_stream(DEPOSIT / 2, DAY, 10 * DAY, true);
+            Some(rejected!(f
+                .client
+                .mock_all_auths()
+                .try_merge_streams(&a, &b)))
+        }
+        Branch::LineageConservationViolated => None,
     }
 }
 
@@ -2295,6 +2369,7 @@ fn defensive_branches_are_exactly_documented() {
             Branch::RateSegmentSumOverflow,
             Branch::RateHeadroomUnderflow,
             Branch::WithdrawManyTotalOverflow,
+            Branch::LineageConservationViolated,
         ],
         "the defensive set changed; update the matrix test and docs/ERROR_SURFACE.md"
     );
@@ -2439,6 +2514,12 @@ fn stream_error_variant_list_is_exhaustive() {
             | StreamError::DepositBelowMinimum
             | StreamError::ClaimBelowMinimum
             | StreamError::StreamNotSweepable => StreamError::ALL.contains(&e),
+            StreamError::StreamEncumbered
+            | StreamError::InvalidSplitAllocation
+            | StreamError::InvalidLineageEndTime
+            | StreamError::LineageWindowElapsed
+            | StreamError::MergeSameStream
+            | StreamError::MergeIncompatibleStreams => StreamError::ALL.contains(&e),
         }
     }
 
