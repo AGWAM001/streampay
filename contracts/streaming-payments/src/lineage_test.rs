@@ -9,10 +9,18 @@ use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::{vec, Address, Event as _};
 
 use crate::test::Fixture;
-use crate::{MergeStream, SplitStream, StreamError, StreamStatus};
+use crate::{
+    MergeStream, SplitStream, StreamError, StreamStatus, MIN_CLAIM_AMOUNT, MIN_STREAM_DEPOSIT,
+};
 
 const DAY: u64 = 24 * 60 * 60;
 const DEPOSIT: i128 = 1_000_000_000;
+
+/// `split_stream` returns `[first_child_id, second_child_id]`.
+fn pair(ids: soroban_sdk::Vec<u64>) -> (u64, u64) {
+    assert_eq!(ids.len(), 2);
+    (ids.get_unchecked(0), ids.get_unchecked(1))
+}
 
 /// Withdrawn, claimable and refundable value of one stream, read from the
 /// public views only (`get_stream` + `available`).
@@ -59,7 +67,7 @@ fn recipient_balance(f: &Fixture) -> i128 {
 fn running_stream(f: &Fixture) -> u64 {
     let id = f.create_stream(DEPOSIT, 0, 10 * DAY, true);
     f.advance_time(3 * DAY);
-    f.client.mock_all_auths().withdraw(&id, &100);
+    f.client.mock_all_auths().withdraw(&id, &MIN_CLAIM_AMOUNT);
     id
 }
 
@@ -72,12 +80,12 @@ fn split_moves_history_to_first_child_and_conserves_value() {
     let escrow = contract_balance(&f);
     let first_remaining = before.refundable / 3;
 
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &first_remaining,
         &parent.end_time,
         &(parent.end_time + 5 * DAY),
-    );
+    ));
 
     // Parent: terminal, no payout.
     let retired = f.client.get_stream(&id);
@@ -133,12 +141,12 @@ fn split_children_stream_out_exactly_the_remaining_deposit() {
     let id = running_stream(&f);
     let parent = f.client.get_stream(&id);
     let paid_before = recipient_balance(&f);
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &(DEPOSIT / 4),
         &(parent.end_time + DAY),
         &(parent.end_time + 3 * DAY),
-    );
+    ));
 
     f.advance_time(20 * DAY);
     let got_a = f.client.mock_all_auths().withdraw_max(&a);
@@ -153,12 +161,12 @@ fn split_children_never_accrue_ahead_of_the_parent() {
     let f = Fixture::setup_quiet();
     let id = running_stream(&f);
     let parent = f.client.get_stream(&id);
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &(DEPOSIT / 3),
         &parent.end_time,
         &(parent.end_time + 2 * DAY),
-    );
+    ));
     let mut step = 0;
     while step < 12 {
         f.advance_time(DAY / 2);
@@ -184,12 +192,12 @@ fn split_then_merge_round_trips_value_and_lineage() {
     let f = Fixture::setup_quiet();
     let id = running_stream(&f);
     let parent = f.client.get_stream(&id);
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &(DEPOSIT / 5),
         &(parent.end_time + DAY),
         &(parent.end_time + 4 * DAY),
-    );
+    ));
     f.advance_time(DAY);
     let before = value(&f, a).plus(value(&f, b));
     let escrow = contract_balance(&f);
@@ -227,7 +235,7 @@ fn merge_of_independent_streams_sums_both() {
     let x = f.create_stream(DEPOSIT / 2, 0, 10 * DAY, false);
     let y = f.create_stream(DEPOSIT / 4, DAY, 4 * DAY, false);
     f.advance_time(2 * DAY);
-    f.client.mock_all_auths().withdraw(&x, &1_000);
+    f.client.mock_all_auths().withdraw(&x, &MIN_CLAIM_AMOUNT);
     let before = value(&f, x).plus(value(&f, y));
     let m = f.client.mock_all_auths().merge_streams(&x, &y);
     let merged = f.client.get_stream(&m);
@@ -241,12 +249,12 @@ fn split_before_start_behaves_like_two_fresh_streams() {
     let f = Fixture::setup_quiet();
     let id = f.create_stream(DEPOSIT, DAY, 10 * DAY, false);
     let parent = f.client.get_stream(&id);
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &(DEPOSIT / 2),
         &parent.end_time,
         &parent.end_time,
-    );
+    ));
     assert!(f.client.rate_segments(&a).is_empty());
     assert!(f.client.rate_segments(&b).is_empty());
     f.advance_time(DAY + 5 * DAY);
@@ -272,12 +280,12 @@ fn split_preserves_a_renegotiated_schedule() {
     f.advance_time(2 * DAY);
     let before = value(&f, id);
     let parent = f.client.get_stream(&id);
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &(before.refundable / 2),
         &parent.end_time,
         &parent.end_time,
-    );
+    ));
     assert_eq!(value(&f, a).plus(value(&f, b)), before);
     assert_eq!(value(&f, a).claimable, before.claimable);
 }
@@ -287,12 +295,12 @@ fn split_children_support_top_up_and_cancel() {
     let f = Fixture::setup_quiet();
     let id = running_stream(&f);
     let parent = f.client.get_stream(&id);
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &(DEPOSIT / 2),
         &parent.end_time,
         &parent.end_time,
-    );
+    ));
     f.client.mock_all_auths().top_up(&b, &1_000);
     let vb = value(&f, b);
     let sender_before = TokenClient::new(&f.env, &f.token).balance(&f.sender);
@@ -307,12 +315,12 @@ fn split_requires_recipient_and_merge_requires_both_parties() {
     let f = Fixture::setup_quiet();
     let id = running_stream(&f);
     let parent = f.client.get_stream(&id);
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &(DEPOSIT / 2),
         &parent.end_time,
         &parent.end_time,
-    );
+    ));
     let signers: std::vec::Vec<Address> = f.env.auths().into_iter().map(|(a, _)| a).collect();
     assert_eq!(signers, std::vec![f.recipient.clone()]);
 
@@ -331,12 +339,12 @@ fn split_and_merge_emit_one_lineage_event_with_parent_child_links() {
     let before = value(&f, id);
     let first_remaining = DEPOSIT / 3;
     let now = f.ledger_time();
-    let (a, b) = f.client.mock_all_auths().split_stream(
+    let (a, b) = pair(f.client.mock_all_auths().split_stream(
         &id,
         &first_remaining,
         &parent.end_time,
         &(parent.end_time + DAY),
-    );
+    ));
     let split = SplitStream {
         parent_id: id,
         first_child_id: a,
@@ -415,10 +423,12 @@ fn lineage_ops_refuse_encumbered_and_terminal_streams() {
     );
 
     // Terminal parent: a split stream cannot be split again.
-    let (a, _) =
-        f.client
-            .mock_all_auths()
-            .split_stream(&plain, &(DEPOSIT / 4), &end(plain), &end(plain));
+    let (a, _) = pair(f.client.mock_all_auths().split_stream(
+        &plain,
+        &(DEPOSIT / 4),
+        &end(plain),
+        &end(plain),
+    ));
     assert_eq!(
         f.client
             .mock_all_auths()
@@ -466,13 +476,13 @@ fn proptest_split_merge_round_trips_preserve_value() {
         ..ProptestConfig::default()
     });
     let strategy = (
-        1_000i128..=DEPOSIT,      // deposit
-        100u64..=30 * DAY,        // duration
-        0u32..=99,                // % of window elapsed before the split
-        0u32..=100,               // % of the claimable balance withdrawn first
-        1u32..=99,                // % of the remainder on the first child
-        (0u64..=DAY, 0u64..=DAY), // extra seconds on each child end
-        0u32..=99,                // % of the earlier child window before merging
+        MIN_STREAM_DEPOSIT..=DEPOSIT, // deposit
+        100u64..=30 * DAY,            // duration
+        0u32..=99,                    // % of window elapsed before the split
+        0u32..=100,                   // % of the claimable balance withdrawn first
+        1u32..=99,                    // % of the remainder on the first child
+        (0u64..=DAY, 0u64..=DAY),     // extra seconds on each child end
+        0u32..=99,                    // % of the earlier child window before merging
     );
     runner
         .run(
@@ -483,7 +493,8 @@ fn proptest_split_merge_round_trips_preserve_value() {
                 f.advance_time(10 + duration * pre as u64 / 100);
                 let avail = f.client.available(&id);
                 let take = avail * wd as i128 / 100;
-                if take > 0 {
+                // Below MIN_CLAIM_AMOUNT a mid-stream withdraw is refused (#78).
+                if take >= MIN_CLAIM_AMOUNT {
                     f.client.mock_all_auths().withdraw(&id, &take);
                 }
                 let parent = f.client.get_stream(&id);
@@ -500,7 +511,7 @@ fn proptest_split_merge_round_trips_preserve_value() {
                     prop_assert_eq!(split, Err(Ok(StreamError::InvalidSplitAllocation)));
                     return Ok(());
                 }
-                let (a, b) = split.unwrap().unwrap();
+                let (a, b) = pair(split.unwrap().unwrap());
                 prop_assert_eq!(value(&f, a).plus(value(&f, b)), before);
                 prop_assert_eq!(contract_balance(&f), escrow);
 

@@ -428,12 +428,13 @@ fuzz_target!(|campaign: ConservationCampaign| {
                         let refundable = parent.deposit - before.0 - before.1;
                         let first = refundable * (share % 1001) as i128 / 1000;
                         let escrow = TokenClient::new(&env, &parent.token).balance(&contract_id);
-                        if let Ok(Ok((a, b))) = client.mock_all_auths().try_split_stream(
+                        if let Ok(Ok(ids)) = client.mock_all_auths().try_split_stream(
                             &stream_id,
                             &first,
                             &(parent.end_time + first_extra_secs as u64),
                             &(parent.end_time + second_extra_secs as u64),
                         ) {
+                            let (a, b) = (ids.get_unchecked(0), ids.get_unchecked(1));
                             created_stream_ids.push(a);
                             created_stream_ids.push(b);
                             assert_eq!(
