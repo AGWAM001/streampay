@@ -328,6 +328,23 @@ code,
 }
 
 /* --------------------------------------------------------------------------
+ * Per-second accrual counter (stream detail, issue #39)
+ * Tabular digits keep the figure from jittering as it ticks; the badge sits
+ * beside it and wraps under it on narrow screens.
+ * -------------------------------------------------------------------------- */
+.accrual-counter {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.live-indicator.accrual-live {
+  margin-left: 0.5rem;
+  padding: 1px 8px;
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+/* --------------------------------------------------------------------------
  * Live indicator badge
  * The animated dot is aria-hidden; the visible text "Live" carries the meaning.
  * -------------------------------------------------------------------------- */

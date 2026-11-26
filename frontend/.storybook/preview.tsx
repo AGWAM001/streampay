@@ -14,6 +14,7 @@ import { LocaleProvider } from "../lib/i18n/provider";
 import { SUPPORTED_LOCALES, localeDir, type Locale } from "../lib/i18n/locales";
 import { checkWalletNetwork } from "../lib/network";
 import { useWallet, type WalletState } from "../lib/wallet-context";
+import { availableAmountAt } from "../lib/accrual";
 import { FIXED_NOW_MS, installFakeClock } from "./fake-clock";
 import {
   ACTIVE_AVAILABLE,
@@ -138,7 +139,25 @@ const preview: Preview = {
       if (!stream) throw new Error(`Stream #${id} not found`);
       return stream;
     });
-    mocked(readAvailableAction).mockResolvedValue(ACTIVE_AVAILABLE);
+    // The active fixture answers the contract formula at the (fake) clock,
+    // which is ACTIVE_AVAILABLE at FIXED_NOW. The live counter anchors to the
+    // value `available` confirms (issue #39), so when a story or the visual
+    // suite moves the clock, the next refresh has to agree with it; a pinned
+    // value would freeze the counter. Every other id keeps the pinned value.
+    mocked(readAvailableAction).mockImplementation(async (id) => {
+      if (id !== activeStream.id) return ACTIVE_AVAILABLE;
+      const now = BigInt(Math.floor(Date.now() / 1000));
+      return availableAmountAt(
+        {
+          deposit: BigInt(activeStream.deposit),
+          startTime: activeStream.startTime,
+          endTime: activeStream.endTime,
+          withdrawn: BigInt(activeStream.withdrawn),
+          status: activeStream.status,
+        },
+        now
+      ).toString();
+    });
     mocked(readRefundTargetAction).mockImplementation(
       async (id) => STREAMS_BY_ID.get(id)?.sender ?? activeStream.sender
     );
