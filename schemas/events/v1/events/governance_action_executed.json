@@ -203,6 +203,29 @@
               "x-soroban-type": "u64"
             }
           ]
+        },
+        {
+          "maxItems": 1,
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "const": "BeginMigrationExport"
+            }
+          ]
+        },
+        {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "const": "BeginMigrationImport"
+            },
+            {
+              "description": "Stellar account or contract address (StrKey).",
+              "type": "string",
+              "x-soroban-type": "Address"
+            }
+          ]
         }
       ],
       "title": "GovernanceAction",
@@ -279,7 +302,7 @@
   "type": "object",
   "x-streampay": {
     "event_key": "governance_action_executed",
-    "fingerprint": "sha256:de687ceefc10aefae7e339b119adb836dd36507d01aaaf97c1b85fc222d8cc02",
+    "fingerprint": "sha256:7dc586070477ca5929f0ca735bf1c5348a89f2dbfa8452d85fe86f4e9a28357f",
     "registry_version": 1,
     "topicSchema": {
       "items": [
