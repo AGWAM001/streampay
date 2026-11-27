@@ -92,7 +92,7 @@ export function DashboardSkeleton() {
                 padding: "14px",
                 border: "1px solid var(--line)",
                 borderRadius: "8px",
-                background: "rgba(255, 255, 255, 0.02)",
+                background: "var(--surface-subtle)",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>

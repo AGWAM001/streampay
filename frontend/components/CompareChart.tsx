@@ -1,6 +1,12 @@
 import type { Comparison } from "@/lib/compare/model";
 
-const COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed"];
+const COLORS = [
+  "var(--accent-primary)",
+  "var(--status-danger)",
+  "var(--status-success)",
+  "var(--accent-secondary)",
+  "var(--status-warning)",
+] as const;
 const W = 640;
 const H = 280;
 const PAD = 40;

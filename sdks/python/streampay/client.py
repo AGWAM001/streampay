@@ -21,20 +21,17 @@ from typing import Any, Callable, Protocol
 from ._generated import (
     MAX_PAGE_SIZE,
     METHODS,
-    AvailableArgs,
     CancelStreamArgs,
     CreateStreamArgs,
-    GetStreamArgs,
+    ReadOnlyMethods,
     RecipientStreamsArgs,
     SenderStreamsArgs,
     Stream,
     TopUpArgs,
     WithdrawArgs,
     WithdrawMaxArgs,
-    decode_available_result,
     decode_cancel_stream_result,
     decode_create_stream_result,
-    decode_get_stream_result,
     decode_recipient_streams_result,
     decode_sender_streams_result,
     decode_top_up_result,
@@ -92,7 +89,7 @@ def signer_from_stellar_sdk(keypair: Any) -> Signer:
     return _KeypairSigner()
 
 
-class Client:
+class Client(ReadOnlyMethods):
     def __init__(
         self,
         contract_id: str,
@@ -269,17 +266,6 @@ class Client:
 
     def top_up(self, args: TopUpArgs) -> None:
         return self._write(METHODS["topUp"], args.to_scvals(), decode_top_up_result)
-
-    # ----------------------------------------------------------------- reads
-    def get_stream(self, stream_id: int) -> Stream:
-        args = GetStreamArgs(stream_id=stream_id)
-        return self._read(
-            METHODS["getStream"], args.to_scvals(), decode_get_stream_result
-        )
-
-    def available(self, stream_id: int) -> int:
-        args = AvailableArgs(stream_id=stream_id)
-        return self._read(METHODS["available"], args.to_scvals(), decode_available_result)
 
     # ------------------------------------------------------------ pagination
     def stream_ids_page(

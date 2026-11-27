@@ -122,18 +122,17 @@ export default function PasskeyPage() {
   return (
     <main style={{ maxWidth: 560, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Passkey Stream Claims</h1>
-      <p style={{ color: "#6b7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
+      <p style={{ color: "var(--foreground-muted)", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
         Claim streaming payments from your phone using a device-bound passkey —
         no browser extension wallet required.
       </p>
 
-      {/* Security notes */}
       <PasskeyUnsupportedBanner support={support} />
-      <details style={{ marginBottom: "1.5rem", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6, padding: "0.75rem 1rem" }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "#374151" }}>
+      <details style={{ marginBottom: "1.5rem", background: "var(--surface-subtle)", border: "1px solid var(--border-default)", borderRadius: 6, padding: "0.75rem 1rem" }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "var(--foreground-default)" }}>
           Security notes
         </summary>
-        <ul style={{ marginTop: "0.5rem", paddingLeft: "1.25rem", fontSize: "0.825rem", color: "#6b7280", lineHeight: 1.7 }}>
+        <ul style={{ marginTop: "0.5rem", paddingLeft: "1.25rem", fontSize: "0.825rem", color: "var(--foreground-muted)", lineHeight: 1.7 }}>
           <li>
             <strong>Attestation</strong>: We register your P-256 key on-chain without
             verifying attestation. Attestation checks (FIDO MDS3) are recommended for
@@ -163,7 +162,7 @@ export default function PasskeyPage() {
         value={owner}
         onChange={(e) => setOwner(e.target.value)}
         disabled={busy}
-        style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid #ccc", fontSize: "0.95rem", boxSizing: "border-box", marginBottom: "1rem" }}
+        style={{ width: "100%", padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border-control)", fontSize: "0.95rem", boxSizing: "border-box", marginBottom: "1rem" }}
         aria-label="Stellar address"
       />
 
@@ -183,7 +182,7 @@ export default function PasskeyPage() {
         <button
           onClick={handleRegister}
           disabled={busy || !owner.trim()}
-          style={btnStyle("#2563eb")}
+          style={btnStyle("primary")}
           aria-label="Register passkey"
         >
           {step === "registering" ? "Registering…" : "Register passkey"}
@@ -191,7 +190,7 @@ export default function PasskeyPage() {
         <button
           onClick={handleClaim}
           disabled={busy || !owner.trim()}
-          style={btnStyle("#16a34a")}
+          style={btnStyle("success")}
           aria-label="Claim with passkey"
         >
           {step === "logging-in" ? "Verifying…" : "Claim with passkey"}
@@ -205,10 +204,10 @@ export default function PasskeyPage() {
             marginTop: "1.5rem",
             padding: "0.75rem 1rem",
             borderRadius: 6,
-            background: step === "error" ? "#fef2f2" : "#f0fdf4",
-            border: `1px solid ${step === "error" ? "#fca5a5" : "#86efac"}`,
+            background: step === "error" ? "var(--status-danger-subtle)" : "var(--status-success-subtle)",
+            border: `1px solid ${step === "error" ? "var(--status-danger-border)" : "var(--status-success-border)"}`,
             fontSize: "0.875rem",
-            color: step === "error" ? "#dc2626" : "#15803d",
+            color: step === "error" ? "var(--status-danger)" : "var(--status-success)",
           }}
         >
           {message}
@@ -216,7 +215,7 @@ export default function PasskeyPage() {
       )}
 
       {txHash && (
-        <p style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "#9ca3af" }}>
+        <p style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "var(--foreground-muted)" }}>
           Transaction: <span style={{ fontFamily: "monospace" }}>{txHash}</span>
         </p>
       )}
@@ -225,7 +224,7 @@ export default function PasskeyPage() {
       <div
         role="tablist"
         aria-label="Passkey management sections"
-        style={{ display: "flex", gap: "0.5rem", marginTop: "1.75rem", marginBottom: "1rem", borderBottom: "1px solid #e5e7eb", paddingBottom: "0.5rem", flexWrap: "wrap" }}
+        style={{ display: "flex", gap: "0.5rem", marginTop: "1.75rem", marginBottom: "1rem", borderBottom: "1px solid var(--border-default)", paddingBottom: "0.5rem", flexWrap: "wrap" }}
       >
         {(
           [
@@ -249,9 +248,9 @@ export default function PasskeyPage() {
             style={{
               padding: "0.4rem 0.85rem",
               borderRadius: 6,
-              border: "1px solid #d1d5db",
-              background: activeTab === key ? "#111827" : "#ffffff",
-              color: activeTab === key ? "#ffffff" : "#374151",
+              border: "1px solid var(--border-default)",
+              background: activeTab === key ? "var(--accent-strong)" : "var(--surface-subtle)",
+              color: activeTab === key ? "var(--foreground-on-accent)" : "var(--foreground-default)",
               fontSize: "0.85rem",
               fontWeight: 600,
               cursor: "pointer",
@@ -328,12 +327,14 @@ export default function PasskeyPage() {
   );
 }
 
-function btnStyle(bg: string): React.CSSProperties {
+function btnStyle(variant: "primary" | "success"): React.CSSProperties {
   return {
     padding: "0.5rem 1.25rem",
     borderRadius: 6,
-    background: bg,
-    color: "#fff",
+    background: variant === "success"
+      ? "linear-gradient(90deg, var(--status-success-button), var(--status-success-button-end))"
+      : "linear-gradient(90deg, var(--accent-strong), var(--accent-secondary-strong))",
+    color: variant === "success" ? "var(--foreground-on-success)" : "var(--foreground-on-accent)",
     border: "none",
     cursor: "pointer",
     fontSize: "0.95rem",

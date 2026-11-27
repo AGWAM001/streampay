@@ -229,7 +229,7 @@ export default function DiscoveryConsentModal({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: "rgba(10, 14, 22, 0.85)",
+        backgroundColor: "var(--surface-scrim)",
         backdropFilter: "blur(4px)",
         display: "flex",
         alignItems: "center",
@@ -280,7 +280,7 @@ export default function DiscoveryConsentModal({
         {/* Live Payload Preview */}
         <div
           style={{
-            background: "#0d1320",
+            background: "var(--surface-inset)",
             border: "1px solid var(--line)",
             borderRadius: "8px",
             padding: "14px",
@@ -299,7 +299,7 @@ export default function DiscoveryConsentModal({
               <tr>
                 <td style={{ color: "var(--muted)" }}>Flow Rate Band</td>
                 <td>
-                  <span className="status-badge" style={{ background: "#312e81", color: "#c7d2fe" }}>
+                  <span className="status-badge">
                     {rateBucket}
                   </span>
                 </td>
@@ -307,7 +307,7 @@ export default function DiscoveryConsentModal({
               <tr>
                 <td style={{ color: "var(--muted)" }}>Duration Band</td>
                 <td>
-                  <span className="status-badge" style={{ background: "#1e293b", color: "#94a3b8" }}>
+                  <span className="status-badge" style={{ background: "var(--surface-subtle)", color: "var(--foreground-muted)", border: "1px solid var(--border-default)" }}>
                     {durationBucket}
                   </span>
                 </td>
@@ -335,7 +335,7 @@ export default function DiscoveryConsentModal({
             borderRadius: "8px",
             padding: "12px",
             marginBottom: "16px",
-            background: shareAddress ? "rgba(139, 124, 255, 0.08)" : "transparent",
+            background: shareAddress ? "var(--accent-subtle)" : "transparent",
           }}
         >
           <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", margin: 0, cursor: "pointer" }}>
@@ -363,7 +363,7 @@ export default function DiscoveryConsentModal({
             style={{
               padding: "10px 12px",
               borderRadius: "6px",
-              background: "rgba(57, 197, 255, 0.12)",
+              background: "var(--status-info-subtle)",
               color: "var(--accent2)",
               fontSize: "13px",
               marginBottom: "12px",
@@ -398,8 +398,8 @@ export default function DiscoveryConsentModal({
               disabled={loading}
               onClick={handleWithdraw}
               style={{
-                background: "var(--red)",
-                color: "#fff",
+                background: "var(--status-danger-button)",
+                color: "var(--foreground-on-danger)",
               }}
             >
               {loading ? "Revoking..." : "Withdraw Listing (Unilateral)"}

@@ -11,6 +11,7 @@
 #   bash scripts/check_generated.sh openapi    # docs/openapi.json, frontend/public/openapi.json
 #   bash scripts/check_generated.sh openapi --self-test
 #                                              # ... plus the self-test below
+#   bash scripts/check_generated.sh sdk        # all generated SDK clients + manifest
 #
 # This is the single source of truth for the "generated files are fresh" gates:
 # CI calls it per area (in the job that already has the right toolchain) and
@@ -67,6 +68,33 @@ check_drift() {
     exit 1
   fi
   printf '    fresh: %s\n' "$label"
+}
+
+run_sdk() {
+  say "SDK clients (sdks/generator/generate.py)"
+  local python_bin
+  if command -v python3 >/dev/null 2>&1; then
+    python_bin=python3
+  elif command -v python >/dev/null 2>&1; then
+    python_bin=python
+  else
+    die "python3 is required for the SDK freshness gate"
+    return 1
+  fi
+  "$python_bin" sdks/generator/generate.py --check
+  local -a sdk_paths=()
+  local path
+  while IFS= read -r path; do
+    sdk_paths+=("$path")
+  done < <("$python_bin" -c '
+import json
+from pathlib import Path
+manifest = json.loads(Path("sdks/generator/GENERATED_FINGERPRINT").read_text(encoding="utf-8"))
+for artifact in manifest["artifacts"]:
+    print(artifact["path"])
+')
+  sdk_paths+=("sdks/generator/GENERATED_FINGERPRINT")
+  check_drift "generated SDK clients + fingerprint" "${sdk_paths[@]}"
 }
 
 run_surface() {
@@ -237,6 +265,7 @@ run_openapi_self_test() {
 }
 
 case "$AREA" in
+  sdk) run_sdk ;;
   surface) run_surface ;;
   catalog) run_catalog ;;
   vectors) run_vectors ;;
@@ -246,6 +275,7 @@ case "$AREA" in
     run_openapi
     ;;
   all)
+    run_sdk
     run_surface
     run_catalog
     run_vectors
@@ -253,7 +283,7 @@ case "$AREA" in
     run_openapi
     ;;
   *)
-    die "unknown area '$AREA' (expected: surface | catalog | vectors | events | openapi | all)"
+    die "unknown area '$AREA' (expected: sdk | surface | catalog | vectors | events | openapi | all)"
     exit 2
     ;;
 esac

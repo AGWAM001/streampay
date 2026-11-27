@@ -72,7 +72,7 @@ function BlockedPage() {
       <div
         className="card"
         role="alert"
-        style={{ borderColor: "var(--red)", background: "rgba(255, 107, 107, 0.08)" }}
+        style={{ borderColor: "var(--red)", background: "var(--status-danger-subtle)" }}
       >
         <h2 style={{ color: "var(--red)", marginTop: 0 }}>
           This page only builds and submits Stellar Testnet transactions.
@@ -318,8 +318,8 @@ function TxBuilder() {
       <div
         className="card"
         style={{
-          borderColor: "rgba(245, 158, 11, 0.5)",
-          background: "rgba(245, 158, 11, 0.06)",
+          borderColor: "var(--status-warning-border)",
+          background: "var(--status-warning-subtle)",
         }}
       >
         <strong style={{ color: "var(--amber)" }}>Testnet only.</strong>{" "}

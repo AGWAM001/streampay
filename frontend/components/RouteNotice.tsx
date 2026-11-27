@@ -6,8 +6,8 @@
  * The copy always says what was looked for, why it may be missing and what to
  * do next, so a dead link is not a blank screen.
  *
- * The pay segment keeps the claim surface's dark card so a broken invoice link
- * still looks like StreamPay; the other two use the app shell's card.
+ * The pay segment uses the claim surface's theme-aware card so a broken invoice
+ * link still looks like StreamPay; the other two use the app shell's card.
  */
 
 import Link from "next/link";
@@ -72,18 +72,18 @@ export default async function RouteNotice({
 
   if (segment === "pay") {
     return (
-      <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center p-4">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
-          <p className="text-xs uppercase tracking-wider font-semibold text-neutral-500 mb-3">
+      <main className="min-h-screen bg-[var(--surface-canvas)] text-[var(--foreground-default)] flex items-center justify-center p-4">
+        <div className="bg-[var(--surface-raised)] border border-[var(--border-default)] rounded-2xl p-8 max-w-md w-full text-center shadow-[var(--shadow-modal)]">
+          <p className="text-xs uppercase tracking-wider font-semibold text-[var(--foreground-muted)] mb-3">
             {badge}
           </p>
           <h1 className="text-xl font-bold mb-2">{title}</h1>
-          <p className="text-sm text-neutral-400 mb-2">{what}</p>
-          <p className="text-sm text-neutral-300 mb-2">{body}</p>
-          <p className="text-sm text-neutral-400 mb-6">{next}</p>
+          <p className="text-sm text-[var(--foreground-muted)] mb-2">{what}</p>
+          <p className="text-sm text-[var(--foreground-default)] mb-2">{body}</p>
+          <p className="text-sm text-[var(--foreground-muted)] mb-6">{next}</p>
           <Link
             href="/"
-            className="inline-block px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl text-sm font-medium transition"
+            className="inline-block px-5 py-2.5 bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--foreground-default)] rounded-xl text-sm font-medium transition"
           >
             {back}
           </Link>

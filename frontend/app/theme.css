@@ -1,0 +1,177 @@
+/*
+ * StreamPay semantic theme tokens.
+ *
+ * Raw color literals live ONLY in this file. Components consume the semantic
+ * --surface-*, --foreground-*, --accent-*, --status-*, --border-*, --focus-*
+ * contract (the legacy names at the end are compatibility aliases).
+ *
+ * app/theme.css is checked by scripts/check-contrast.mjs in both themes.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --surface-canvas: #f8fafc;
+  --surface-raised: #ffffff;
+  --surface-hover: #f1f5f9;
+  --surface-inset: #f1f5f9;
+  --surface-subtle: #f1f5f9;
+  --surface-selected: #ede9fe;
+  --surface-chart: #f8fafc;
+  --surface-row-alt: #ffffff;
+  --surface-batch-start: #ede9fe;
+  --surface-batch-end: #f4f2ff;
+  --surface-scrim: rgba(15, 23, 42, 0.55);
+
+  /* Foreground */
+  --foreground-default: #0f172a;
+  --foreground-muted: #475569;
+  --foreground-on-accent: #ffffff;
+  --foreground-on-badge: #ffffff;
+  --foreground-on-success: #052e16;
+  --foreground-on-danger: #ffffff;
+  --foreground-danger-emphasis: #7f1d1d;
+
+  /* Accent: primary for text/focus, strong for filled controls. */
+  --accent-primary: #5b4bd5;
+  --accent-primary-hover: #4939bf;
+  --accent-strong: #5b4bd5;
+  --accent-strong-hover: #4939bf;
+  --accent-secondary: #0369a1;
+  --accent-secondary-hover: #075985;
+  --accent-secondary-strong: #0369a1;
+  --accent-secondary-strong-hover: #075985;
+  --accent-subtle: #ede9fe;
+  --accent-subtle-soft: #f4f2ff;
+  --accent-border: #c4bdfd;
+  --heading-accent-start: #6d5bd7;
+  --heading-accent-end: #0e7490;
+
+  /* Status */
+  --status-success: #166534;
+  --status-success-subtle: #e7f6ed;
+  --status-success-border: #9fd3b0;
+  --status-success-button: #86efac;
+  --status-success-button-end: #4ade80;
+  --status-warning: #92400e;
+  --status-warning-subtle: #fff4dc;
+  --status-warning-border: #d5b36a;
+  --status-danger: #b91c1c;
+  --status-danger-subtle: #fee9e9;
+  --status-danger-border: #e3a0a0;
+  --status-danger-button: #dc2626;
+  --status-danger-button-end: #b91c1c;
+  --status-info: #0369a1;
+  --status-info-subtle: #e4f3fb;
+  --status-info-border: #8ec9e2;
+
+  /* Borders and focus */
+  --border-default: #cbd5e1;
+  --border-strong: #94a3b8;
+  --border-control: #64748b;
+  --focus-ring-color: #5b4bd5;
+  --focus-ring-inner: #f8fafc;
+
+  /* Non-text visuals */
+  --shadow-card: rgba(15, 23, 42, 0.12);
+  --shadow-modal: rgba(15, 23, 42, 0.25);
+  --skeleton-shine: #e2e8f0;
+  --qr-surface: #ffffff;
+  --chart-accrued: #2563eb;
+  --chart-claimed: #16a34a;
+  --chart-available: #bfdbfe;
+  --chart-grid: #e5e7eb;
+
+  /* Compatibility aliases keep the existing component surface token-driven. */
+  --bg: var(--surface-canvas);
+  --panel: var(--surface-raised);
+  --panel-hover: var(--surface-hover);
+  --line: var(--border-default);
+  --line-light: var(--border-strong);
+  --text: var(--foreground-default);
+  --muted: var(--foreground-muted);
+  --accent: var(--accent-primary);
+  --accent-dark: var(--accent-strong);
+  --accent2: var(--accent-secondary);
+  --green: var(--status-success);
+  --red: var(--status-danger);
+  --amber: var(--status-warning);
+  --focus-ring: 0 0 0 3px var(--focus-ring-inner), 0 0 0 5px var(--focus-ring-color);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --surface-canvas: #0a0e16;
+  --surface-raised: #111725;
+  --surface-hover: #162033;
+  --surface-inset: #0d1320;
+  --surface-subtle: #151d2d;
+  --surface-selected: #211e36;
+  --surface-chart: #080c14;
+  --surface-row-alt: #141c2b;
+  --surface-batch-start: #182238;
+  --surface-batch-end: #111a2d;
+  --surface-scrim: rgba(4, 7, 15, 0.75);
+
+  /* Foreground */
+  --foreground-default: #e8eefb;
+  --foreground-muted: #93a1b8;
+  --foreground-on-accent: #ffffff;
+  --foreground-on-badge: #ffffff;
+  --foreground-on-success: #061e12;
+  --foreground-on-danger: #290808;
+  --foreground-danger-emphasis: #ffb4b4;
+
+  /* Accent */
+  --accent-primary: #8b7cff;
+  --accent-primary-hover: #a99fff;
+  --accent-strong: #6b5ce7;
+  --accent-strong-hover: #5b4ccf;
+  --accent-secondary: #39c5ff;
+  --accent-secondary-hover: #7ce7ff;
+  --accent-secondary-strong: #1673a5;
+  --accent-secondary-strong-hover: #0f5f8a;
+  --accent-subtle: #211e36;
+  --accent-subtle-soft: #18172a;
+  --accent-border: #383260;
+  --heading-accent-start: #c9c2ff;
+  --heading-accent-end: #7ce7ff;
+
+  /* Status */
+  --status-success: #3ddc84;
+  --status-success-subtle: #163d2b;
+  --status-success-border: #245940;
+  --status-success-button: #3ddc84;
+  --status-success-button-end: #20b26c;
+  --status-warning: #f59e0b;
+  --status-warning-subtle: #2b241a;
+  --status-warning-border: #4d4020;
+  --status-danger: #ff6b6b;
+  --status-danger-subtle: #2c1a22;
+  --status-danger-border: #53303a;
+  --status-danger-button: #ff8585;
+  --status-danger-button-end: #ff6b6b;
+  --status-info: #39c5ff;
+  --status-info-subtle: #162b38;
+  --status-info-border: #285063;
+
+  /* Borders and focus */
+  --border-default: #22304a;
+  --border-strong: #2d3f61;
+  --border-control: #64748b;
+  --focus-ring-color: #8b7cff;
+  --focus-ring-inner: #ffffff;
+
+  /* Non-text visuals */
+  --shadow-card: rgba(0, 0, 0, 0.45);
+  --shadow-modal: rgba(0, 0, 0, 0.7);
+  --skeleton-shine: #22304a;
+  --qr-surface: #ffffff;
+  --chart-accrued: #60a5fa;
+  --chart-claimed: #3ddc84;
+  --chart-available: #1e3a5f;
+  --chart-grid: #22304a;
+}

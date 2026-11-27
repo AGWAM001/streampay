@@ -422,11 +422,11 @@ export default function StreamDetailClient() {
               display: "inline-flex",
               alignItems: "center",
               gap: "6px",
-              color: "#4ade80",
-              background: "rgba(74, 222, 128, 0.1)",
+              color: "var(--status-success)",
+              background: "var(--status-success-subtle)",
               padding: "2px 8px",
               borderRadius: "999px",
-              border: "1px solid rgba(74, 222, 128, 0.3)",
+              border: "1px solid var(--status-success-border)",
               fontSize: "11px",
               fontWeight: 600,
             }}
@@ -436,8 +436,8 @@ export default function StreamDetailClient() {
                 width: "6px",
                 height: "6px",
                 borderRadius: "50%",
-                background: "#4ade80",
-                boxShadow: "0 0 6px #4ade80",
+                background: "var(--status-success)",
+                boxShadow: "0 0 6px var(--status-success)",
               }}
             />
             Live SSE

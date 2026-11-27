@@ -89,6 +89,7 @@ export interface MessageParams {
   "form.batchRowIssue": { row: number; detail: string };
   "notFound.stream.malformedBody": { id: string };
   "notFound.address.malformedBody": { address: string };
+  "settings.theme.current": { theme: string };
 }
 
 export type ParamsOf<K extends MessageKey> = K extends keyof MessageParams
@@ -165,6 +166,7 @@ export const MESSAGE_SAMPLES: { [K in keyof MessageParams]: MessageParams[K] } =
   "form.batchRowIssue": { row: 2, detail: "Enter a valid Stellar address." },
   "notFound.stream.malformedBody": { id: "abc" },
   "notFound.address.malformedBody": { address: "GABC" },
+  "settings.theme.current": { theme: "Dark" },
 };
 
 /** Every key, in catalog order. Used by the snapshot suite and the CI check. */

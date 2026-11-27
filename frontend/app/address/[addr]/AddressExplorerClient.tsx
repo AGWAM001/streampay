@@ -404,7 +404,7 @@ export default function AddressExplorerClient({
                     <span
                       className="badge-pill"
                       style={{
-                        background: isRecipient ? "rgba(61,220,132,0.12)" : "rgba(139,124,255,0.12)",
+                        background: isRecipient ? "var(--status-success-subtle)" : "var(--accent-subtle)",
                         color: isRecipient ? "var(--green)" : "var(--accent)",
                       }}
                     >
@@ -413,7 +413,7 @@ export default function AddressExplorerClient({
                     {s.cancelable ? (
                       <span
                         className="badge-pill"
-                        style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted)" }}
+                        style={{ background: "var(--surface-subtle)", color: "var(--muted)" }}
                       >
                         Cancelable
                       </span>
@@ -592,8 +592,8 @@ export default function AddressExplorerClient({
       {/* Stability note */}
       <aside
         style={{
-          background: "rgba(139, 124, 255, 0.05)",
-          border: "1px solid rgba(139, 124, 255, 0.2)",
+          background: "var(--accent-subtle-soft)",
+          border: "1px solid var(--accent-border)",
           borderRadius: 8,
           padding: "12px 16px",
           fontSize: 12,

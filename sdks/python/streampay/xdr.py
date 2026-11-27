@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import struct
 from dataclasses import dataclass
+from functools import cmp_to_key
 from typing import Any
 
 __all__ = [
@@ -268,6 +269,79 @@ def _scaddress_bytes(address: str) -> bytes:
     return _i32(0) + _i32(0) + payload  # account, ed25519
 
 
+_SCVAL_TYPE_ORDER = {
+    "bool": 0,
+    "void": 1,
+    "error": 2,
+    "u32": 3,
+    "i32": 4,
+    "u64": 5,
+    "i64": 6,
+    "u128": 9,
+    "i128": 10,
+    "u256": 11,
+    "i256": 12,
+    "bytes": 13,
+    "string": 14,
+    "symbol": 15,
+    "vec": 16,
+    "map": 17,
+    "address": 18,
+}
+
+
+def _compare_values(left: Any, right: Any) -> int:
+    return (left > right) - (left < right)
+
+
+def _compare_sequences(left: list, right: list) -> int:
+    for left_item, right_item in zip(left, right):
+        compared = _compare_scval(left_item, right_item)
+        if compared:
+            return compared
+    return _compare_values(len(left), len(right))
+
+
+def _compare_map_entries(left: tuple[ScVal, ScVal], right: tuple[ScVal, ScVal]) -> int:
+    return _compare_scval(left[0], right[0]) or _compare_scval(left[1], right[1])
+
+
+def _compare_scval(left: ScVal, right: ScVal) -> int:
+    """Soroban's semantic ScVal ordering, independent of XDR length prefixes."""
+    try:
+        type_order = _SCVAL_TYPE_ORDER[left.kind] - _SCVAL_TYPE_ORDER[right.kind]
+    except KeyError as error:
+        raise XdrError(f"cannot compare ScVal kind {error.args[0]}") from error
+    if type_order:
+        return type_order
+    kind = left.kind
+    if kind == "bool":
+        return _compare_values(int(left.value), int(right.value))
+    if kind in ("void",):
+        return 0
+    if kind in ("error", "u32", "i32", "u64", "i64", "u128", "i128", "u256", "i256"):
+        return _compare_values(left.value, right.value)
+    if kind in ("bytes", "string", "symbol"):
+        left_bytes = left.value if kind == "bytes" else str(left.value).encode("utf-8")
+        right_bytes = right.value if kind == "bytes" else str(right.value).encode("utf-8")
+        return _compare_values(left_bytes, right_bytes)
+    if kind in ("vec", "map"):
+        left_items = list(left.value or [])
+        right_items = list(right.value or [])
+        if kind == "map":
+            left_items.sort(key=cmp_to_key(_compare_map_entries))
+            right_items.sort(key=cmp_to_key(_compare_map_entries))
+            for left_entry, right_entry in zip(left_items, right_items):
+                compared = _compare_map_entries(left_entry, right_entry)
+                if compared:
+                    return compared
+            return _compare_values(len(left_items), len(right_items))
+        return _compare_sequences(left_items, right_items)
+    if kind == "address":
+        return _compare_values(encode_scval(left), encode_scval(right))
+    raise XdrError(f"cannot compare ScVal kind {kind}")
+
+
 def encode_scval(value: ScVal) -> bytes:
     kind = value.kind
     if kind == "bool":
@@ -301,12 +375,9 @@ def encode_scval(value: ScVal) -> bytes:
         )
     if kind == "map":
         entries = value.value or []
-        # ScMap keys are canonically sorted by their encoded bytes.
-        encoded = sorted(
-            (encode_scval(key), encode_scval(item)) for key, item in entries
-        )
-        return _i32(17) + _i32(1) + _u32(len(encoded)) + b"".join(
-            key + item for key, item in encoded
+        ordered = sorted(entries, key=cmp_to_key(lambda left, right: _compare_scval(left[0], right[0])))
+        return _i32(17) + _i32(1) + _u32(len(ordered)) + b"".join(
+            encode_scval(key) + encode_scval(item) for key, item in ordered
         )
     if kind == "address":
         return _i32(18) + _scaddress_bytes(str(value.value))

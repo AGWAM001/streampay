@@ -58,9 +58,9 @@ export function PasskeyCredentialList({
             marginBottom: "0.75rem",
             padding: "0.65rem 0.85rem",
             borderRadius: 6,
-            border: "1px solid #fca5a5",
-            background: "#fef2f2",
-            color: "#991b1b",
+            border: "1px solid var(--status-danger-border)",
+            background: "var(--status-danger-subtle)",
+            color: "var(--foreground-danger-emphasis)",
             fontSize: "0.85rem",
           }}
         >
@@ -69,7 +69,7 @@ export function PasskeyCredentialList({
       )}
 
       {loading ? (
-        <p role="status" style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+        <p role="status" style={{ color: "var(--foreground-muted)", fontSize: "0.9rem" }}>
           Loading registered credentials…
         </p>
       ) : credentials.length === 0 ? (
@@ -78,9 +78,9 @@ export function PasskeyCredentialList({
           style={{
             padding: "1.25rem",
             borderRadius: 8,
-            border: "1px dashed #d1d5db",
-            background: "#f9fafb",
-            color: "#4b5563",
+            border: "1px dashed var(--border-strong)",
+            background: "var(--surface-subtle)",
+            color: "var(--foreground-muted)",
             fontSize: "0.9rem",
           }}
         >
@@ -97,8 +97,8 @@ export function PasskeyCredentialList({
                 style={{
                   padding: "0.875rem 1rem",
                   borderRadius: 8,
-                  border: "1px solid #e5e7eb",
-                  background: isRevoked ? "#f9fafb" : "#ffffff",
+                  border: "1px solid var(--border-default)",
+                  background: isRevoked ? "var(--surface-subtle)" : "var(--surface-raised)",
                   opacity: isRevoked ? 0.7 : 1,
                 }}
               >
@@ -111,8 +111,8 @@ export function PasskeyCredentialList({
                           fontSize: "0.75rem",
                           padding: "0.1rem 0.45rem",
                           borderRadius: 999,
-                          background: cred.attachment === "platform" ? "#eff6ff" : "#f5f3ff",
-                          color: cred.attachment === "platform" ? "#1d4ed8" : "#6d28d9",
+                          background: cred.attachment === "platform" ? "var(--status-info-subtle)" : "var(--accent-subtle)",
+                          color: cred.attachment === "platform" ? "var(--status-info)" : "var(--accent-primary)",
                           border: "1px solid currentColor",
                         }}
                       >
@@ -123,14 +123,14 @@ export function PasskeyCredentialList({
                           fontSize: "0.75rem",
                           padding: "0.1rem 0.45rem",
                           borderRadius: 999,
-                          background: isRevoked ? "#fee2e2" : "#dcfce7",
-                          color: isRevoked ? "#991b1b" : "#166534",
+                          background: isRevoked ? "var(--status-danger-subtle)" : "var(--status-success-subtle)",
+                          color: isRevoked ? "var(--foreground-danger-emphasis)" : "var(--status-success)",
                         }}
                       >
                         {isRevoked ? "Revoked" : "Active"}
                       </span>
                     </div>
-                    <dl style={{ margin: "0.5rem 0 0", display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.2rem 0.75rem", fontSize: "0.8rem", color: "#4b5563" }}>
+                    <dl style={{ margin: "0.5rem 0 0", display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.2rem 0.75rem", fontSize: "0.8rem", color: "var(--foreground-muted)" }}>
                       <dt>Credential ID:</dt>
                       <dd style={{ margin: 0, fontFamily: "monospace" }}>{cred.id.slice(0, 16)}…</dd>
                       <dt>Sign-count:</dt>
@@ -155,9 +155,9 @@ export function PasskeyCredentialList({
                       style={{
                         padding: "0.35rem 0.75rem",
                         borderRadius: 6,
-                        border: "1px solid #fca5a5",
-                        background: "#fff",
-                        color: "#b91c1c",
+                        border: "1px solid var(--status-danger-border)",
+                        background: "var(--surface-raised)",
+                        color: "var(--status-danger)",
                         fontSize: "0.825rem",
                         fontWeight: 600,
                         cursor: "pointer",
@@ -184,19 +184,19 @@ export function PasskeyCredentialList({
             marginTop: "1rem",
             padding: "1rem",
             borderRadius: 8,
-            border: "1px solid #fca5a5",
-            background: "#fef2f2",
+            border: "1px solid var(--status-danger-border)",
+            background: "var(--status-danger-subtle)",
           }}
         >
-          <h3 id="revoke-dialog-title" style={{ margin: 0, fontSize: "0.95rem", color: "#991b1b" }}>
+          <h3 id="revoke-dialog-title" style={{ margin: 0, fontSize: "0.95rem", color: "var(--status-danger)" }}>
             Revoke &ldquo;{confirmTarget.deviceLabel}&rdquo;?
           </h3>
-          <p id="revoke-dialog-desc" style={{ margin: "0.4rem 0 0.75rem", fontSize: "0.85rem", color: "#7f1d1d" }}>
+          <p id="revoke-dialog-desc" style={{ margin: "0.4rem 0 0.75rem", fontSize: "0.85rem", color: "var(--foreground-danger-emphasis)" }}>
             This device will no longer be able to sign assertions on-chain.
           </p>
 
           {activeCount <= 1 && (
-            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem", fontSize: "0.85rem", color: "#7f1d1d", cursor: "pointer" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem", fontSize: "0.85rem", color: "var(--foreground-danger-emphasis)", cursor: "pointer" }}>
               <input
                 type="checkbox"
                 checked={allowLastConfirmed}
@@ -215,8 +215,8 @@ export function PasskeyCredentialList({
                 padding: "0.4rem 0.9rem",
                 borderRadius: 6,
                 border: "none",
-                background: "#dc2626",
-                color: "#fff",
+                background: "var(--status-danger-button)",
+                color: "var(--foreground-on-danger)",
                 fontWeight: 600,
                 fontSize: "0.85rem",
                 cursor: "pointer",
@@ -234,9 +234,9 @@ export function PasskeyCredentialList({
               style={{
                 padding: "0.4rem 0.9rem",
                 borderRadius: 6,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-                color: "#374151",
+                border: "1px solid var(--border-default)",
+                background: "var(--surface-raised)",
+                color: "var(--foreground-muted)",
                 fontWeight: 600,
                 fontSize: "0.85rem",
                 cursor: "pointer",
