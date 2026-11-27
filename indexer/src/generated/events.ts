@@ -497,6 +497,23 @@ export interface StreamCreatedEvent {
   cancelable: boolean;
 }
 
+/** Emitted in the failure path of `create_stream_with_nft` immediately before the call aborts with the mapped `StreamError`. Because the abort rolls the transaction back, this event is visible in simulation/trace output rather than the committed ledger log: its role is diagnostics, while the no-orphan invariant itself is enforced by the rollback. */
+/** Event key `stream_nft_link_failed` — fingerprint `sha256:dbb893a694fa54f3dadae0830e0f48a75efc9a2f8f565bf4523de059f960cb4b`. */
+export interface StreamNftLinkFailedEvent {
+  stream_id: bigint;
+  nft_contract: string;
+  recipient: string;
+  error_code: number;
+}
+
+/** Emitted when `create_stream_with_nft` atomically creates a stream and mints its linked stream NFT in the same transaction. Keyed by both the stream id and the NFT contract, so the bidirectional link (stream -> NFT here, NFT -> stream in the companion's bound stream id) is auditable from the event trail alone. */
+/** Event key `stream_nft_minted` — fingerprint `sha256:cf23b906912d12a5f81a2fac0fb51f247cce566a4e972b06e3344af38d4c6a7f`. */
+export interface StreamNftMintedEvent {
+  stream_id: bigint;
+  nft_contract: string;
+  recipient: string;
+}
+
 /** Emitted when the sender pauses a stream, freezing accrual at `paused_at`. */
 /** Event key `stream_paused` — fingerprint `sha256:0d457030c164b4e062b06573927350f9782f0cb22409977ae4d6f01e17fb557e`. */
 export interface StreamPausedEvent {
@@ -676,6 +693,8 @@ export const EVENT_KEYS = {
   StorageMigrated: "storage_migrated",
   StreamCancelled: "stream_cancelled",
   StreamCreated: "stream_created",
+  StreamNftLinkFailed: "stream_nft_link_failed",
+  StreamNftMinted: "stream_nft_minted",
   StreamPaused: "stream_paused",
   StreamPolicySet: "stream_policy_set",
   StreamRecordMigrated: "stream_record_migrated",
@@ -696,7 +715,7 @@ export const EVENT_KEYS = {
 export type ContractEventName = (typeof EVENT_KEYS)[keyof typeof EVENT_KEYS];
 
 /** Every event this registry knows about, even if a consumer ignores it. */
-export const ALL_CONTRACT_EVENT_NAMES: readonly ContractEventName[] = ["advance_drawn", "advance_liquidated", "advance_repaid", "batch_withdraw_summary", "beneficiary_enrolled", "condition_expired", "condition_met", "condition_registered", "contract_frozen_state_changed", "contract_upgraded", "dispute_expired", "dispute_raised", "dispute_resolved", "fee_charged", "fee_withdrawn", "governance_action_executed", "governance_action_proposed", "governance_action_signed", "governance_action_vetoed", "governance_signers_set", "hook_failed", "hook_invoked", "hook_registered", "merge_stream", "operator_key_rotated", "oracle_config_updated", "oracle_stale_fallback", "oracle_time_reported", "ownership_accepted", "ownership_proposed", "policy_asset_executed", "policy_asset_queued", "policy_handoff_accepted", "policy_handoff_cancelled", "policy_handoff_proposed", "policy_initialized", "rate_change_accepted", "rate_change_proposed", "scheduled_intent_cancelled", "scheduled_intent_expired", "scheduled_stream_executed", "sender_transfer_expired", "sender_transfer_proposed", "sender_transferred", "split_stream", "sponsor_active_set", "sponsor_claim", "sponsor_registered", "storage_migrated", "stream_cancelled", "stream_created", "stream_paused", "stream_policy_set", "stream_record_migrated", "stream_refund_target_changed", "stream_resumed", "stream_scheduled", "stream_swept", "stream_topped_up", "streams_created", "template_approved", "template_instantiated", "upgrade_cancelled", "upgrade_proposed", "withdrawn"] as const;
+export const ALL_CONTRACT_EVENT_NAMES: readonly ContractEventName[] = ["advance_drawn", "advance_liquidated", "advance_repaid", "batch_withdraw_summary", "beneficiary_enrolled", "condition_expired", "condition_met", "condition_registered", "contract_frozen_state_changed", "contract_upgraded", "dispute_expired", "dispute_raised", "dispute_resolved", "fee_charged", "fee_withdrawn", "governance_action_executed", "governance_action_proposed", "governance_action_signed", "governance_action_vetoed", "governance_signers_set", "hook_failed", "hook_invoked", "hook_registered", "merge_stream", "operator_key_rotated", "oracle_config_updated", "oracle_stale_fallback", "oracle_time_reported", "ownership_accepted", "ownership_proposed", "policy_asset_executed", "policy_asset_queued", "policy_handoff_accepted", "policy_handoff_cancelled", "policy_handoff_proposed", "policy_initialized", "rate_change_accepted", "rate_change_proposed", "scheduled_intent_cancelled", "scheduled_intent_expired", "scheduled_stream_executed", "sender_transfer_expired", "sender_transfer_proposed", "sender_transferred", "split_stream", "sponsor_active_set", "sponsor_claim", "sponsor_registered", "storage_migrated", "stream_cancelled", "stream_created", "stream_nft_link_failed", "stream_nft_minted", "stream_paused", "stream_policy_set", "stream_record_migrated", "stream_refund_target_changed", "stream_resumed", "stream_scheduled", "stream_swept", "stream_topped_up", "streams_created", "template_approved", "template_instantiated", "upgrade_cancelled", "upgrade_proposed", "withdrawn"] as const;
 
 /** Narrow an arbitrary RPC event name to a registered contract event. */
 export function isContractEventName(name: string): name is ContractEventName {
@@ -756,6 +775,8 @@ export const EVENT_STRUCT_BY_KEY: Record<ContractEventName, string> = {
   "storage_migrated": "StorageMigrated",
   "stream_cancelled": "StreamCancelled",
   "stream_created": "StreamCreated",
+  "stream_nft_link_failed": "StreamNftLinkFailed",
+  "stream_nft_minted": "StreamNftMinted",
   "stream_paused": "StreamPaused",
   "stream_policy_set": "StreamPolicySet",
   "stream_record_migrated": "StreamRecordMigrated",
@@ -842,6 +863,8 @@ export const EVENT_SHAPES: Record<ContractEventName, EventShape> = {
   "storage_migrated": { struct: "StorageMigrated", eventKey: "storage_migrated", fingerprint: "sha256:3e0dc77f4cd7ab650f0239a9420df76cb30b78707cd25dcbdabe542c9d37baae", topics: [{"name":"from_version","type":"u32"},{"name":"to_version","type":"u32"}], data: [{"name":"start_id","type":"u64"},{"name":"end_id","type":"u64"},{"name":"is_complete","type":"bool"}] },
   "stream_cancelled": { struct: "StreamCancelled", eventKey: "stream_cancelled", fingerprint: "sha256:2b3062308e34986aea101c7c25e12965e40b9b9143475359a87741417bca71a7", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"cancelled_by","type":"Address"},{"name":"recipient_amount","type":"i128"},{"name":"sender_amount","type":"i128"}] },
   "stream_created": { struct: "StreamCreated", eventKey: "stream_created", fingerprint: "sha256:8e7e6d5ab578b8a656ecf6a58e712d15546c6bd95abc5030009597abb0ee5012", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"sender","type":"Address"},{"name":"recipient","type":"Address"},{"name":"token","type":"Address"},{"name":"deposit","type":"i128"},{"name":"start_time","type":"u64"},{"name":"end_time","type":"u64"},{"name":"cancelable","type":"bool"}] },
+  "stream_nft_link_failed": { struct: "StreamNftLinkFailed", eventKey: "stream_nft_link_failed", fingerprint: "sha256:dbb893a694fa54f3dadae0830e0f48a75efc9a2f8f565bf4523de059f960cb4b", topics: [{"name":"stream_id","type":"u64"},{"name":"nft_contract","type":"Address"}], data: [{"name":"recipient","type":"Address"},{"name":"error_code","type":"u32"}] },
+  "stream_nft_minted": { struct: "StreamNftMinted", eventKey: "stream_nft_minted", fingerprint: "sha256:cf23b906912d12a5f81a2fac0fb51f247cce566a4e972b06e3344af38d4c6a7f", topics: [{"name":"stream_id","type":"u64"},{"name":"nft_contract","type":"Address"}], data: [{"name":"recipient","type":"Address"}] },
   "stream_paused": { struct: "StreamPaused", eventKey: "stream_paused", fingerprint: "sha256:0d457030c164b4e062b06573927350f9782f0cb22409977ae4d6f01e17fb557e", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"paused_at","type":"u64"}] },
   "stream_policy_set": { struct: "StreamPolicySet", eventKey: "stream_policy_set", fingerprint: "sha256:b351d5e8904e7e12bdd4a02f67b7d93fd47f2c8609661a1414965244a22fcb20", topics: [], data: [{"name":"token","type":"Option<Address>"},{"name":"old_policy","type":"Option<StreamPolicy>"},{"name":"new_policy","type":"StreamPolicy"}] },
   "stream_record_migrated": { struct: "StreamRecordMigrated", eventKey: "stream_record_migrated", fingerprint: "sha256:e1a41c8e2201e81e259bd5f52b1fc85482d3657d3dc15b8385ef9a6ec16c5659", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"from_version","type":"u32"},{"name":"to_version","type":"u32"}] },
@@ -911,6 +934,8 @@ export const EVENT_FINGERPRINTS: Record<string, string> = {
   "StorageMigrated": "sha256:3e0dc77f4cd7ab650f0239a9420df76cb30b78707cd25dcbdabe542c9d37baae",
   "StreamCancelled": "sha256:2b3062308e34986aea101c7c25e12965e40b9b9143475359a87741417bca71a7",
   "StreamCreated": "sha256:8e7e6d5ab578b8a656ecf6a58e712d15546c6bd95abc5030009597abb0ee5012",
+  "StreamNftLinkFailed": "sha256:dbb893a694fa54f3dadae0830e0f48a75efc9a2f8f565bf4523de059f960cb4b",
+  "StreamNftMinted": "sha256:cf23b906912d12a5f81a2fac0fb51f247cce566a4e972b06e3344af38d4c6a7f",
   "StreamPaused": "sha256:0d457030c164b4e062b06573927350f9782f0cb22409977ae4d6f01e17fb557e",
   "StreamPolicySet": "sha256:b351d5e8904e7e12bdd4a02f67b7d93fd47f2c8609661a1414965244a22fcb20",
   "StreamRecordMigrated": "sha256:e1a41c8e2201e81e259bd5f52b1fc85482d3657d3dc15b8385ef9a6ec16c5659",

@@ -209,6 +209,62 @@
       "mutating": true
     },
     {
+      "name": "create_stream_with_nft",
+      "doc": "Creates a stream and mints its linked stream NFT atomically in one\ntransaction (issue #575): either both exist when the call returns, or\nneither does. The stream leg is the shared `create_stream_with_oracle`\npath, so validation, the deposit pull, the protocol fee and\n`StreamCreated` are identical to `create_stream`; every stream effect\ncompletes before the single external interaction, the companion NFT's\n`mint_linked` call (checks-effects-interactions). The NFT must already\nbe initialized and bound to the id this call will allocate (the next\nstream id): the binding is re-read and checked before minting, and the\ncompanion re-verifies it on its side, making the link bidirectional.\n\nIf the mint fails for any reason (callee error, panic, trap, binding\nmismatch) the call emits `StreamNftLinkFailed` for trace diagnostics\nand aborts with a mapped `StreamError`: the abort rolls the whole\ntransaction back, so no stream record, no deposit and no NFT can be\norphaned, and token conservation holds exactly as for `create_stream`.\nA reentrant `create_stream_with_nft` attempted while the mint is in\nflight (a hostile NFT calling back) is refused with\n`AtomicMintReentrancyBlocked`, failing the mint and the pair with it.",
+      "args": [
+        {
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "name": "deposit_amount",
+          "type": "i128"
+        },
+        {
+          "name": "start_time",
+          "type": "u64"
+        },
+        {
+          "name": "end_time",
+          "type": "u64"
+        },
+        {
+          "name": "cancelable",
+          "type": "bool"
+        },
+        {
+          "name": "nft_contract",
+          "type": "address"
+        }
+      ],
+      "returns": "u64",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "stream_nft_link",
+      "doc": "Returns the stream-NFT contract linked to `stream_id` at atomic\ncreation, or `None` when the stream was created without a linked NFT.",
+      "args": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        }
+      ],
+      "returns": {
+        "option": "address"
+      },
+      "error": null,
+      "mutating": false
+    },
+    {
       "name": "create_stream_with_refund",
       "doc": "Creates a stream whose unstreamed remainder is refundable to `refund_to`\nrather than to the sender.\n\nThe refund claim normally travels with the sender role; pinning it at\ncreation is how a payer routes a cancellation back to the account that\nactually funded the deposit — a treasury behind the signing key, a\ncorporate payer whose payroll wallet is ephemeral, or a parent grant that\nmust reclaim what its beneficiary's stream never spent. Accrual, the\nrecipient's claims and `cancel_stream`'s authorization are untouched: only\nthe destination of the *remainder* changes, so\n`0 <= withdrawn <= streamed <= deposit` and the conservation invariant are\nidentical to [`StreamingPayments::create_stream`].\n\n`refund_to` must differ from `sender` — that is already where the claim\nsits, and refusing the no-op keeps the event log to real routing changes.\nThe address is *not* required to exist, hold a balance, or be able to\nreceive: routing to an address that cannot accept the transfer surfaces\nlater as [`StreamError::SenderRefundFailed`] on the cancellation, so this\nis the sender's own risk to take, and the reason the choice is announced\nby `StreamRefundTargetChanged` rather than stored silently.",
       "args": [
@@ -5506,6 +5562,30 @@
       ]
     },
     {
+      "name": "StreamNftMinted",
+      "topic": "stream_nft_minted",
+      "doc": "Emitted when `create_stream_with_nft` atomically creates a stream and\nmints its linked stream NFT in the same transaction. Keyed by both the\nstream id and the NFT contract, so the bidirectional link (stream -> NFT\nhere, NFT -> stream in the companion's bound stream id) is auditable\nfrom the event trail alone.",
+      "topicFields": [
+        {
+          "name": "stream_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "nft_contract",
+          "type": "address",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "doc": ""
+        }
+      ]
+    },
+    {
       "name": "MergeStream",
       "topic": "merge_stream",
       "doc": "Emitted when `merge_streams` merges two streams into `child_id`. Both\nparents become `Cancelled` with no payout; their histories and summed\nremainders stream on the child until `end_time`, the earlier parent end.",
@@ -5551,6 +5631,35 @@
           "name": "withdrawn",
           "type": "i128",
           "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "StreamNftLinkFailed",
+      "topic": "stream_nft_link_failed",
+      "doc": "Emitted in the failure path of `create_stream_with_nft` immediately\nbefore the call aborts with the mapped `StreamError`. Because the abort\nrolls the transaction back, this event is visible in simulation/trace\noutput rather than the committed ledger log: its role is diagnostics,\nwhile the no-orphan invariant itself is enforced by the rollback.",
+      "topicFields": [
+        {
+          "name": "stream_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "nft_contract",
+          "type": "address",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "recipient",
+          "type": "address",
+          "doc": ""
+        },
+        {
+          "name": "error_code",
+          "type": "u32",
+          "doc": "The mapped StreamPay error code the call aborts with (never a raw\nNFT-contract code)."
         }
       ]
     }

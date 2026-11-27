@@ -22,8 +22,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # CLI argument parsing
 clap = { version = "4", features = ["derive"] }
-# Base64 / hex utilities
-base64 = "0.23"
+# Hex utilities (base64 comes via stellar-xdr's `base64` feature; the
+# standalone base64 0.23 dep was unused and duplicated the 0.22 copy the
+# rest of the workspace resolves — cargo-deny bans flagged the pair)
 hex = "0.4"
 # SHA-256 for schema fingerprint
 sha2 = "0.11"

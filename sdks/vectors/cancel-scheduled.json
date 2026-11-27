@@ -1,7 +1,7 @@
 {
   "schema": "streampay-vector/v1",
   "name": "cancel-scheduled",
-  "specFingerprint": "1f8420327b4bef8b80c437b29fee4d4bf325cecd55589f4daae39915c019851f",
+  "specFingerprint": "b8b7fdaf2d0a39fe92616adad14725ed1943591a64fd561e98cff9b79ad5868f",
   "provenance": "schedule_test::cancel_before_window_refunds_and_blocks_execution: cancelled before execute_after, full (deposit + fee) escrow refunded to the sender; ScheduledIntentCancelled as that test asserts it.",
   "transactionEnvelopeXdr": "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAABhqAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAQY2FuY2VsX3NjaGVkdWxlZAAAAAIAAAASAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAABQAAAAAAAAABAAAAAAAAAAAAAAABFEbSLAAAAEDnunFJIH8xqLY5iH5ReR4fWYU29uiyaw7sn+3TzSDHyztRbeD7/uwIY9XvcLKZx0jWXtfTVr9FgRTjr1YJ/iQI",
   "resultXdr": "AAAAAQ==",
