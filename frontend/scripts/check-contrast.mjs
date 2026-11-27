@@ -144,6 +144,7 @@ const PAIRS = [
     "accent-primary",
     "accent-secondary",
     "status-success",
+    "status-warning",
     "status-danger",
   ].map((foreground) => [foreground, "surface-chart", 3]),
 ];

@@ -57,7 +57,7 @@ export function PasskeyRecoveryFlow({
       <h2 id="passkey-recovery-heading" style={{ margin: "0 0 0.5rem", fontSize: "1.1rem", fontWeight: 600 }}>
         Recover Passkey Access
       </h2>
-      <p style={{ margin: "0 0 0.875rem", fontSize: "0.875rem", color: "#4b5563", lineHeight: 1.5 }}>
+      <p style={{ margin: "0 0 0.875rem", fontSize: "0.875rem", color: "var(--foreground-muted)", lineHeight: 1.5 }}>
         Re-bind a replacement authenticator if a device is lost. Contract sign-count monotonicity
         and challenge-expiry guards remain strictly enforced on-chain.
       </p>
@@ -69,9 +69,9 @@ export function PasskeyRecoveryFlow({
           marginBottom: "1rem",
           padding: "0.75rem 1rem",
           borderRadius: 8,
-          border: `1px solid ${decision.allowed ? "#93c5fd" : "#fca5a5"}`,
-          background: decision.allowed ? "#eff6ff" : "#fef2f2",
-          color: decision.allowed ? "#1e3a8a" : "#991b1b",
+          border: `1px solid ${decision.allowed ? "var(--status-info-border)" : "var(--status-danger-border)"}`,
+          background: decision.allowed ? "var(--status-info-subtle)" : "var(--status-danger-subtle)",
+          color: decision.allowed ? "var(--status-info)" : "var(--foreground-danger-emphasis)",
           fontSize: "0.875rem",
         }}
       >
@@ -105,7 +105,7 @@ export function PasskeyRecoveryFlow({
                 width: "100%",
                 padding: "0.5rem 0.75rem",
                 borderRadius: 6,
-                border: "1px solid #d1d5db",
+                border: "1px solid var(--border-control)",
                 fontSize: "0.9rem",
                 boxSizing: "border-box",
               }}
@@ -143,9 +143,9 @@ export function PasskeyRecoveryFlow({
               style={{
                 padding: "0.65rem 0.85rem",
                 borderRadius: 6,
-                border: "1px solid #fca5a5",
-                background: "#fef2f2",
-                color: "#991b1b",
+                border: "1px solid var(--status-danger-border)",
+                background: "var(--status-danger-subtle)",
+                color: "var(--foreground-danger-emphasis)",
                 fontSize: "0.85rem",
               }}
             >
@@ -161,8 +161,8 @@ export function PasskeyRecoveryFlow({
                 padding: "0.5rem 1.25rem",
                 borderRadius: 6,
                 border: "none",
-                background: "#0f766e",
-                color: "#fff",
+                background: "var(--accent-secondary-strong)",
+                color: "var(--foreground-on-accent)",
                 fontWeight: 600,
                 fontSize: "0.9rem",
                 cursor: submitting || !deviceLabel.trim() || !support.supported ? "not-allowed" : "pointer",

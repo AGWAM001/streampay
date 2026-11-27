@@ -377,17 +377,13 @@ jobs:
           [ -s "$wasm" ] || { echo "wasm missing or empty"; exit 1; }
           echo "OK: $(ls -sh "$wasm")"
 
-  sdk:
-    name: SDK — codegen freshness / TypeScript / Python / React
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - name: Set up Python for SDK code generation
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v7
+      - name: Set up Node.js for SDK workspaces
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -412,6 +408,7 @@ jobs:
 
       - name: React package typecheck tests and builds
         run: npm run ci:react
+
       # ------------------------------------------------------------------
       # PR specialist gates. Restore tracked files before each block so a
       # failed formatter or generator cannot contaminate the next gate;
@@ -1704,9 +1701,11 @@ jobs:
         run: |
           set -eu
           mkdir -p sbom
-          # Pinned major: the positional argument is the *package.json* (the
-          # generator finds the lockfile next to it), and an unpinned `npx`
-          # would let a new major change that contract under us.
+          # Pinned major: the positional argument is the *package.json*, and an
+          # unpinned `npx` would let a new major change that contract under us.
+          # `--no-workspaces` keeps each published artifact bound to the lockfile
+          # beside it; otherwise npm workspace discovery makes every per-package
+          # SBOM describe the monorepo root and its resolved versions.
           npx --yes @cyclonedx/cyclonedx-npm@6 --version
           for pair in \
             frontend=frontend \
@@ -1739,7 +1738,7 @@ jobs:
             # empty-SBOM check below stays as the backstop.
             npx --yes @cyclonedx/cyclonedx-npm@6 \
               "$dir/package.json" \
-              --package-lock-only --output-format JSON \
+              --package-lock-only --no-workspaces --output-format JSON \
               --ignore-npm-errors \
               --spec-version "$CYCLONEDX_SPEC" \
               --output-file "$PWD/sbom/$name.cdx.json"

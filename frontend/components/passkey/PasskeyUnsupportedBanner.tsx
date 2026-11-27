@@ -23,9 +23,9 @@ export function PasskeyUnsupportedBanner({ support }: PasskeyUnsupportedBannerPr
         marginBottom: "1rem",
         padding: "0.875rem 1rem",
         borderRadius: 8,
-        border: `1px solid ${isUnsupported ? "#fca5a5" : "#fcd34d"}`,
-        background: isUnsupported ? "#fef2f2" : "#fffbeb",
-        color: isUnsupported ? "#991b1b" : "#92400e",
+        border: `1px solid ${isUnsupported ? "var(--status-danger-border)" : "var(--status-warning-border)"}`,
+        background: isUnsupported ? "var(--status-danger-subtle)" : "var(--status-warning-subtle)",
+        color: isUnsupported ? "var(--foreground-danger-emphasis)" : "var(--status-warning)",
         fontSize: "0.875rem",
       }}
     >

@@ -97,7 +97,7 @@ class PythonEmitterTest(unittest.TestCase):
             for function in self.spec.functions
         }
         self.assertEqual(generated.METHODS, expected_methods)
-        self.assertEqual(len(generated.FUNCTIONS), 117)
+        self.assertEqual(len(generated.FUNCTIONS), 122)
         read_names = {function.name for function in self.spec.read_functions}
         emitted = {
             name

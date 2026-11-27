@@ -6311,6 +6311,7 @@ export function decodeStreamPayEvent(
       };
     }
     case "stream_swept": {
+      if (topics.length !== 2) throw new Error(`event stream_swept has ${topics.length} topics; expected 2`);
       return {
         type: "StreamSwept",
         contractId,
@@ -6321,6 +6322,7 @@ export function decodeStreamPayEvent(
       };
     }
     case "split_stream": {
+      if (topics.length !== 2) throw new Error(`event split_stream has ${topics.length} topics; expected 2`);
       return {
         type: "SplitStream",
         contractId,
@@ -6337,6 +6339,7 @@ export function decodeStreamPayEvent(
       };
     }
     case "merge_stream": {
+      if (topics.length !== 2) throw new Error(`event merge_stream has ${topics.length} topics; expected 2`);
       return {
         type: "MergeStream",
         contractId,

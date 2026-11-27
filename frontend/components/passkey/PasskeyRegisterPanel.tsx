@@ -74,14 +74,14 @@ export function PasskeyRegisterPanel({
               width: "100%",
               padding: "0.5rem 0.75rem",
               borderRadius: 6,
-              border: "1px solid #d1d5db",
+              border: "1px solid var(--border-control)",
               fontSize: "0.9rem",
               boxSizing: "border-box",
             }}
           />
         </div>
 
-        <fieldset style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "0.75rem" }}>
+        <fieldset style={{ border: "1px solid var(--border-default)", borderRadius: 6, padding: "0.75rem" }}>
           <legend style={{ fontSize: "0.85rem", fontWeight: 600, padding: "0 0.25rem" }}>
             Authenticator type
           </legend>
@@ -132,9 +132,9 @@ export function PasskeyRegisterPanel({
             style={{
               padding: "0.65rem 0.85rem",
               borderRadius: 6,
-              border: "1px solid #fca5a5",
-              background: "#fef2f2",
-              color: "#991b1b",
+              border: "1px solid var(--status-danger-border)",
+              background: "var(--status-danger-subtle)",
+              color: "var(--foreground-danger-emphasis)",
               fontSize: "0.85rem",
             }}
           >
@@ -150,8 +150,8 @@ export function PasskeyRegisterPanel({
               padding: "0.5rem 1.25rem",
               borderRadius: 6,
               border: "none",
-              background: "#2563eb",
-              color: "#fff",
+              background: "var(--accent-strong)",
+              color: "var(--foreground-on-accent)",
               fontWeight: 600,
               fontSize: "0.9rem",
               cursor: isDisabled || !deviceLabel.trim() ? "not-allowed" : "pointer",

@@ -127,12 +127,9 @@ export default function PasskeyPage() {
         no browser extension wallet required.
       </p>
 
-      {/* Security notes */}
+      <PasskeyUnsupportedBanner support={support} />
       <details style={{ marginBottom: "1.5rem", background: "var(--surface-subtle)", border: "1px solid var(--border-default)", borderRadius: 6, padding: "0.75rem 1rem" }}>
         <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "var(--foreground-default)" }}>
-      <PasskeyUnsupportedBanner support={support} />
-      <details style={{ marginBottom: "1.5rem", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6, padding: "0.75rem 1rem" }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "#374151" }}>
           Security notes
         </summary>
         <ul style={{ marginTop: "0.5rem", paddingLeft: "1.25rem", fontSize: "0.825rem", color: "var(--foreground-muted)", lineHeight: 1.7 }}>
@@ -227,7 +224,7 @@ export default function PasskeyPage() {
       <div
         role="tablist"
         aria-label="Passkey management sections"
-        style={{ display: "flex", gap: "0.5rem", marginTop: "1.75rem", marginBottom: "1rem", borderBottom: "1px solid #e5e7eb", paddingBottom: "0.5rem", flexWrap: "wrap" }}
+        style={{ display: "flex", gap: "0.5rem", marginTop: "1.75rem", marginBottom: "1rem", borderBottom: "1px solid var(--border-default)", paddingBottom: "0.5rem", flexWrap: "wrap" }}
       >
         {(
           [
@@ -251,9 +248,9 @@ export default function PasskeyPage() {
             style={{
               padding: "0.4rem 0.85rem",
               borderRadius: 6,
-              border: "1px solid #d1d5db",
-              background: activeTab === key ? "#111827" : "#ffffff",
-              color: activeTab === key ? "#ffffff" : "#374151",
+              border: "1px solid var(--border-default)",
+              background: activeTab === key ? "var(--accent-strong)" : "var(--surface-subtle)",
+              color: activeTab === key ? "var(--foreground-on-accent)" : "var(--foreground-default)",
               fontSize: "0.85rem",
               fontWeight: 600,
               cursor: "pointer",
