@@ -133,7 +133,7 @@ fn shared_client_parity_fixtures_match_event_xdr_and_balances() {
             cancelable: expected_created["cancelable"].as_bool().unwrap(),
         }
         .to_xdr(&env, &contract_id)];
-        let expected_withdraw_events = [Withdrawn {
+        let expected_withdraw_events = std::vec![Withdrawn {
             stream_id: expected_withdrawn["stream_id"]
                 .as_str()
                 .unwrap()
@@ -152,6 +152,10 @@ fn shared_client_parity_fixtures_match_event_xdr_and_balances() {
                 .unwrap(),
         }
         .to_xdr(&env, &contract_id)];
+        // Reputation (#574): even a depleting withdraw emits no
+        // reputation event — completion credit is derived at read time
+        // from the settled state (see reputation.rs), so the Withdrawn
+        // event is the whole expected set.
         assert_eq!(
             created_events, expected_create_events,
             "create-event XDR diverged for fixture {}",
