@@ -117,6 +117,13 @@ pub struct Snapshot {
     pub sender_indexes: Vec<IndexEntry>,
     /// Recipient stream indexes.
     pub recipient_indexes: Vec<IndexEntry>,
+    /// Merkle root over the canonical record leaves. Absent on snapshots
+    /// written before merkleized export.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merkle_root: Option<String>,
+    /// Number of leaves committed in `merkle_root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merkle_leaf_count: Option<u64>,
 }
 
 impl Snapshot {

@@ -6,6 +6,7 @@
   - `contracts/streaming-payments/` (`streampay-contract`) — Core escrow engine & gas sponsorship
   - `contracts/passkey-signer/` (`streampay-passkey-signer`) — On-chain WebAuthn assertion verification
   - `contracts/stream-nft/` (`streampay-stream-nft`) — Companion single-unit SEP-41 stream NFT
+- **Reference Contract (not in the audit scope)**: `contracts/multisig/` (`streampay-multisig`) — K-of-N multisig sender/recipient example; the core contract does not depend on it ([`docs/MULTISIG.md`](./MULTISIG.md))
 - **Pinned Rust Toolchain**: `1.99.1` (`rust-toolchain.toml`)
 - **Pinned Stellar CLI**: `28.1.0` (`.github/workflows/ci.yml`, `docs/REPRODUCING.md`)
 - **Associated Roadmap Milestone**: [README Roadmap v1.0](../README.md#roadmap)

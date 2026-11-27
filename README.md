@@ -442,6 +442,7 @@ npm run rent -- --streams 1000             # rent + cost projection
 
 ```text
 contracts/streaming-payments/   the contract (lib.rs, stream.rs, schedule.rs, treasury.rs, errors.rs, events.rs, test.rs, schedule_test.rs)
+contracts/multisig/             reference K-of-N multisig sender/recipient (custom account + propose/approve/execute)
 frontend/                       minimal Next.js UI (Freighter wallet)
 tools/streampay-cli/            headless CLI: transactions, key encrypt, status/get --watch
 indexer/                        Soroban event indexer (TypeScript + SQLite + REST API)
@@ -463,6 +464,7 @@ docs/DEPLOY_PIPELINE.md         sandbox → testnet → mainnet-canary promotion
 docs/CANARY_RUNBOOK.md          mainnet canary + rollback procedure
 docs/DEMO.md                    verified testnet walkthrough
 docs/EVENTS.md                  generated catalogue of every contract event
+docs/MULTISIG.md                K-of-N multisig senders/recipients: design, fees, security notes
 schemas/events/README.md        event schema registry: generator, compatibility gate, consumer workflow
 indexer/README.md               event indexer setup, configuration, and API
 docs/GOOD_FIRST_ISSUES.md       ready-to-file contributor tickets

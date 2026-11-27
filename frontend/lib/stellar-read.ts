@@ -12,6 +12,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import type { StreamPolicyView, StreamView } from "@/lib/stream-types";
+import { isContractAddress, toMultisigView, type MultisigView } from "@/lib/multisig";
 // The `StreamPolicy` shape comes from the generated event-schema registry
 // (schemas/events/registry.json), shared with the indexer (issue #213).
 import type { StreamPolicy } from "@/lib/generated/events";
@@ -56,12 +57,20 @@ async function simulateRead(
   method: string,
   args: xdr.ScVal[]
 ): Promise<xdr.ScVal | null> {
+  return simulateReadOn(contract(), method, args);
+}
+
+async function simulateReadOn(
+  target: Contract,
+  method: string,
+  args: xdr.ScVal[]
+): Promise<xdr.ScVal | null> {
   const server = new rpc.Server(RPC_URL);
   const transaction = new TransactionBuilder(DUMMY_SOURCE, {
     fee: "100",
     networkPassphrase: NETWORK,
   })
-    .addOperation(contract().call(method, ...args))
+    .addOperation(target.call(method, ...args))
     .setTimeout(30)
     .build();
   const simulated = await server.simulateTransaction(transaction);
@@ -174,6 +183,24 @@ export async function readStreamPolicy(
       minRate: String(raw.min_rate),
       maxRate: String(raw.max_rate),
     };
+  } catch {
+    return null;
+  }
+}
+/**
+ * Signer requirements of a multisig (`contracts/multisig`) at `address`, read
+ * from its `config()` view. `null` for a non-contract address, a contract
+ * that is not a multisig, or an RPC failure — the create form then shows its
+ * generic contract-address note instead.
+ */
+export async function readMultisigConfig(
+  address: string
+): Promise<MultisigView | null> {
+  if (!isContractAddress(address)) return null;
+  try {
+    const retval = await simulateReadOn(new Contract(address.trim()), "config", []);
+    if (!retval) return null;
+    return toMultisigView(scValToNative(retval), CONTRACT_ID);
   } catch {
     return null;
   }

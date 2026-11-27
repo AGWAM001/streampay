@@ -9,12 +9,31 @@
  */
 "use client";
 
-import React, { useState } from "react";
-import { registerPasskey, loginWithPasskey, isPasskeyRegistered } from "../../lib/passkey";
+import React, { useEffect, useState } from "react";
+import {
+  registerPasskey,
+  loginWithPasskey,
+  isPasskeyRegistered,
+  createSorobanPasskeyTransport,
+  extractPublicKeyFromCredential,
+} from "../../lib/passkey";
+import {
+  detectWebAuthnSupport,
+  registerAdditionalPasskey,
+  revokePasskeyCredential,
+  recoverPasskeyAccess,
+  type PasskeyCredentialInfo,
+  type WebAuthnSupportStatus,
+} from "../../lib/passkey-manager";
+import { PasskeyCredentialList } from "../../components/passkey/PasskeyCredentialList";
+import { PasskeyRegisterPanel } from "../../components/passkey/PasskeyRegisterPanel";
+import { PasskeyRecoveryFlow } from "../../components/passkey/PasskeyRecoveryFlow";
+import { PasskeyUnsupportedBanner } from "../../components/passkey/PasskeyUnsupportedBanner";
 import { useToast } from "../../components/toast";
 import { useT } from "../../lib/i18n/provider";
 
 type Step = "idle" | "registering" | "registered" | "logging-in" | "claimed" | "error";
+type Tab = "claim" | "devices" | "add" | "recover";
 
 export default function PasskeyPage() {
   const toast = useToast();
@@ -24,6 +43,33 @@ export default function PasskeyPage() {
   const [step, setStep] = useState<Step>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("claim");
+  const [credentials, setCredentials] = useState<PasskeyCredentialInfo[]>([]);
+  const [loadingCredentials, setLoadingCredentials] = useState(false);
+  const [governanceApproved, setGovernanceApproved] = useState(false);
+  const [support, setSupport] = useState<WebAuthnSupportStatus>({
+    supported: true,
+    platformAvailable: true,
+    roamingAvailable: true,
+  });
+
+  useEffect(() => {
+    void detectWebAuthnSupport().then(setSupport);
+  }, []);
+
+  async function refreshCredentials(addr: string) {
+    if (!addr.trim()) return;
+    setLoadingCredentials(true);
+    try {
+      const transport = createSorobanPasskeyTransport();
+      const list = await transport.listCredentials(addr.trim());
+      setCredentials(list);
+    } catch {
+      setCredentials([]);
+    } finally {
+      setLoadingCredentials(false);
+    }
+  }
 
   async function handleRegister() {
     if (!owner.trim()) return;
@@ -84,6 +130,9 @@ export default function PasskeyPage() {
       {/* Security notes */}
       <details style={{ marginBottom: "1.5rem", background: "var(--surface-subtle)", border: "1px solid var(--border-default)", borderRadius: 6, padding: "0.75rem 1rem" }}>
         <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "var(--foreground-default)" }}>
+      <PasskeyUnsupportedBanner support={support} />
+      <details style={{ marginBottom: "1.5rem", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6, padding: "0.75rem 1rem" }}>
+        <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: "0.875rem", color: "#374151" }}>
           Security notes
         </summary>
         <ul style={{ marginTop: "0.5rem", paddingLeft: "1.25rem", fontSize: "0.825rem", color: "var(--foreground-muted)", lineHeight: 1.7 }}>
@@ -172,6 +221,110 @@ export default function PasskeyPage() {
         <p style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "var(--foreground-muted)" }}>
           Transaction: <span style={{ fontFamily: "monospace" }}>{txHash}</span>
         </p>
+      )}
+
+      {/* Multi-device & recovery navigation */}
+      <div
+        role="tablist"
+        aria-label="Passkey management sections"
+        style={{ display: "flex", gap: "0.5rem", marginTop: "1.75rem", marginBottom: "1rem", borderBottom: "1px solid #e5e7eb", paddingBottom: "0.5rem", flexWrap: "wrap" }}
+      >
+        {(
+          [
+            ["claim", "Quick Claim"],
+            ["devices", "Devices"],
+            ["add", "Add Device"],
+            ["recover", "Recover Access"],
+          ] as [Tab, string][]
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === key}
+            onClick={() => {
+              setActiveTab(key);
+              if (key === "devices" || key === "recover") {
+                void refreshCredentials(owner);
+              }
+            }}
+            style={{
+              padding: "0.4rem 0.85rem",
+              borderRadius: 6,
+              border: "1px solid #d1d5db",
+              background: activeTab === key ? "#111827" : "#ffffff",
+              color: activeTab === key ? "#ffffff" : "#374151",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "devices" && (
+        <PasskeyCredentialList
+          credentials={credentials}
+          loading={loadingCredentials}
+          onRevoke={async (credId, allowLast) => {
+            const transport = createSorobanPasskeyTransport();
+            await revokePasskeyCredential(owner, credId, { confirmed: true, allowLast }, transport);
+            toast.success("Passkey device revoked");
+            await refreshCredentials(owner);
+          }}
+        />
+      )}
+
+      {activeTab === "add" && (
+        <PasskeyRegisterPanel
+          support={support}
+          disabled={!owner.trim()}
+          onRegisterDevice={async (input) => {
+            const transport = createSorobanPasskeyTransport();
+            const created = await registerAdditionalPasskey(owner, input, {
+              transport,
+              extractPublicKey: extractPublicKeyFromCredential,
+            });
+            setCredentials((prev) => [...prev, created]);
+            toast.success(`Registered ${created.deviceLabel}`);
+          }}
+        />
+      )}
+
+      {activeTab === "recover" && (
+        <div>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem", fontSize: "0.85rem" }}>
+            <input
+              type="checkbox"
+              checked={governanceApproved}
+              onChange={(e) => setGovernanceApproved(e.target.checked)}
+            />
+            Governance-approved recovery attestation present
+          </label>
+          <PasskeyRecoveryFlow
+            credentials={credentials}
+            support={support}
+            governanceApproved={governanceApproved}
+            onRecover={async (input) => {
+              const transport = createSorobanPasskeyTransport();
+              const recovered = await recoverPasskeyAccess(
+                owner,
+                {
+                  ...input,
+                  existingCredentials: credentials,
+                },
+                {
+                  transport,
+                  extractPublicKey: extractPublicKeyFromCredential,
+                }
+              );
+              setCredentials((prev) => [...prev, recovered]);
+              toast.success(`Recovered access with ${recovered.deviceLabel}`);
+            }}
+          />
+        </div>
       )}
     </main>
   );

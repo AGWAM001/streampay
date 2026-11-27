@@ -23,7 +23,7 @@
 extern crate std;
 
 use soroban_sdk::testutils::{Address as _, Ledger as _};
-use soroban_sdk::{Address, Bytes, BytesN, Env};
+use soroban_sdk::{Address, Bytes, BytesN, Env, String, Vec};
 use std::vec;
 
 use crate::errors::PasskeyError;
@@ -63,6 +63,48 @@ pub trait PasskeySignerApi {
         sig_s: BytesN<32>,
     ) -> Result<(), PasskeyError>;
     fn is_nonce_used(env: Env, challenge: BytesN<32>) -> bool;
+    fn list_credentials(env: Env, owner: Address) -> Vec<crate::registry::CredentialRecord>;
+    #[allow(clippy::too_many_arguments)]
+    fn register_device(
+        env: Env,
+        owner: Address,
+        id: BytesN<32>,
+        device_label: String,
+        rp_id_hash: BytesN<32>,
+        x: BytesN<32>,
+        y: BytesN<32>,
+        flags: u32,
+    ) -> Result<(), PasskeyError>;
+    fn revoke_device(
+        env: Env,
+        owner: Address,
+        id: BytesN<32>,
+        allow_last: bool,
+    ) -> Result<(), PasskeyError>;
+    #[allow(clippy::too_many_arguments)]
+    fn recover_device(
+        env: Env,
+        owner: Address,
+        new_id: BytesN<32>,
+        device_label: String,
+        rp_id_hash: BytesN<32>,
+        x: BytesN<32>,
+        y: BytesN<32>,
+        flags: u32,
+        governance_approved: bool,
+    ) -> Result<(), PasskeyError>;
+    #[allow(clippy::too_many_arguments)]
+    fn verify_and_record_with_guards(
+        env: Env,
+        owner: Address,
+        cred_id: BytesN<32>,
+        auth_data: Bytes,
+        client_data_json: Bytes,
+        challenge: BytesN<32>,
+        challenge_expires_at: u64,
+        sig_r: BytesN<32>,
+        sig_s: BytesN<32>,
+    ) -> Result<(), PasskeyError>;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -636,4 +678,154 @@ fn challenge_expiry_boundary_matrix() {
     );
 
     std::println!("✓ Fresh and re-registration after expiry both succeed");
+}
+
+#[test]
+fn multi_device_register_list_revoke_and_last_credential_guard() {
+    let env = new_env();
+    let (_, client) = deploy(&env);
+    let owner = Address::generate(&env);
+    let (x, y) = fake_pub_key();
+    let rp = [0xAAu8; 32];
+    let id1 = to_bytes32(&env, &[1u8; 32]);
+    let id2 = to_bytes32(&env, &[2u8; 32]);
+
+    client.register_device(
+        &owner,
+        &id1,
+        &String::from_str(&env, "MacBook Touch ID"),
+        &to_bytes32(&env, &rp),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0,
+    );
+    client.register_device(
+        &owner,
+        &id2,
+        &String::from_str(&env, "YubiKey 5C"),
+        &to_bytes32(&env, &rp),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &REGISTRATION_FLAGS_REQUIRE_UV,
+    );
+
+    let list = client.list_credentials(&owner);
+    assert_eq!(list.len(), 2);
+
+    // Revoking one of two devices succeeds without allow_last
+    client.revoke_device(&owner, &id1, &false);
+
+    // Revoking the last remaining device without allow_last fails
+    let err = client.try_revoke_device(&owner, &id2, &false);
+    assert_eq!(err, Err(Ok(PasskeyError::LastCredentialProtected)));
+
+    // Revoking with allow_last = true succeeds
+    client.revoke_device(&owner, &id2, &true);
+}
+
+#[test]
+fn recovery_requires_active_credential_or_governance_approval() {
+    let env = new_env();
+    let (_, client) = deploy(&env);
+    let owner = Address::generate(&env);
+    let (x, y) = fake_pub_key();
+    let rp = [0xBBu8; 32];
+    let id1 = to_bytes32(&env, &[10u8; 32]);
+    let id2 = to_bytes32(&env, &[20u8; 32]);
+
+    // No credentials and governance_approved=false -> rejected
+    let err = client.try_recover_device(
+        &owner,
+        &id1,
+        &String::from_str(&env, "Replacement Phone"),
+        &to_bytes32(&env, &rp),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0,
+        &false,
+    );
+    assert_eq!(err, Err(Ok(PasskeyError::RecoveryNotAuthorized)));
+
+    // Governance-approved recovery succeeds with 0 active credentials
+    client.recover_device(
+        &owner,
+        &id1,
+        &String::from_str(&env, "Governance Recovery Key"),
+        &to_bytes32(&env, &rp),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0,
+        &true,
+    );
+    assert_eq!(client.list_credentials(&owner).len(), 1);
+
+    // Now with >= 1 active credential, user can recover/bind a new device without governance
+    client.recover_device(
+        &owner,
+        &id2,
+        &String::from_str(&env, "Backup Hardware Key"),
+        &to_bytes32(&env, &rp),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0,
+        &false,
+    );
+    assert_eq!(client.list_credentials(&owner).len(), 2);
+}
+
+#[test]
+fn guards_reject_expired_challenge_and_sign_count_regression() {
+    let env = new_env();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 1_700_000_100;
+    });
+    let (contract_id, client) = deploy(&env);
+    let owner = Address::generate(&env);
+    let (x, y) = fake_pub_key();
+    let rp = [0xCCu8; 32];
+    let id1 = to_bytes32(&env, &[30u8; 32]);
+
+    client.register_device(
+        &owner,
+        &id1,
+        &String::from_str(&env, "Primary Device"),
+        &to_bytes32(&env, &rp),
+        &to_bytes32(&env, &x),
+        &to_bytes32(&env, &y),
+        &0,
+    );
+
+    // Simulate previous usage at sign_count = 5
+    env.as_contract(&contract_id, || {
+        crate::registry::update_device_usage(&env, &owner, &id1, 5, 1_700_000_050)
+            .expect("initial sign count update succeeds");
+    });
+
+    // Sign-count regression (<= 5) is rejected by registry
+    let reg_err = env.as_contract(&contract_id, || {
+        crate::registry::update_device_usage(&env, &owner, &id1, 5, 1_700_000_060)
+    });
+    assert_eq!(reg_err, Err(PasskeyError::SignCountRegression));
+
+    // Expired challenge (expires_at < ledger.timestamp) is rejected by contract gate
+    let mut auth = std::vec::Vec::with_capacity(37);
+    auth.extend_from_slice(&rp);
+    auth.push(0x01);
+    auth.extend_from_slice(&6u32.to_be_bytes());
+    let challenge = to_bytes32(&env, &[9u8; 32]);
+    let cdj = to_bytes(&env, b"{\"type\":\"webauthn.get\",\"challenge\":\"\"}");
+    let sig_r = to_bytes32(&env, &[1u8; 32]);
+    let sig_s = to_bytes32(&env, &[2u8; 32]);
+
+    let expired_err = client.try_verify_and_record_with_guards(
+        &owner,
+        &id1,
+        &to_bytes(&env, &auth),
+        &cdj,
+        &challenge,
+        &1_700_000_099, // expired!
+        &sig_r,
+        &sig_s,
+    );
+    assert_eq!(expired_err, Err(Ok(PasskeyError::ChallengeExpired)));
 }

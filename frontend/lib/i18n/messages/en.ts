@@ -246,7 +246,8 @@ export const en = {
   "form.tokenPlaceholder": "C… (Stellar Asset Contract id of the asset)",
   "form.tokenHint":
     "Enter the Stellar Asset Contract (SAC) id for the token you want to stream. It starts with the letter C.",
-  "form.recipientHint": "Enter the Stellar public key (G… address) of the stream recipient.",
+  "form.recipientHint":
+    "Enter the Stellar address of the stream recipient: a public key (G…) or a contract (C…) such as a multisig.",
   "form.nativeContractNote": "Native XLM streams through its Stellar Asset Contract: {contractId}",
   "form.asset": "Asset",
   "form.assetNative": "Native XLM",
@@ -286,7 +287,15 @@ export const en = {
     "This token has at most {decimals, number} decimal places — the amount you typed would have to be rounded.",
   "form.amountInvalid": "That is not a readable amount.",
   "form.recipientRequired": "Enter a recipient address.",
-  "form.recipientInvalid": "Enter a valid Stellar address (G… with a valid checksum).",
+  "form.recipientInvalid": "Enter a valid Stellar address (G… or C… with a valid checksum).",
+  "form.multisigSender":
+    "You are sending from a {threshold}-of-{signers} multisig: creating, topping up and cancelling this stream each need {threshold} signer approvals.",
+  "form.multisigRecipient":
+    "The recipient is a {threshold}-of-{signers} multisig: each withdrawal needs {threshold} signer approvals.",
+  "form.multisigCancel":
+    "{count, plural, one {Any single signer can cancel its streams.} other {Any # signers can cancel its streams.}}",
+  "form.contractRecipient":
+    "The recipient is a contract. Make sure it can authorize withdrawals (for example a multisig or smart wallet).",
   "form.tokenRequired": "Enter a token contract id.",
   "form.tokenInvalid": "Enter a valid token contract id (C… with a valid checksum).",
   "form.durationInvalid": "Enter a duration in days greater than zero (up to 36,500 days).",

@@ -6,6 +6,19 @@ be mentioned here — by event struct name and field name — before the PR can
 merge. Breaking changes are rejected outright; they need a governed
 v1 → v2 migration (see [README.md](README.md#versioning-v1--v2-coexistence)).
 
+## v1.0.8 — 2026-11-26 (stream split/merge lineage, #197)
+
+Two additive events; no existing event changed shape (entry count 63 → 65).
+
+- `SplitStream`: added event (topic `parent_id:u64`, data `first_child_id`, `second_child_id`, `split_at`, `first_remaining`, `second_remaining`, `first_end_time`, `second_end_time`, `claimable`, `withdrawn`) — emitted by `split_stream` when the recipient splits an active stream into two children. No tokens move: the parent becomes `Cancelled` with no payout, its history (`claimable`, `withdrawn`) moves to `first_child_id`, and its unaccrued remainder is divided between the children from `split_at` on.
+- `MergeStream`: added event (topic `child_id:u64`, data `first_parent_id`, `second_parent_id`, `merged_at`, `remaining`, `end_time`, `claimable`, `withdrawn`) — emitted by `merge_streams` when sender and recipient merge two compatible active streams. No tokens move: both parents become `Cancelled` with no payout and their histories and summed remainders stream on `child_id` until `end_time`, the earlier parent end.
+
+## v1.0.7 — 2026-11-26 (dust economics and the stale-stream sweeper, #78)
+
+One additive event; no existing event changed shape (entry count 62 → 63).
+
+- `StreamSwept`: added event (topic `stream_id:u64`, data `refund_target`, `depleted`, `entries_removed`) — emitted by the permissionless `sweep_stream` when it deletes a finished (`Depleted` or `Cancelled`), unencumbered stream's storage at least `SWEEP_GRACE_SECONDS` after its `end_time`. No tokens move: `refund_target` names the party the stream's remainder already went to, `depleted` is false for a cancelled stream, and `entries_removed` counts the per-stream persistent entries deleted. See [docs/DUST_ECONOMICS.md](../../docs/DUST_ECONOMICS.md).
+
 ## v1.0.6 — 2026-11-24 (`main` repair #697: session-key, commit-reveal and insurance surfaces withdrawn)
 
 Eight registry entries disappear (entry count 70 → 62): `AgentAuthorized` and

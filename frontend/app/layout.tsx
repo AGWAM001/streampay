@@ -10,6 +10,7 @@ import { LocaleProvider } from "@/lib/i18n/provider";
 import { resolveRequestLocale } from "@/lib/i18n/server";
 import { localeDir } from "@/lib/i18n/locales";
 import { formatMessage } from "@/lib/i18n/format";
+import RumProvider from "@/components/RumProvider";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await resolveRequestLocale();
@@ -50,6 +51,7 @@ export default async function RootLayout({
             </ToastProvider>
           </WalletProvider>
           </ThemeProvider>
+          <RumProvider />
         </LocaleProvider>
       </body>
     </html>

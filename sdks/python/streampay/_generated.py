@@ -54,6 +54,282 @@ ROTATION_WINDOW_MULTIPLIER: Final = 4
 STREAM_RECORD_VERSION_V1: Final = 1
 STREAM_RECORD_VERSION_V2: Final = 2
 TARGET_SCHEMA_VERSION: Final = 2
+SPEC_FINGERPRINT = "1f8420327b4bef8b80c437b29fee4d4bf325cecd55589f4daae39915c019851f"
+CONTRACT_VERSION = "0.3.0"
+MAX_DURATION_SECONDS = 3155760000
+MAX_PAGE_SIZE = 50
+
+METHODS = {
+    "createStream": "create_stream",
+    "withdraw": "withdraw",
+    "withdrawMax": "withdraw_max",
+    "cancelStream": "cancel_stream",
+    "topUp": "top_up",
+    "getStream": "get_stream",
+    "available": "available",
+    "recipientStreams": "recipient_streams",
+    "senderStreams": "sender_streams",
+}
+
+
+class StreamStatus(IntEnum):
+    ACTIVE = 0
+    CANCELLED = 1
+    DEPLETED = 2
+
+    @classmethod
+    def from_scval(cls, value: Any) -> "StreamStatus":
+        """Unit enums use the contract's ``Vec[Symbol]`` wire encoding."""
+        if value.kind != "vec" or not value.value:
+            raise XdrError(f"expected a one-element symbol vector, got {value.kind}")
+        symbol = value.value[0]
+        if symbol.kind != "symbol":
+            raise XdrError("StreamStatus vector must contain a symbol")
+        try:
+            return cls[str(symbol.value).upper()]
+        except KeyError as error:
+            raise XdrError(f"unknown StreamStatus variant {symbol.value}") from error
+
+
+@dataclass(frozen=True)
+class Stream:
+    id: int
+    sender: str
+    recipient: str
+    token: str
+    deposit: int
+    withdrawn: int
+    start_time: int
+    end_time: int
+    cancelable: bool
+    status: StreamStatus
+    use_oracle: bool | None = None
+
+    @classmethod
+    def from_native(cls, value: Any) -> "Stream":
+        fields = scval_to_struct(value)
+        return cls(
+            id=scval_to_u64(fields["id"]),
+            sender=scval_to_address(fields["sender"]),
+            recipient=scval_to_address(fields["recipient"]),
+            token=scval_to_address(fields["token"]),
+            deposit=scval_to_i128(fields["deposit"]),
+            withdrawn=scval_to_i128(fields["withdrawn"]),
+            start_time=scval_to_u64(fields["start_time"]),
+            end_time=scval_to_u64(fields["end_time"]),
+            cancelable=scval_to_bool(fields["cancelable"]),
+            status=StreamStatus.from_scval(fields["status"]),
+            use_oracle=(
+                None
+                if "use_oracle" not in fields or fields["use_oracle"].kind == "void"
+                else scval_to_bool(fields["use_oracle"])
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class CreateStreamArgs:
+    sender: str
+    recipient: str
+    token: str
+    deposit_amount: int
+    start_time: int
+    end_time: int
+    cancelable: bool
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            address_to_scval(self.sender),
+            address_to_scval(self.recipient),
+            address_to_scval(self.token),
+            i128_to_scval(self.deposit_amount),
+            u64_to_scval(self.start_time),
+            u64_to_scval(self.end_time),
+            bool_to_scval(self.cancelable),
+        ]
+
+
+@dataclass(frozen=True)
+class WithdrawArgs:
+    stream_id: int
+    amount: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            u64_to_scval(self.stream_id),
+            i128_to_scval(self.amount),
+        ]
+
+
+@dataclass(frozen=True)
+class WithdrawMaxArgs:
+    stream_id: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            u64_to_scval(self.stream_id),
+        ]
+
+
+@dataclass(frozen=True)
+class CancelStreamArgs:
+    caller: str
+    stream_id: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            address_to_scval(self.caller),
+            u64_to_scval(self.stream_id),
+        ]
+
+
+@dataclass(frozen=True)
+class TopUpArgs:
+    stream_id: int
+    amount: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            u64_to_scval(self.stream_id),
+            i128_to_scval(self.amount),
+        ]
+
+
+@dataclass(frozen=True)
+class GetStreamArgs:
+    stream_id: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            u64_to_scval(self.stream_id),
+        ]
+
+
+@dataclass(frozen=True)
+class AvailableArgs:
+    stream_id: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            u64_to_scval(self.stream_id),
+        ]
+
+
+@dataclass(frozen=True)
+class RecipientStreamsArgs:
+    recipient: str
+    offset: int
+    limit: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            address_to_scval(self.recipient),
+            u32_to_scval(self.offset),
+            u32_to_scval(self.limit),
+        ]
+
+
+@dataclass(frozen=True)
+class SenderStreamsArgs:
+    sender: str
+    offset: int
+    limit: int
+
+    def to_scvals(self) -> list[Any]:
+        return [
+            address_to_scval(self.sender),
+            u32_to_scval(self.offset),
+            u32_to_scval(self.limit),
+        ]
+
+
+@dataclass(frozen=True)
+class StreamCreatedEvent:
+    contract_id: str
+    stream_id: int
+    sender: str
+    recipient: str
+    token: str
+    deposit: int
+    start_time: int
+    end_time: int
+    cancelable: bool
+
+@dataclass(frozen=True)
+class WithdrawnEvent:
+    contract_id: str
+    stream_id: int
+    recipient: str
+    amount: int
+    withdrawn_total: int
+
+@dataclass(frozen=True)
+class StreamCancelledEvent:
+    contract_id: str
+    stream_id: int
+    cancelled_by: str
+    recipient_amount: int
+    sender_amount: int
+
+@dataclass(frozen=True)
+class StreamToppedUpEvent:
+    contract_id: str
+    stream_id: int
+    sender: str
+    amount: int
+    new_deposit: int
+
+
+StreamPayEvent = StreamCreatedEvent | WithdrawnEvent | StreamCancelledEvent | StreamToppedUpEvent
+
+
+def decode_event(event: ContractEvent) -> StreamPayEvent | None:
+    """Decodes a StreamPay event; ``None`` for foreign events."""
+    if event.name == "stream_created":
+        return StreamCreatedEvent(
+            contract_id=event.contract,
+            stream_id=scval_to_u64(event.topics[0]),
+            **{
+                "sender": scval_to_address(event.data["sender"]),
+                "recipient": scval_to_address(event.data["recipient"]),
+                "token": scval_to_address(event.data["token"]),
+                "deposit": scval_to_i128(event.data["deposit"]),
+                "start_time": scval_to_u64(event.data["start_time"]),
+                "end_time": scval_to_u64(event.data["end_time"]),
+                "cancelable": scval_to_bool(event.data["cancelable"]),
+            },
+        )
+    elif event.name == "withdrawn":
+        return WithdrawnEvent(
+            contract_id=event.contract,
+            stream_id=scval_to_u64(event.topics[0]),
+            **{
+                "recipient": scval_to_address(event.data["recipient"]),
+                "amount": scval_to_i128(event.data["amount"]),
+                "withdrawn_total": scval_to_i128(event.data["withdrawn_total"]),
+            },
+        )
+    elif event.name == "stream_cancelled":
+        return StreamCancelledEvent(
+            contract_id=event.contract,
+            stream_id=scval_to_u64(event.topics[0]),
+            **{
+                "cancelled_by": scval_to_address(event.data["cancelled_by"]),
+                "recipient_amount": scval_to_i128(event.data["recipient_amount"]),
+                "sender_amount": scval_to_i128(event.data["sender_amount"]),
+            },
+        )
+    elif event.name == "stream_topped_up":
+        return StreamToppedUpEvent(
+            contract_id=event.contract,
+            stream_id=scval_to_u64(event.topics[0]),
+            **{
+                "sender": scval_to_address(event.data["sender"]),
+                "amount": scval_to_i128(event.data["amount"]),
+                "new_deposit": scval_to_i128(event.data["new_deposit"]),
+            },
+        )
+    return None
 
 METHODS: Final[dict[str, str]] = {
     'createStream': 'create_stream',
