@@ -62,6 +62,11 @@ pub enum NftError {
     StreamNotFinalized = 10,
     /// Arithmetic overflow in checked computation.
     MathOverflow = 11,
+    /// The stream id passed to `mint_linked` does not match the stream this
+    /// companion is bound to (issue #575 bidirectional link check).
+    StreamIdMismatch = 12,
+    /// `mint` / `mint_linked` was re-entered while a mint was in flight.
+    MintReentrancyBlocked = 13,
 }
 
 /// Data keys stored by StreamNft in instance and persistent storage.
@@ -80,6 +85,12 @@ pub enum NftDataKey {
     Burned,
     /// Spender allowance record: `(spender) -> Allowance` (persistent).
     Allowance(Address),
+    /// Mint in-flight flag (instance): set across the core-contract reads in
+    /// the mint path so a reentrant mint is refused (issue #575).
+    MintInProgress,
+    /// Bidirectional link record written by `mint_linked`: stream id ->
+    /// core streaming-payments contract (persistent, issue #575).
+    LinkedCore(u64),
 }
 
 /// Allowance record for an authorized operator.
@@ -166,6 +177,58 @@ impl StreamNft {
     /// Mint-on-create: mints the 1-unit NFT for this stream to the stream recipient.
     /// Can only be called once, by the authorized admin or initial recipient.
     pub fn mint(env: Env, recipient: Address) -> Result<(), NftError> {
+        Self::acquire_mint_lock(&env)?;
+        let result = Self::mint_internal(env.clone(), recipient);
+        Self::release_mint_lock(&env);
+        result
+    }
+
+    /// Atomic create+mint entrypoint (issue #575): like [`Self::mint`], but
+    /// the caller (the core streaming-payments contract, mid-transaction in
+    /// `create_stream_with_nft`) names the stream it just created, and this
+    /// companion refuses unless that id is exactly the one it was bound to
+    /// at initialization — the NFT -> stream half of the bidirectional link.
+    /// On success it also records `stream_id -> core contract` under
+    /// [`NftDataKey::LinkedCore`], mirroring the core's `stream_id -> NFT`
+    /// record. Any failure returns an error, which aborts the caller's
+    /// transaction: the stream creation rolls back with the mint, so the
+    /// pair is never half-created.
+    pub fn mint_linked(env: Env, recipient: Address, stream_id: u64) -> Result<(), NftError> {
+        let bound = Self::get_stream_id(&env)?;
+        if bound != stream_id {
+            return Err(NftError::StreamIdMismatch);
+        }
+        Self::acquire_mint_lock(&env)?;
+        let result = Self::mint_internal(env.clone(), recipient);
+        Self::release_mint_lock(&env);
+        result?;
+
+        let core: Address = env
+            .storage()
+            .instance()
+            .get(&NftDataKey::CoreContract)
+            .ok_or(NftError::NotInitialized)?;
+        let key = NftDataKey::LinkedCore(stream_id);
+        env.storage().persistent().set(&key, &core);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+        Ok(())
+    }
+
+    /// Returns the core contract recorded for `stream_id` by a successful
+    /// `mint_linked`, or `None` when this companion was minted through the
+    /// legacy standalone `mint` path (or not minted at all).
+    pub fn linked_core(env: Env, stream_id: u64) -> Option<Address> {
+        env.storage()
+            .persistent()
+            .get(&NftDataKey::LinkedCore(stream_id))
+    }
+
+    /// Shared mint body for `mint` and `mint_linked`; the callers hold the
+    /// mint lock across this call, whose external reads of the core contract
+    /// are the reentrancy window the lock exists for.
+    fn mint_internal(env: Env, recipient: Address) -> Result<(), NftError> {
         Self::require_initialized(&env)?;
         if Self::is_burned(&env) {
             return Err(NftError::TokenBurned);
@@ -191,7 +254,8 @@ impl StreamNft {
             .ok_or(NftError::NotInitialized)?;
         let core_client = CoreStreamPayClient::new(&env, &core);
         let stream = core_client
-            .get_stream(&stream_id)
+            .try_get_stream(&stream_id)
+            .map_err(|_| NftError::StreamNotActive)?
             .map_err(|_| NftError::StreamNotActive)?;
 
         if stream.status != StreamStatus::Active {
@@ -205,9 +269,11 @@ impl StreamNft {
         env.storage()
             .persistent()
             .set(&NftDataKey::Owner, &recipient);
-        env.storage()
-            .persistent()
-            .extend_ttl(&NftDataKey::Owner, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+        env.storage().persistent().extend_ttl(
+            &NftDataKey::Owner,
+            TTL_THRESHOLD_LEDGERS,
+            TTL_EXTEND_LEDGERS,
+        );
 
         NftMinted {
             stream_id,
@@ -410,7 +476,8 @@ impl StreamNft {
 
         let core_client = CoreStreamPayClient::new(&env, &core);
         let stream = core_client
-            .get_stream(&stream_id)
+            .try_get_stream(&stream_id)
+            .map_err(|_| NftError::StreamNotActive)?
             .map_err(|_| NftError::StreamNotActive)?;
 
         if stream.status == StreamStatus::Active {
@@ -427,11 +494,7 @@ impl StreamNft {
     /// Withdraws `amount` from the core stream contract.
     /// Callable by the current NFT holder (with their auth) or by an authorized
     /// operator who has an allowance on the NFT.
-    pub fn withdraw(
-        env: Env,
-        caller: Address,
-        amount: i128,
-    ) -> Result<(), NftError> {
+    pub fn withdraw(env: Env, caller: Address, amount: i128) -> Result<(), NftError> {
         caller.require_auth();
         Self::require_not_burned(&env)?;
         let owner = Self::require_owner(&env)?;
@@ -453,12 +516,14 @@ impl StreamNft {
 
         let core_client = CoreStreamPayClient::new(&env, &core);
         core_client
-            .withdraw(&stream_id, &amount)
+            .try_withdraw(&stream_id, &amount)
+            .map_err(|_| NftError::StreamNotActive)?
             .map_err(|_| NftError::StreamNotActive)?;
 
         // Auto-burn if stream depleted
         let stream = core_client
-            .get_stream(&stream_id)
+            .try_get_stream(&stream_id)
+            .map_err(|_| NftError::StreamNotActive)?
             .map_err(|_| NftError::StreamNotActive)?;
         if stream.status == StreamStatus::Depleted {
             let _ = Self::burn_internal(&env, owner);
@@ -490,11 +555,13 @@ impl StreamNft {
 
         let core_client = CoreStreamPayClient::new(&env, &core);
         let withdrawn = core_client
-            .withdraw_max(&stream_id)
+            .try_withdraw_max(&stream_id)
+            .map_err(|_| NftError::StreamNotActive)?
             .map_err(|_| NftError::StreamNotActive)?;
 
         let stream = core_client
-            .get_stream(&stream_id)
+            .try_get_stream(&stream_id)
+            .map_err(|_| NftError::StreamNotActive)?
             .map_err(|_| NftError::StreamNotActive)?;
         if stream.status == StreamStatus::Depleted {
             let _ = Self::burn_internal(&env, owner);
@@ -542,9 +609,11 @@ impl StreamNft {
 
         // Update owner
         env.storage().persistent().set(&NftDataKey::Owner, &to);
-        env.storage()
-            .persistent()
-            .extend_ttl(&NftDataKey::Owner, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+        env.storage().persistent().extend_ttl(
+            &NftDataKey::Owner,
+            TTL_THRESHOLD_LEDGERS,
+            TTL_EXTEND_LEDGERS,
+        );
 
         NftTransferred {
             stream_id,
@@ -564,6 +633,27 @@ impl StreamNft {
 
         NftBurned { stream_id, owner }.publish(env);
         Ok(())
+    }
+
+    fn acquire_mint_lock(env: &Env) -> Result<(), NftError> {
+        if env
+            .storage()
+            .instance()
+            .get(&NftDataKey::MintInProgress)
+            .unwrap_or(false)
+        {
+            return Err(NftError::MintReentrancyBlocked);
+        }
+        env.storage()
+            .instance()
+            .set(&NftDataKey::MintInProgress, &true);
+        Ok(())
+    }
+
+    fn release_mint_lock(env: &Env) {
+        env.storage()
+            .instance()
+            .set(&NftDataKey::MintInProgress, &false);
     }
 
     fn require_initialized(env: &Env) -> Result<(), NftError> {
