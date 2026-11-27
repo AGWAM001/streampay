@@ -52,6 +52,10 @@
       "value": 50,
       "type": "u32"
     },
+    "MAX_MIGRATION_PAGE_RECORDS": {
+      "value": 32,
+      "type": "u32"
+    },
     "MAX_OCCURRENCES": {
       "value": 1000,
       "type": "u32"
@@ -1864,6 +1868,141 @@
       "mutating": false
     },
     {
+      "name": "migration_begin_export",
+      "doc": "Begins an emergency migration export on this instance: opens\nthe export session, writes page zero (the globals record) and\nfreezes the contract, so the snapshot is taken against still\nstate. Returns the export nonce.",
+      "args": [
+        {
+          "name": "caller",
+          "type": "address"
+        }
+      ],
+      "returns": "u64",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "migration_export_page",
+      "doc": "Appends one page of records to the open export. Permissionless:\nevery record is verified against this instance's own storage\nbefore it is hashed in, so the caller transports state but\ncannot author it. Returns the page index.",
+      "args": [
+        {
+          "name": "records",
+          "type": {
+            "vec": "MigrationRecord"
+          }
+        }
+      ],
+      "returns": "u32",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "migration_finalize_export",
+      "doc": "Finalizes the export and publishes its Merkle root on-chain.",
+      "args": [],
+      "returns": "bytes32",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "migration_export",
+      "doc": "The export session published by this instance, if any. This is\nthe view a target instance reads cross-contract when it\nbegins an import.",
+      "args": [],
+      "returns": {
+        "option": "ExportSession"
+      },
+      "error": null,
+      "mutating": true
+    },
+    {
+      "name": "migration_page_root",
+      "doc": "The Merkle root of one exported page, if that page exists.",
+      "args": [
+        {
+          "name": "page",
+          "type": "u32"
+        }
+      ],
+      "returns": {
+        "option": "bytes32"
+      },
+      "error": null,
+      "mutating": true
+    },
+    {
+      "name": "migration_globals",
+      "doc": "The globals record (governor, fee rate, schema version, id\ncounters) as it stands now — the record an export carries as\npage zero, exposed so an importing operator can assemble page\nzero's import call.",
+      "args": [],
+      "returns": "MigrationGlobals",
+      "error": null,
+      "mutating": true
+    },
+    {
+      "name": "migration_begin_import",
+      "doc": "Begins a migration import into this (fresh) instance from\n`source`: reads the source's published export cross-contract,\ncommits this instance to its root and consumes that root\nimmediately, so it can never be replayed here. Returns the\ncommitted root.",
+      "args": [
+        {
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "name": "source",
+          "type": "address"
+        }
+      ],
+      "returns": "bytes32",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "migration_import_page",
+      "doc": "Imports one page of a begun migration: the page root must bind\ninto the committed root and match the source's published page\nroot, and every record must prove against that page root,\nbefore any record is written.",
+      "args": [
+        {
+          "name": "page",
+          "type": "u32"
+        },
+        {
+          "name": "page_siblings",
+          "type": {
+            "vec": "bytes32"
+          }
+        },
+        {
+          "name": "records",
+          "type": {
+            "vec": "MigrationRecord"
+          }
+        },
+        {
+          "name": "proofs",
+          "type": {
+            "vec": "MigrationProof"
+          }
+        }
+      ],
+      "returns": "void",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "migration_finalize_import",
+      "doc": "Finalizes the import: asserts page, record and value\nconservation against the exported snapshot and closes the\nmigration. The instance stays frozen until governance\nunfreezes it.",
+      "args": [],
+      "returns": "void",
+      "error": "StreamError",
+      "mutating": true
+    },
+    {
+      "name": "migration_import",
+      "doc": "The import session on this instance, if any, with its progress\nagainst the committed export.",
+      "args": [],
+      "returns": {
+        "option": "ImportSession"
+      },
+      "error": null,
+      "mutating": true
+    },
+    {
       "name": "set_receivables_config",
       "doc": "",
       "args": [
@@ -2445,6 +2584,159 @@
           "name": "children",
           "type": {
             "vec": "u64"
+          },
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "MigrationGlobals",
+      "doc": "The contract-wide values that travel as page zero's single record:\neverything about the instance that is not keyed by an id or address.",
+      "fields": [
+        {
+          "name": "governor",
+          "type": "address",
+          "doc": ""
+        },
+        {
+          "name": "fee_bps",
+          "type": "u32",
+          "doc": ""
+        },
+        {
+          "name": "schema_version",
+          "type": "u32",
+          "doc": ""
+        },
+        {
+          "name": "next_stream_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "next_intent_id",
+          "type": "u64",
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "ExportSession",
+      "doc": "The export session published by a source instance. This struct is\nthe cross-contract interface: a target instance reads it to commit\nto the root it will import against.",
+      "fields": [
+        {
+          "name": "nonce",
+          "type": "u64",
+          "doc": "Monotonic export counter on the source; replayed roots pair with it."
+        },
+        {
+          "name": "phase",
+          "type": "ExportPhase",
+          "doc": ""
+        },
+        {
+          "name": "root",
+          "type": {
+            "option": "bytes32"
+          },
+          "doc": "The published Merkle root; `None` until finalization."
+        },
+        {
+          "name": "pages",
+          "type": "u32",
+          "doc": ""
+        },
+        {
+          "name": "records",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "total_value",
+          "type": "i128",
+          "doc": "Total outstanding escrow value across all exported records."
+        },
+        {
+          "name": "started_by",
+          "type": "address",
+          "doc": ""
+        },
+        {
+          "name": "started_at",
+          "type": "u64",
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "ImportSession",
+      "doc": "The import session on a target instance: the commitment it made to\none source root, and its progress against that commitment.",
+      "fields": [
+        {
+          "name": "source",
+          "type": "address",
+          "doc": ""
+        },
+        {
+          "name": "nonce",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "root",
+          "type": "bytes32",
+          "doc": ""
+        },
+        {
+          "name": "pages",
+          "type": "u32",
+          "doc": ""
+        },
+        {
+          "name": "records",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "total_value",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "pages_done",
+          "type": "u32",
+          "doc": ""
+        },
+        {
+          "name": "records_done",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "value_done",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "phase",
+          "type": "ImportPhase",
+          "doc": ""
+        },
+        {
+          "name": "started_by",
+          "type": "address",
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "MigrationProof",
+      "doc": "A Merkle inclusion proof for one record within its page: the sibling\nhashes from the leaf level up to (but excluding) the page root. The\nleaf index is the record's position within the page.",
+      "fields": [
+        {
+          "name": "siblings",
+          "type": {
+            "vec": "bytes32"
           },
           "doc": ""
         }
@@ -3337,6 +3629,38 @@
       ]
     },
     {
+      "name": "Treasury",
+      "doc": "Per-token fee accounting.\n\nKept in persistent storage under [`DataKey::Treasury`], written only by\nfee-affecting entrypoints, so it changes strictly in step with the\n`FeeCharged` / `FeeWithdrawn` event streams.",
+      "fields": [
+        {
+          "name": "charged_total",
+          "type": "i128",
+          "doc": "Total fees ever charged for this token (Σ `FeeCharged` events)."
+        },
+        {
+          "name": "withdrawn_total",
+          "type": "i128",
+          "doc": "Total fees ever withdrawn for this token (Σ `FeeWithdrawn` events)."
+        }
+      ]
+    },
+    {
+      "name": "StreamFeeRecord",
+      "doc": "Stored per-stream fee: amount plus the token it was charged in. The\ntoken rides along so the shared id-space verification scan can filter one\ntoken's fees without a second lookup per id.",
+      "fields": [
+        {
+          "name": "token",
+          "type": "address",
+          "doc": ""
+        },
+        {
+          "name": "amount",
+          "type": "i128",
+          "doc": ""
+        }
+      ]
+    },
+    {
       "name": "TreasuryStatus",
       "doc": "One call snapshot of the treasury state for a token: governance, current\nfee configuration, and the fee ledger totals that verifiers reconcile\nagainst events and per-stream fees.",
       "fields": [
@@ -3458,6 +3782,36 @@
           "name": "Revert",
           "value": 1,
           "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "ExportPhase",
+      "doc": "Export lifecycle phase.",
+      "encoding": "symbol",
+      "cases": [
+        {
+          "name": "Exporting",
+          "doc": "Pages are still being appended."
+        },
+        {
+          "name": "Exported",
+          "doc": "The root is computed and published; the export is immutable."
+        }
+      ]
+    },
+    {
+      "name": "ImportPhase",
+      "doc": "Import lifecycle phase.",
+      "encoding": "symbol",
+      "cases": [
+        {
+          "name": "Importing",
+          "doc": "Pages are still being imported."
+        },
+        {
+          "name": "Imported",
+          "doc": "Conservation asserted; the migration is complete and irreversible."
         }
       ]
     },
@@ -3632,6 +3986,86 @@
           "doc": "Replace the veto window.",
           "types": [
             "u64"
+          ]
+        },
+        {
+          "name": "BeginMigrationExport",
+          "doc": "Begin an emergency state-migration export (issue #569): freezes\nthe instance and opens the export session. The break-glass move\nitself is exactly the kind of authority-expanding act the\ntimelock exists to govern.",
+          "types": []
+        },
+        {
+          "name": "BeginMigrationImport",
+          "doc": "Begin an emergency state-migration import (issue #569) from the\ngiven source instance into this (fresh) one.",
+          "types": [
+            "address"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MigrationRecord",
+      "doc": "One state record in a migration snapshot. The variants mirror the\n`tools/streampay-state` snapshot model, extended with the policy and\nsponsor state that tool reads over RPC.",
+      "cases": [
+        {
+          "name": "Globals",
+          "doc": "Page zero's record; written by `migration_begin_export` itself.",
+          "types": [
+            "MigrationGlobals"
+          ]
+        },
+        {
+          "name": "Stream",
+          "doc": "",
+          "types": [
+            "Stream"
+          ]
+        },
+        {
+          "name": "Intent",
+          "doc": "",
+          "types": [
+            "ScheduledIntent"
+          ]
+        },
+        {
+          "name": "Dispute",
+          "doc": "",
+          "types": [
+            "Dispute"
+          ]
+        },
+        {
+          "name": "Fee",
+          "doc": "Per-stream fee record: stream id and its stored fee record.",
+          "types": [
+            "u64",
+            "StreamFeeRecord"
+          ]
+        },
+        {
+          "name": "Treasury",
+          "doc": "Per-token treasury accounting.",
+          "types": [
+            "address",
+            "Treasury"
+          ]
+        },
+        {
+          "name": "Sponsor",
+          "doc": "A sponsor's budget configuration, keyed by the sponsor address.",
+          "types": [
+            "address",
+            "SponsorConfig"
+          ]
+        },
+        {
+          "name": "Policy",
+          "doc": "A stream policy: `None` is the global default, `Some(token)` the\nper-asset policy for that token.",
+          "types": [
+            {
+              "option": "address"
+            },
+            "StreamPolicy"
           ]
         }
       ]
@@ -5447,6 +5881,45 @@
       ]
     },
     {
+      "name": "MigrationExported",
+      "topic": "migration_exported",
+      "doc": "Emitted when an emergency state-migration export is finalized on the\nsource instance (issue #569). `root` is the Merkle root over every\nexported record, published on-chain by this event and by the\n`migration_export` view; the source instance is frozen from the\nmoment the export began.",
+      "topicFields": [
+        {
+          "name": "source",
+          "type": "address",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "nonce",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "root",
+          "type": "bytes32",
+          "doc": ""
+        },
+        {
+          "name": "records",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "total_value",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "pages",
+          "type": "u32",
+          "doc": ""
+        }
+      ]
+    },
+    {
       "name": "SplitStream",
       "topic": "split_stream",
       "doc": "Emitted when `split_stream` splits a stream into two children. The parent\nbecomes `Cancelled` with no payout; its history (accrued amount and\ncumulative `withdrawn`) moves to `first_child_id`, and its unaccrued\nremainder is divided between the two children from `split_at` on.",
@@ -5501,6 +5974,69 @@
         {
           "name": "withdrawn",
           "type": "i128",
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "MigrationImported",
+      "topic": "migration_imported",
+      "doc": "Emitted when a migration import completes on the target instance:\nevery page verified against the source's published root and written,\nwith the imported totals matching the exported totals (conservation).",
+      "topicFields": [
+        {
+          "name": "source",
+          "type": "address",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "nonce",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "root",
+          "type": "bytes32",
+          "doc": ""
+        },
+        {
+          "name": "records",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "total_value",
+          "type": "i128",
+          "doc": ""
+        },
+        {
+          "name": "pages",
+          "type": "u32",
+          "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "MigrationFinalized",
+      "topic": "migration_finalized",
+      "doc": "Emitted when a migration is finalized on the target instance. The\nroot is consumed at this point: it can never be imported into this\ninstance again. The target stays frozen until governance unfreezes it.",
+      "topicFields": [
+        {
+          "name": "source",
+          "type": "address",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "nonce",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "root",
+          "type": "bytes32",
           "doc": ""
         }
       ]
