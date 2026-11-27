@@ -167,42 +167,39 @@ fn differential_matrix_for_piecewise_rate_schedules() {
         exact_rate: Option<Vec<(u64, u64, i128)>>,
     }
 
-    let mut test_cases: Vec<TestSchedule> = Vec::new();
-
-    // Degenerate case 1: Single segment
-    test_cases.push(TestSchedule {
-        name: "degenerate: single segment",
-        segments: vec![(1000, 2000, 500_000, 1000)],
-        exact_rate: Some(vec![(1000, 2000, 500)]),
-    });
-
-    // Degenerate case 2: Zero-length segment (start == end)
-    test_cases.push(TestSchedule {
-        name: "degenerate: zero-length segment",
-        segments: vec![
-            (1000, 1500, 250_000, 500),
-            (1500, 1500, 0, 1),
-            (1500, 2000, 250_000, 500),
-        ],
-        exact_rate: None,
-    });
-
-    // Degenerate case 3: Adjacent equal rates
-    test_cases.push(TestSchedule {
-        name: "degenerate: adjacent equal rates",
-        segments: vec![(1000, 1500, 250_000, 500), (1500, 2000, 250_000, 500)],
-        exact_rate: Some(vec![(1000, 1500, 500), (1500, 2000, 500)]),
-    });
-
-    // Degenerate case 4: Rate decrease (models accept_rate_decrease.txt: 5000 down to 500)
-    test_cases.push(TestSchedule {
-        name: "degenerate: steep rate decrease (accept_rate_decrease)",
-        segments: vec![
-            (1000, 2000, 5_000_000, 1000), // rate 5000
-            (2000, 4000, 1_000_000, 2000), // rate 500
-        ],
-        exact_rate: Some(vec![(1000, 2000, 5000), (2000, 4000, 500)]),
-    });
+    let mut test_cases: Vec<TestSchedule> = vec![
+        // Degenerate case 1: Single segment
+        TestSchedule {
+            name: "degenerate: single segment",
+            segments: vec![(1000, 2000, 500_000, 1000)],
+            exact_rate: Some(vec![(1000, 2000, 500)]),
+        },
+        // Degenerate case 2: Zero-length segment (start == end)
+        TestSchedule {
+            name: "degenerate: zero-length segment",
+            segments: vec![
+                (1000, 1500, 250_000, 500),
+                (1500, 1500, 0, 1),
+                (1500, 2000, 250_000, 500),
+            ],
+            exact_rate: None,
+        },
+        // Degenerate case 3: Adjacent equal rates
+        TestSchedule {
+            name: "degenerate: adjacent equal rates",
+            segments: vec![(1000, 1500, 250_000, 500), (1500, 2000, 250_000, 500)],
+            exact_rate: Some(vec![(1000, 1500, 500), (1500, 2000, 500)]),
+        },
+        // Degenerate case 4: Rate decrease (models accept_rate_decrease.txt: 5000 down to 500)
+        TestSchedule {
+            name: "degenerate: steep rate decrease (accept_rate_decrease)",
+            segments: vec![
+                (1000, 2000, 5_000_000, 1000), // rate 5000
+                (2000, 4000, 1_000_000, 2000), // rate 500
+            ],
+            exact_rate: Some(vec![(1000, 2000, 5000), (2000, 4000, 500)]),
+        },
+    ];
 
     // Generate 64 seeded random schedules varying count, boundary placement, and rates
     for _ in 0..64 {
@@ -218,7 +215,7 @@ fn differential_matrix_for_piecewise_rate_schedules() {
             let end = start + length;
             // Vary rates: increase, decrease, or equal
             let rate = (rng.next_range(10, 2000)) as i128;
-            let exact = (rng.next_u64() % 3) != 0; // 66% exact
+            let exact = !rng.next_u64().is_multiple_of(3); // 66% exact
             let (alloc, basis) = if exact {
                 exact_rates.push((start, end, rate));
                 (rate * length as i128, length)
@@ -230,7 +227,7 @@ fn differential_matrix_for_piecewise_rate_schedules() {
             };
 
             segs.push((start, end, alloc, basis));
-            let gap = if (rng.next_u64() % 4) == 0 {
+            let gap = if rng.next_u64().is_multiple_of(4) {
                 rng.next_range(1, 50)
             } else {
                 0
