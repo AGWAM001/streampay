@@ -1,0 +1,54 @@
+{
+  "$defs": {},
+  "$id": "https://streampay.dev/schemas/events/v1/events/reputation_updated.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Emitted when an address's reputation record changes after a resolved dispute (issue #574). Completions emit no event: they are derived at read time from the settlement state itself (see reputation.rs). Carries the subject's new raw (pre-decay) score and completion count so indexers can track the score without re-reading storage.",
+  "properties": {
+    "completed_streams": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u32"
+    },
+    "score": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u32"
+    },
+    "stream_id": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    }
+  },
+  "required": [
+    "stream_id",
+    "score",
+    "completed_streams"
+  ],
+  "title": "ReputationUpdated",
+  "type": "object",
+  "x-streampay": {
+    "event_key": "reputation_updated",
+    "fingerprint": "sha256:e55d499b26e37e7b62ea675a51df0106b6d74b5b5d2232943c41cda5f6707a33",
+    "registry_version": 1,
+    "topicSchema": {
+      "items": [
+        {
+          "description": "Stellar account or contract address (StrKey).",
+          "type": "string",
+          "x-soroban-type": "Address"
+        }
+      ],
+      "type": "array"
+    },
+    "topics": [
+      {
+        "name": "subject",
+        "type": "Address"
+      }
+    ]
+  }
+}

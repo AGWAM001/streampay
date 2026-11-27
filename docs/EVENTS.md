@@ -44,6 +44,7 @@ Every event the contract emits, with its on-chain topic layout and decoded data 
 | `policy_initialized` | `PolicyInitialized` | — | `admin: Address` | `sha256:332dec01d9e…` |
 | `rate_change_accepted` | `RateChangeAccepted` | `stream_id: u64` | `accepted_by: Address`, `new_amount_per_second: i128`, `effective_from: u64`, `owed_at_change: i128`, `reserved_at_new_rate: i128`, `adjustment: i128`, `deposit: i128` | `sha256:66b7fcbf7e9…` |
 | `rate_change_proposed` | `RateChangeProposed` | `stream_id: u64` | `proposed_by: Address`, `counterparty: Address`, `amount_per_second: i128`, `expires_at: u64` | `sha256:9e2dec2cd99…` |
+| `reputation_updated` | `ReputationUpdated` | `subject: Address` | `stream_id: u64`, `score: u32`, `completed_streams: u32` | `sha256:e55d499b26e…` |
 | `scheduled_intent_cancelled` | `ScheduledIntentCancelled` | `intent_id: u64` | `sender: Address`, `refund: i128` | `sha256:fe727619a69…` |
 | `scheduled_intent_expired` | `ScheduledIntentExpired` | `intent_id: u64` | `sender: Address`, `refund: i128` | `sha256:708a995061a…` |
 | `scheduled_stream_executed` | `ScheduledStreamExecuted` | `intent_id: u64` | `keeper: Address`, `stream_id: u64`, `occurrence_index: u32`, `occurrences_remaining: u32`, `fee_paid: i128` | `sha256:318937479fd…` |
