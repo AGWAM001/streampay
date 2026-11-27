@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "threshold": 2,
+  "windowMs": 60000,
+  "escalationAfter": 2,
+  "regions": [
+    { "name": "us-east", "runner": "canary-us-east" },
+    { "name": "eu-west", "runner": "canary-eu-west" },
+    { "name": "ap-southeast", "runner": "canary-ap-southeast" }
+  ]
+}

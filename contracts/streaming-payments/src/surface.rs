@@ -372,6 +372,49 @@ pub enum Branch {
     /// `create_stream_with_nft`: re-entered while an atomic mint linkage
     /// was already in flight.
     CreateWithNftReentrancyBlocked,
+    // ------------------------------------------- dust economics (#78)
+    /// creation: the deposit is below `MIN_STREAM_DEPOSIT`.
+    CreateDepositBelowMinimum,
+    /// `schedule_stream`: the per-occurrence deposit is below
+    /// `MIN_STREAM_DEPOSIT`, so every stream it would create is dust.
+    ScheduleDepositBelowMinimum,
+    /// `withdraw`: the amount is below `MIN_CLAIM_AMOUNT` while the stream is
+    /// still accruing.
+    WithdrawBelowMinimum,
+    /// `withdraw_max`: the whole accrued balance is below `MIN_CLAIM_AMOUNT`
+    /// while the stream is still accruing.
+    WithdrawMaxBelowMinimum,
+    /// `sweep_stream`: the stream is still `Active`.
+    SweepStreamActive,
+    /// `sweep_stream`: the ledger clock is before `end_time + SWEEP_GRACE_SECONDS`.
+    SweepGraceNotElapsed,
+    /// `sweep_stream`: the stream is disputed, has a pending proposal, an
+    /// outstanding advance, an unmet release condition, a registered hook or a
+    /// held reentrancy lock.
+    SweepStreamEncumbered,
+    // ------------------------------------------- stream lineage (#197)
+    /// `split_stream` / `merge_streams`: an input is paused, disputed,
+    /// hook-bound, release-gated, carries an outstanding advance, or has a
+    /// pending rate, ownership or sender-transfer proposal.
+    LineageStreamEncumbered,
+    /// `split_stream`: `first_remaining` is not strictly between zero and the
+    /// unaccrued remainder.
+    SplitAllocationOutOfRange,
+    /// `split_stream`: a child would end before the parent.
+    SplitEndBeforeParent,
+    /// `split_stream`: a child window would exceed `MAX_DURATION_SECONDS`.
+    SplitDurationTooLong,
+    /// `split_stream` / `merge_streams`: the (earlier) window has elapsed, so
+    /// nothing is left to re-allocate.
+    LineageWindowElapsed,
+    /// `merge_streams`: both ids name the same stream.
+    MergeSameStream,
+    /// `merge_streams`: the streams differ in sender, recipient, token, status,
+    /// cancelability, clock or refund target.
+    MergeIncompatible,
+    /// `lineage::check_conservation`: the outputs do not carry exactly the
+    /// inputs' withdrawn, claimable and refundable value.
+    LineageConservationViolated,
 }
 
 impl Branch {
@@ -379,6 +422,7 @@ impl Branch {
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
     pub const ALL: [Branch; 162] = [
+    pub const ALL: [Branch; 174] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -541,6 +585,21 @@ impl Branch {
         Branch::CreateWithNftMintFailed,
         Branch::CreateWithNftLinkMismatch,
         Branch::CreateWithNftReentrancyBlocked,
+        Branch::CreateDepositBelowMinimum,
+        Branch::ScheduleDepositBelowMinimum,
+        Branch::WithdrawBelowMinimum,
+        Branch::WithdrawMaxBelowMinimum,
+        Branch::SweepStreamActive,
+        Branch::SweepGraceNotElapsed,
+        Branch::SweepStreamEncumbered,
+        Branch::LineageStreamEncumbered,
+        Branch::SplitAllocationOutOfRange,
+        Branch::SplitEndBeforeParent,
+        Branch::SplitDurationTooLong,
+        Branch::LineageWindowElapsed,
+        Branch::MergeSameStream,
+        Branch::MergeIncompatible,
+        Branch::LineageConservationViolated,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -601,6 +660,9 @@ impl Branch {
                 "sender_history",
                 "pause_stream",
                 "resume_stream",
+                "sweep_stream",
+                "split_stream",
+                "merge_streams",
             ],
             Branch::StreamNotActive => &[
                 "withdraw",
@@ -620,8 +682,16 @@ impl Branch {
                 "set_refund_target",
                 "pause_stream",
                 "resume_stream",
+                "split_stream",
+                "merge_streams",
             ],
-            Branch::CapacityOverflow => &["create_stream", "top_up", "accept_rate_change"],
+            Branch::CapacityOverflow => &[
+                "create_stream",
+                "top_up",
+                "accept_rate_change",
+                "split_stream",
+                "merge_streams",
+            ],
             Branch::RateProductOverflow => &[
                 "streamed_at",
                 "available",
@@ -738,6 +808,7 @@ impl Branch {
                 "set_refund_target",
                 "create_stream_with_refund",
                 "migrate_stream_version",
+                "sweep_stream",
             ],
             Branch::MigrationNotFrozen | Branch::AlreadyMigrated => &["migrate_storage"],
             Branch::ExecuteUpgradeNoPending | Branch::TimelockNotExpired => &["execute_upgrade"],
@@ -889,11 +960,29 @@ impl Branch {
             | Branch::TemplateRateInvalid => &["approve_template"],
             // ------------------------------------------------------ integrator hooks
             Branch::HookAlreadyRegistered | Branch::InvalidHookSelector => &["register_hook"],
+            // ------------------------------------------- dust economics (#78)
+            Branch::CreateDepositBelowMinimum => {
+                &["create_stream", "create_streams", "create_streams_batch"]
+            }
+            Branch::ScheduleDepositBelowMinimum => &["schedule_stream"],
+            Branch::WithdrawBelowMinimum => &["withdraw"],
+            Branch::WithdrawMaxBelowMinimum => &["withdraw_max"],
+            Branch::SweepStreamActive
+            | Branch::SweepGraceNotElapsed
+            | Branch::SweepStreamEncumbered => &["sweep_stream"],
             Branch::HookNotFound => &["unregister_hook"],
             Branch::HookReentrancyBlocked | Branch::HookExecutionFailed => &["dispatch_hook"],
             Branch::CreateWithNftMintFailed
             | Branch::CreateWithNftLinkMismatch
             | Branch::CreateWithNftReentrancyBlocked => &["create_stream_with_nft"],
+            // ------------------------------------------- stream lineage (#197)
+            Branch::LineageStreamEncumbered
+            | Branch::LineageWindowElapsed
+            | Branch::LineageConservationViolated => &["split_stream", "merge_streams"],
+            Branch::SplitAllocationOutOfRange
+            | Branch::SplitEndBeforeParent
+            | Branch::SplitDurationTooLong => &["split_stream"],
+            Branch::MergeSameStream | Branch::MergeIncompatible => &["merge_streams"],
         }
     }
 
@@ -1077,6 +1166,25 @@ impl Branch {
             Branch::CreateWithNftReentrancyBlocked => {
                 StreamError::AtomicMintReentrancyBlocked
             }
+            // ------------------------------------------- dust economics (#78)
+            Branch::CreateDepositBelowMinimum | Branch::ScheduleDepositBelowMinimum => {
+                StreamError::DepositBelowMinimum
+            }
+            Branch::WithdrawBelowMinimum | Branch::WithdrawMaxBelowMinimum => {
+                StreamError::ClaimBelowMinimum
+            }
+            Branch::SweepStreamActive
+            | Branch::SweepGraceNotElapsed
+            | Branch::SweepStreamEncumbered => StreamError::StreamNotSweepable,
+            // ------------------------------------------- stream lineage (#197)
+            Branch::LineageStreamEncumbered => StreamError::StreamEncumbered,
+            Branch::SplitAllocationOutOfRange => StreamError::InvalidSplitAllocation,
+            Branch::SplitEndBeforeParent => StreamError::InvalidLineageEndTime,
+            Branch::SplitDurationTooLong => StreamError::DurationTooLong,
+            Branch::LineageWindowElapsed => StreamError::LineageWindowElapsed,
+            Branch::MergeSameStream => StreamError::MergeSameStream,
+            Branch::MergeIncompatible => StreamError::MergeIncompatibleStreams,
+            Branch::LineageConservationViolated => StreamError::MathOverflow,
         }
     }
 
@@ -1423,6 +1531,46 @@ impl Branch {
             }
             Branch::CreateWithNftReentrancyBlocked => {
                 "atomic create+mint re-entered while a mint linkage was in flight"
+            // ------------------------------------------- dust economics (#78)
+            Branch::CreateDepositBelowMinimum => {
+                "deposit_amount is below MIN_STREAM_DEPOSIT (the dust floor)"
+            }
+            Branch::ScheduleDepositBelowMinimum => {
+                "the per-occurrence deposit_amount is below MIN_STREAM_DEPOSIT (the dust floor)"
+            }
+            Branch::WithdrawBelowMinimum => {
+                "amount is below MIN_CLAIM_AMOUNT while the stream is still accruing"
+            }
+            Branch::WithdrawMaxBelowMinimum => {
+                "the accrued balance is below MIN_CLAIM_AMOUNT while the stream is still accruing"
+            }
+            Branch::SweepStreamActive => "the stream is still Active",
+            Branch::SweepGraceNotElapsed => {
+                "the ledger time is before end_time + SWEEP_GRACE_SECONDS"
+            }
+            Branch::SweepStreamEncumbered => {
+                "the stream is disputed, has a pending proposal, an outstanding advance, an unmet condition, a hook or a held lock"
+            }
+            // ------------------------------------------- stream lineage (#197)
+            Branch::LineageStreamEncumbered => {
+                "an input stream is paused, disputed, hook-bound, release-gated, has an outstanding advance or a pending proposal"
+            }
+            Branch::SplitAllocationOutOfRange => {
+                "first_remaining is not strictly between zero and the unaccrued remainder"
+            }
+            Branch::SplitEndBeforeParent => "a child end_time is before the parent end_time",
+            Branch::SplitDurationTooLong => {
+                "a child window exceeds MAX_DURATION_SECONDS (100 years)"
+            }
+            Branch::LineageWindowElapsed => {
+                "the (earlier) stream window has elapsed; nothing is left to re-allocate"
+            }
+            Branch::MergeSameStream => "both ids name the same stream",
+            Branch::MergeIncompatible => {
+                "the streams differ in sender, recipient, token, status, cancelability, clock or refund target"
+            }
+            Branch::LineageConservationViolated => {
+                "split/merge outputs do not carry exactly the inputs' withdrawn, claimable and refundable value"
             }
         }
     }
@@ -1456,7 +1604,12 @@ impl Branch {
             | Branch::CancelSplitOverflow
             | Branch::RateSegmentSumOverflow
             | Branch::RateHeadroomUnderflow
-            | Branch::WithdrawManyTotalOverflow => Reachability::Defensive,
+            | Branch::WithdrawManyTotalOverflow
+            // `lineage::check_conservation` re-derives, from the planned
+            // records, an identity the construction already guarantees: clipped
+            // segments accrue exactly the input history, and each tail carries
+            // exactly its share of `deposit - accrued`.
+            | Branch::LineageConservationViolated => Reachability::Defensive,
             _ => Reachability::Reachable,
         }
     }

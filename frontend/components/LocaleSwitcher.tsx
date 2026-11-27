@@ -12,7 +12,7 @@ export default function LocaleSwitcher() {
 
   return (
     <span className="locale-switcher" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <label htmlFor="locale-select" style={{ fontSize: 12, color: "var(--muted, #93a1b8)" }}>
+      <label htmlFor="locale-select" style={{ fontSize: 12, color: "var(--muted)" }}>
         {t("chrome.localeLabel")}
       </label>
       <select

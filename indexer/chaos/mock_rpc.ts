@@ -46,6 +46,28 @@ export class MockSorobanRpc {
     if (this.activeFault === 'horizon_rpc_divergence') {
       return { rpcBalance: '500', horizonBalance: '450', divergent: true };
     }
+    if (this.activeFault === 'ledger_gap_skip' && ledgerSeq >= 1005 && ledgerSeq < 1010) {
+      return { ledger: 1010, status: 'finalized', divergent: false, skippedRange: { from: 1005, to: 1009 } };
+    }
     return { ledger: ledgerSeq, status: 'finalized', divergent: false };
+  }
+
+  /**
+   * Generates ledger windows between `from` and `to`. Under `ledger_gap_skip`,
+   * simulates an RPC gap where ledgers [1005..1009] are skipped.
+   */
+  public generateWindows(from: number, to: number, windowSize = 5): Array<{ from: number; to: number }> {
+    const windows: Array<{ from: number; to: number }> = [];
+    let cur = from;
+    while (cur <= to) {
+      if (this.activeFault === 'ledger_gap_skip' && cur >= 1005 && cur < 1010) {
+        cur = 1010;
+        continue;
+      }
+      const wTo = Math.min(to, cur + windowSize - 1);
+      windows.push({ from: cur, to: wTo });
+      cur = wTo + 1;
+    }
+    return windows;
   }
 }

@@ -5,6 +5,7 @@ members = [
     "contracts/streaming-payments",
     "contracts/stream-nft",
     "contracts/passkey-signer",
+    "contracts/multisig",
     "contracts/vault",
     "model",
     "tools/streampay-state",

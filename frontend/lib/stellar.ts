@@ -81,6 +81,7 @@ export interface StreamArgs {
 }
 
 import type { StreamView } from "./pagination.ts";
+import type { RateSegmentSnapshot } from "./accrual.ts";
 export type { StreamView };
 
 export interface AssetMeta {
@@ -1040,6 +1041,28 @@ export async function readAvailable(streamId: string): Promise<bigint> {
     throw new Error(`Stream #${streamId} not found or RPC unavailable`);
   }
   return BigInt(scValToNative(retval) as bigint);
+}
+
+/**
+ * A stream's piecewise rate schedule (the `rate_segments` view). Empty for a
+ * stream that was never renegotiated. `null` means the read failed (or the
+ * deployed contract predates the view), so the caller must not assume the
+ * single-window formula is the whole story — the live counter then falls back
+ * to whatever reproduces the confirmed `available` read.
+ */
+export async function readRateSegments(
+  streamId: string
+): Promise<RateSegmentSnapshot[] | null> {
+  const retval = await simulateRead(CONTRACT_ID, "rate_segments", [u64(streamId)]);
+  if (!retval) return null;
+  const raw = scValToNative(retval) as Array<Record<string, unknown>>;
+  if (!Array.isArray(raw)) return null;
+  return raw.map((segment) => ({
+    startTime: Number(segment.start_time),
+    endTime: Number(segment.end_time),
+    allocation: BigInt(segment.allocation as bigint),
+    basisSeconds: Number(segment.basis_seconds),
+  }));
 }
 
 /**

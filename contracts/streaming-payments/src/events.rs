@@ -1404,6 +1404,40 @@ pub struct StreamNftMinted {
     #[topic]
     pub nft_contract: Address,
     pub recipient: Address,
+    doc = " Emitted when `sweep_stream` removes a finished, settled, unencumbered"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " stream's storage (#78). No tokens move: a swept stream holds none."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamSwept {
+    #[topic]
+    pub stream_id: u64,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The stream's refund target at sweep time: the designated party for its"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " unaccrued remainder. The sweep pays it nothing (the stream holds no tokens,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " and Soroban does not refund prepaid rent when an entry is deleted)."
+    )]
+    pub refund_target: Address,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " True when the stream ended `Depleted`, false when it ended `Cancelled`."
+    )]
+    pub depleted: bool,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Number of per-stream persistent entries deleted."
+    )]
+    pub entries_removed: u32,
 }
 
 #[cfg_attr(
@@ -1440,4 +1474,58 @@ pub struct StreamNftLinkFailed {
     )]
     #[cfg_attr(not(target_family = "wasm"), doc = " NFT-contract code).")]
     pub error_code: u32,
+    doc = " Emitted when `split_stream` splits a stream into two children. The parent"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " becomes `Cancelled` with no payout; its history (accrued amount and"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " cumulative `withdrawn`) moves to `first_child_id`, and its unaccrued"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " remainder is divided between the two children from `split_at` on."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SplitStream {
+    #[topic]
+    pub parent_id: u64,
+    pub first_child_id: u64,
+    pub second_child_id: u64,
+    pub split_at: u64,
+    pub first_remaining: i128,
+    pub second_remaining: i128,
+    pub first_end_time: u64,
+    pub second_end_time: u64,
+    pub claimable: i128,
+    pub withdrawn: i128,
+}
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when `merge_streams` merges two streams into `child_id`. Both"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " parents become `Cancelled` with no payout; their histories and summed"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " remainders stream on the child until `end_time`, the earlier parent end."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MergeStream {
+    #[topic]
+    pub child_id: u64,
+    pub first_parent_id: u64,
+    pub second_parent_id: u64,
+    pub merged_at: u64,
+    pub remaining: i128,
+    pub end_time: u64,
+    pub claimable: i128,
+    pub withdrawn: i128,
 }

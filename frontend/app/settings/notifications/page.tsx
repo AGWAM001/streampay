@@ -267,7 +267,7 @@ export default function NotificationsSettingsPage() {
               <span
                 className="badge-pill"
                 style={{
-                  background: signature ? "rgba(61,220,132,0.15)" : "rgba(245,158,11,0.15)",
+                  background: signature ? "var(--status-success-subtle)" : "var(--status-warning-subtle)",
                   color: signature ? "var(--green)" : "var(--amber)",
                 }}
               >
@@ -433,10 +433,10 @@ export default function NotificationsSettingsPage() {
                       style={{
                         background:
                           sub.status === "active"
-                            ? "rgba(61,220,132,0.15)"
+                            ? "var(--status-success-subtle)"
                             : sub.status === "bounced"
-                            ? "rgba(255,107,107,0.15)"
-                            : "rgba(245,158,11,0.15)",
+                            ? "var(--status-danger-subtle)"
+                            : "var(--status-warning-subtle)",
                         color:
                           sub.status === "active"
                             ? "var(--green)"
@@ -457,7 +457,7 @@ export default function NotificationsSettingsPage() {
 
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {sub.eventTypes.map((t) => (
-                      <span key={t} className="badge-pill" style={{ background: "rgba(255,255,255,0.06)", color: "var(--text)" }}>
+                      <span key={t} className="badge-pill" style={{ background: "var(--surface-subtle)", color: "var(--text)" }}>
                         {t}
                       </span>
                     ))}
@@ -482,7 +482,7 @@ export default function NotificationsSettingsPage() {
                   <button
                     type="button"
                     className="page-btn"
-                    style={{ margin: 0, padding: "6px 12px", color: "var(--red)", borderColor: "rgba(255,107,107,0.3)" }}
+                    style={{ margin: 0, padding: "6px 12px", color: "var(--red)", borderColor: "var(--status-danger-border)" }}
                     onClick={() => handleDelete(sub.id)}
                   >
                     Delete
@@ -497,8 +497,8 @@ export default function NotificationsSettingsPage() {
       {/* Architecture & Delivery Guarantee Callout */}
       <aside
         style={{
-          background: "rgba(139, 124, 255, 0.05)",
-          border: "1px solid rgba(139, 124, 255, 0.2)",
+          background: "var(--accent-subtle-soft)",
+          border: "1px solid var(--accent-border)",
           borderRadius: 8,
           padding: "16px 20px",
           fontSize: 13,

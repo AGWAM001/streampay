@@ -71,6 +71,14 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "status", description: "Read and print one decoded stream snapshot", options: [STREAM_ID, WATCH, INTERVAL] },
   { name: "get", description: "Alias for status", options: [STREAM_ID, WATCH, INTERVAL] },
   {
+    name: "tui",
+    description: "Interactive dashboard of a recipient's streams (JSON Lines when not a TTY)",
+    options: [
+      { name: "recipient", kind: "value", description: "Recipient address (default: --source or the signing key)" },
+      INTERVAL,
+    ],
+  },
+  {
     name: "key",
     description: "Manage encrypted signer keys",
     options: [],
@@ -110,6 +118,25 @@ export const COMMANDS: readonly CommandSpec[] = [
     options: [],
     positional: { name: "shell", values: COMPLETION_SHELLS },
   },
+  {
+    name: "batch",
+    description: "Execute a batch manifest offline (dry-run preview unless --confirm yes)",
+    options: [
+      { name: "manifest", kind: "file", description: "Batch manifest file (JSON)" },
+      { name: "confirm", kind: "value", description: "Confirm execution: --confirm yes executes, otherwise prints a dry-run preview" },
+      { name: "checkpoint", kind: "file", description: "Checkpoint file for resumable batch execution" },
+    ],
+  },
+  {
+    name: "abi",
+    description: "Explore a contract spec offline",
+    options: [
+      { name: "spec", kind: "file", description: "Contract spec JSON file" },
+      { name: "kind", kind: "enum", values: ["function", "error", "event"], description: "Surface kind to show" },
+      { name: "name", kind: "value", description: "Filter surface entries by name" },
+      { name: "diff", kind: "file", description: "Second contract spec JSON file to diff against" },
+    ],
+  },
   { name: "help", description: "Show usage", options: [] },
 ];
 
@@ -118,6 +145,9 @@ export const TRANSACTION_COMMANDS: readonly string[] = ["create", "withdraw", "c
 
 /** Read-only commands: one decoded `get_stream` snapshot, optionally watched. */
 export const READ_COMMANDS: readonly string[] = ["status", "get"];
+
+/** The interactive dashboard: reads like a read command, may submit only after confirmation. */
+export const TUI_COMMAND = "tui";
 
 function allCommandSpecs(commands: readonly CommandSpec[] = COMMANDS): CommandSpec[] {
   return commands.flatMap((command) => [command, ...allCommandSpecs(command.subcommands ?? [])]);

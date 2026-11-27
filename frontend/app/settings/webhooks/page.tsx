@@ -215,28 +215,28 @@ export default function WebhooksSettingsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 p-4 sm:p-8">
+    <main className="min-h-screen bg-[var(--accent-subtle)] text-[var(--accent-primary)] p-4 sm:p-8">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Navigation Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-neutral-400">
-          <Link href="/" className="hover:text-white transition">← Dashboard</Link>
+        <div className="flex items-center gap-2 text-sm text-[var(--foreground-muted)]">
+          <Link href="/" className="hover:text-[var(--foreground-default)] transition">← Dashboard</Link>
           <span>/</span>
-          <span className="text-neutral-200">Webhook Settings</span>
+          <span className="text-[var(--foreground-default)]">Webhook Settings</span>
         </div>
         <SettingsNav />
 
         {/* Title */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">Outbound Webhooks</h1>
-            <p className="text-sm text-neutral-400 mt-1">
+            <h1 className="text-3xl font-extrabold text-[var(--foreground-default)] tracking-tight">Outbound Webhooks</h1>
+            <p className="text-sm text-[var(--foreground-muted)] mt-1">
               Deterministic events with HMAC-SHA256 signatures, replay protection, 5-attempt retry backoff, and DLQ observability.
             </p>
             <a
               href="https://github.com/Neziahtech/streampay/blob/main/docs/WEBHOOKS.md"
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-indigo-300 hover:text-indigo-200 underline mt-2 inline-block"
+              className="text-xs text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] underline mt-2 inline-block"
             >
               Read the webhook signature and verification guide
             </a>
@@ -244,7 +244,7 @@ export default function WebhooksSettingsPage() {
           <button
             type="button"
             onClick={() => void loadData()}
-            className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-xl text-xs font-medium text-neutral-300 transition"
+            className="px-4 py-2 bg-[var(--surface-raised)] border border-[var(--border-default)] hover:border-[var(--border-strong)] rounded-xl text-xs font-medium text-[var(--foreground-default)] transition"
           >
             ↻ Refresh
           </button>
@@ -252,23 +252,23 @@ export default function WebhooksSettingsPage() {
 
         {/* Secret Display Banner */}
         {revealedSecret && (
-          <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-5 text-sm space-y-2">
+          <div className="bg-[var(--status-success-subtle)] border border-[var(--status-success-border)] rounded-2xl p-5 text-sm space-y-2">
             <div className="flex justify-between items-center">
-              <span className="font-bold text-emerald-300 flex items-center gap-2">
+              <span className="font-bold text-[var(--status-success)] flex items-center gap-2">
                 🔑 Webhook Signing Secret Generated
               </span>
               <button
                 type="button"
                 onClick={() => setRevealedSecret(null)}
-                className="text-neutral-400 hover:text-white text-xs"
+                className="text-[var(--foreground-muted)] hover:text-[var(--foreground-default)] text-xs"
               >
                 ✕ Dismiss
               </button>
             </div>
-            <p className="text-xs text-emerald-200/80">
+            <p className="text-xs text-[var(--status-success)]">
               Copy this secret now. It will not be shown again in plain text. Use it to verify the <code>Streampay-Signature</code> header.
             </p>
-            <div className="flex items-center gap-2 bg-neutral-950 p-2.5 rounded-xl border border-neutral-800 font-mono text-xs text-neutral-200 overflow-x-auto">
+            <div className="flex items-center gap-2 bg-[var(--surface-inset)] p-2.5 rounded-xl border border-[var(--border-default)] font-mono text-xs text-[var(--foreground-default)] overflow-x-auto">
               <span className="flex-1 select-all">{revealedSecret.secret}</span>
               <button
                 type="button"
@@ -276,7 +276,7 @@ export default function WebhooksSettingsPage() {
                   void navigator.clipboard.writeText(revealedSecret.secret);
                   toast.success("Secret copied to clipboard!");
                 }}
-                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold"
+                className="px-3 py-1 bg-[var(--status-success-button)] hover:bg-[var(--status-success-button-end)] text-[var(--foreground-on-success)] rounded-lg text-xs font-semibold"
               >
                 Copy
               </button>
@@ -285,14 +285,14 @@ export default function WebhooksSettingsPage() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-2 border-b border-neutral-800 pb-2">
+        <div className="flex gap-2 border-b border-[var(--border-default)] pb-2">
           <button
             type="button"
             onClick={() => setActiveTab("endpoints")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "endpoints"
-                ? "bg-neutral-800 text-white"
-                : "text-neutral-400 hover:text-white"
+                ? "bg-[var(--accent-subtle)] text-[var(--accent-primary)]"
+                : "text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"
             }`}
           >
             Endpoints ({endpoints.length})
@@ -302,8 +302,8 @@ export default function WebhooksSettingsPage() {
             onClick={() => setActiveTab("deliveries")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "deliveries"
-                ? "bg-neutral-800 text-white"
-                : "text-neutral-400 hover:text-white"
+                ? "bg-[var(--accent-subtle)] text-[var(--accent-primary)]"
+                : "text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"
             }`}
           >
             Delivery Logs
@@ -313,8 +313,8 @@ export default function WebhooksSettingsPage() {
             onClick={() => setActiveTab("dlq")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
               activeTab === "dlq"
-                ? "bg-neutral-800 text-white"
-                : "text-neutral-400 hover:text-white"
+                ? "bg-[var(--accent-subtle)] text-[var(--accent-primary)]"
+                : "text-[var(--foreground-muted)] hover:text-[var(--foreground-default)]"
             }`}
           >
             Dead-Letter Queue (DLQ) {dlqItems.length > 0 && `(${dlqItems.length})`}
@@ -327,11 +327,11 @@ export default function WebhooksSettingsPage() {
             {/* New Endpoint Form */}
             <form
               onSubmit={handleRegisterEndpoint}
-              className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4"
+              className="bg-[var(--surface-raised)] border border-[var(--border-default)] rounded-2xl p-6 space-y-4"
             >
-              <h2 className="text-lg font-bold text-white">Register New Webhook Endpoint</h2>
+              <h2 className="text-lg font-bold text-[var(--foreground-default)]">Register New Webhook Endpoint</h2>
               <div className="space-y-2">
-                <label htmlFor="webhook-url" className="text-xs text-neutral-400 font-medium">
+                <label htmlFor="webhook-url" className="text-xs text-[var(--foreground-muted)] font-medium">
                   Endpoint Destination URL (SSRF Guarded)
                 </label>
                 <input
@@ -341,22 +341,22 @@ export default function WebhooksSettingsPage() {
                   placeholder="https://api.yourdomain.com/webhooks/streampay"
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-4 py-2.5 bg-[var(--surface-inset)] border border-[var(--border-control)] rounded-xl text-sm text-[var(--foreground-default)] placeholder:text-[var(--foreground-muted)] focus:outline-none focus:border-[var(--accent-primary)]"
                 />
-                <span className="text-xs text-neutral-500 block">
+                <span className="text-xs text-[var(--foreground-muted)] block">
                   Private RFC-1918, loopback, and cloud metadata IPs are automatically rejected.
                 </span>
               </div>
 
               <div>
-                <label className="text-xs text-neutral-400 font-medium block mb-2">
+                <label className="text-xs text-[var(--foreground-muted)] font-medium block mb-2">
                   Subscribed Event Types
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {ALL_EVENT_TYPES.map((ev) => (
                     <label
                       key={ev}
-                      className="flex items-center gap-2 p-2 bg-neutral-950 rounded-xl border border-neutral-800 text-xs text-neutral-300 cursor-pointer"
+                      className="flex items-center gap-2 p-2 bg-[var(--surface-inset)] rounded-xl border border-[var(--border-control)] text-xs text-[var(--foreground-default)] cursor-pointer"
                     >
                       <input
                         type="checkbox"
@@ -378,7 +378,7 @@ export default function WebhooksSettingsPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition"
+                className="px-6 py-2.5 bg-[var(--accent-strong)] hover:bg-[var(--accent-strong-hover)] disabled:opacity-50 text-[var(--foreground-on-accent)] rounded-xl text-sm font-semibold transition"
               >
                 {submitting ? "Registering…" : "Register Endpoint"}
               </button>
@@ -386,31 +386,31 @@ export default function WebhooksSettingsPage() {
 
             {/* Endpoints List */}
             <div className="space-y-4">
-              <h2 className="text-lg font-bold text-white">Configured Endpoints</h2>
+              <h2 className="text-lg font-bold text-[var(--foreground-default)]">Configured Endpoints</h2>
               {endpoints.length === 0 ? (
-                <p className="text-sm text-neutral-500">No webhook endpoints registered yet.</p>
+                <p className="text-sm text-[var(--foreground-muted)]">No webhook endpoints registered yet.</p>
               ) : (
                 <div className="space-y-3">
                   {endpoints.map((ep) => (
                     <div
                       key={ep.id}
-                      className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                      className="bg-[var(--surface-raised)] border border-[var(--border-default)] rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
                     >
                       <div className="space-y-1 max-w-xl">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm font-bold text-neutral-100">{ep.url}</span>
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span className="font-mono text-sm font-bold text-[var(--foreground-default)]">{ep.url}</span>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--status-success-subtle)] text-[var(--status-success)] border border-[var(--status-success-border)]">
                             {ep.status}
                           </span>
                         </div>
-                        <div className="text-xs text-neutral-500 font-mono">
+                        <div className="text-xs text-[var(--foreground-muted)] font-mono">
                           ID: {ep.id} • Created: {new Date(ep.created_at).toLocaleDateString()}
                         </div>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {ep.events.map((ev) => (
                             <span
                               key={ev}
-                              className="px-2 py-0.5 bg-neutral-950 text-neutral-400 border border-neutral-800 rounded-md text-xs font-mono"
+                              className="px-2 py-0.5 bg-[var(--surface-inset)] text-[var(--foreground-muted)] border border-[var(--border-default)] rounded-md text-xs font-mono"
                             >
                               {ev}
                             </span>
@@ -422,21 +422,21 @@ export default function WebhooksSettingsPage() {
                         <button
                           type="button"
                           onClick={() => void handleTestFire(ep.id)}
-                          className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl text-xs font-semibold transition"
+                          className="px-3 py-1.5 bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--foreground-default)] rounded-xl text-xs font-semibold transition"
                         >
                           ⚡ Test Fire
                         </button>
                         <button
                           type="button"
                           onClick={() => void handleRotateSecret(ep.id)}
-                          className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-amber-300 rounded-xl text-xs font-semibold transition"
+                          className="px-3 py-1.5 bg-[var(--surface-inset)] hover:bg-[var(--surface-hover)] text-[var(--status-warning)] rounded-xl text-xs font-semibold transition"
                         >
                           🔄 Rotate Secret
                         </button>
                         <button
                           type="button"
                           onClick={() => void handleDeleteEndpoint(ep.id)}
-                          className="px-3 py-1.5 bg-red-950/40 hover:bg-red-900/50 text-red-400 border border-red-500/30 rounded-xl text-xs font-semibold transition"
+                          className="px-3 py-1.5 bg-[var(--status-danger-subtle)] hover:border-[var(--status-danger)] text-[var(--status-danger)] border border-[var(--status-danger-border)] rounded-xl text-xs font-semibold transition"
                         >
                           Delete
                         </button>
@@ -452,13 +452,13 @@ export default function WebhooksSettingsPage() {
         {/* Tab 2: Delivery Logs */}
         {activeTab === "deliveries" && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-white">Recent Delivery Attempts</h2>
+            <h2 className="text-lg font-bold text-[var(--foreground-default)]">Recent Delivery Attempts</h2>
             {deliveries.length === 0 ? (
-              <p className="text-sm text-neutral-500">No delivery logs recorded yet.</p>
+              <p className="text-sm text-[var(--foreground-muted)]">No delivery logs recorded yet.</p>
             ) : (
-              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-x-auto">
+              <div className="bg-[var(--surface-raised)] border border-[var(--border-default)] rounded-2xl overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-neutral-950 border-b border-neutral-800 text-neutral-400 font-medium">
+                  <thead className="bg-[var(--surface-inset)] border-b border-[var(--border-default)] text-[var(--foreground-muted)] font-medium">
                     <tr>
                       <th className="p-3">Status</th>
                       <th className="p-3">Event</th>
@@ -468,27 +468,27 @@ export default function WebhooksSettingsPage() {
                       <th className="p-3">Created At</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-800/60 font-mono">
+                  <tbody className="divide-y divide-[var(--border-default)] font-mono">
                     {deliveries.map((d) => (
-                      <tr key={d.id} className="hover:bg-neutral-800/30 transition">
+                      <tr key={d.id} className="hover:bg-[var(--surface-hover)] transition">
                         <td className="p-3">
                           <span
                             className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                               d.status === "delivered"
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                ? "bg-[var(--status-success-subtle)] text-[var(--status-success)] border border-[var(--status-success-border)]"
                                 : d.status === "dead_letter"
-                                ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                ? "bg-[var(--status-danger-subtle)] text-[var(--status-danger)] border border-[var(--status-danger-border)]"
+                                : "bg-[var(--status-warning-subtle)] text-[var(--status-warning)] border border-[var(--status-warning-border)]"
                             }`}
                           >
                             {d.status}
                           </span>
                         </td>
-                        <td className="p-3 font-semibold text-neutral-200">{d.event_type}</td>
+                        <td className="p-3 font-semibold text-[var(--foreground-default)]">{d.event_type}</td>
                         <td className="p-3">#{d.stream_id}</td>
                         <td className="p-3">{d.attempt} / 5</td>
-                        <td className="p-3 text-neutral-300">{d.status_code ?? "—"}</td>
-                        <td className="p-3 text-neutral-400">{new Date(d.created_at).toLocaleTimeString()}</td>
+                        <td className="p-3 text-[var(--foreground-default)]">{d.status_code ?? "—"}</td>
+                        <td className="p-3 text-[var(--foreground-muted)]">{new Date(d.created_at).toLocaleTimeString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -502,14 +502,14 @@ export default function WebhooksSettingsPage() {
         {activeTab === "dlq" && (
           <div className="space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-white">Dead-Letter Queue (DLQ)</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">
+              <h2 className="text-lg font-bold text-[var(--foreground-default)]">Dead-Letter Queue (DLQ)</h2>
+              <p className="text-xs text-[var(--foreground-muted)] mt-0.5">
                 Events that failed all 5 delivery attempts across exponential backoff (~1 hr window).
               </p>
             </div>
 
             {dlqItems.length === 0 ? (
-              <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-sm text-neutral-500">
+              <div className="bg-[var(--surface-raised)] border border-[var(--border-default)] rounded-2xl p-8 text-center text-sm text-[var(--foreground-muted)]">
                 ✓ No dead-letter items. All webhooks delivered successfully.
               </div>
             ) : (
@@ -517,21 +517,21 @@ export default function WebhooksSettingsPage() {
                 {dlqItems.map((item) => (
                   <div
                     key={item.id}
-                    className="bg-neutral-900 border border-red-500/30 rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                    className="bg-[var(--surface-raised)] border border-[var(--status-danger-border)] rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-red-300 text-sm">{item.event_type}</span>
-                        <span className="text-xs text-neutral-400 font-mono">Stream #{item.stream_id}</span>
-                        <span className="px-2 py-0.5 bg-red-950 text-red-400 rounded-full text-xs font-mono font-semibold">
+                        <span className="font-bold text-[var(--status-danger)] text-sm">{item.event_type}</span>
+                        <span className="text-xs text-[var(--foreground-muted)] font-mono">Stream #{item.stream_id}</span>
+                        <span className="px-2 py-0.5 bg-[var(--status-danger-subtle)] text-[var(--status-danger)] rounded-full text-xs font-mono font-semibold">
                           5 / 5 Exhausted
                         </span>
                       </div>
-                      <p className="text-xs text-neutral-400">
-                        Last Error: <span className="text-red-300 font-mono">{item.last_error}</span>
+                      <p className="text-xs text-[var(--foreground-muted)]">
+                        Last Error: <span className="text-[var(--status-danger)] font-mono">{item.last_error}</span>
                         {item.last_status_code && ` (HTTP ${item.last_status_code})`}
                       </p>
-                      <span className="text-xs text-neutral-500 font-mono block">
+                      <span className="text-xs text-[var(--foreground-muted)] font-mono block">
                         DLQ Item: {item.id} • Queued: {new Date(item.created_at).toLocaleString()}
                       </span>
                     </div>
@@ -539,7 +539,7 @@ export default function WebhooksSettingsPage() {
                     <button
                       type="button"
                       onClick={() => void handleReplayDLQ(item.id)}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition"
+                      className="px-4 py-2 bg-[var(--accent-strong)] hover:bg-[var(--accent-strong-hover)] text-[var(--foreground-on-accent)] rounded-xl text-xs font-semibold transition"
                     >
                       Replay / Retry
                     </button>

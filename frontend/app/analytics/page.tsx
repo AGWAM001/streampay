@@ -107,7 +107,7 @@ export default function AnalyticsPage() {
   return (
     <main className="analytics-page" style={{ maxWidth: 900, margin: "0 auto", padding: "2rem 1rem" }}>
       <h1 style={{ fontSize: "1.6rem", marginBottom: "0.5rem" }}>Stream Analytics</h1>
-      <p style={{ color: "#666", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
+      <p style={{ color: "var(--foreground-muted)", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
         Accrued-vs-claimed history, per-stream projections, and aggregate income forecast.
       </p>
 
@@ -119,20 +119,20 @@ export default function AnalyticsPage() {
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && load()}
-          style={{ flex: 1, padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid #ccc", fontSize: "0.95rem" }}
+          style={{ flex: 1, padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border-control)", fontSize: "0.95rem" }}
           aria-label="Stellar address to analyse"
         />
         <button
           onClick={load}
           disabled={loading || !address.trim()}
-          style={{ padding: "0.5rem 1.25rem", borderRadius: 6, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer" }}
+          style={{ padding: "0.5rem 1.25rem", borderRadius: 6, background: "var(--accent-strong)", color: "var(--foreground-on-accent)", border: "none", cursor: "pointer" }}
         >
           {loading ? "Loading…" : "Analyse"}
         </button>
       </div>
 
       {error && (
-        <p role="alert" style={{ color: "#dc2626", marginBottom: "1rem" }}>
+        <p role="alert" style={{ color: "var(--status-danger)", marginBottom: "1rem" }}>
           Error: {error}
         </p>
       )}
@@ -147,9 +147,9 @@ export default function AnalyticsPage() {
               style={{
                 padding: "0.3rem 0.8rem",
                 borderRadius: 5,
-                border: "1px solid #ccc",
-                background: window === w ? "#2563eb" : "#f9fafb",
-                color: window === w ? "#fff" : "#374151",
+                border: "1px solid var(--border-control)",
+                background: window === w ? "var(--accent-strong)" : "var(--surface-subtle)",
+                color: window === w ? "var(--foreground-on-accent)" : "var(--foreground-default)",
                 cursor: "pointer",
                 fontWeight: window === w ? 600 : 400,
               }}
@@ -172,7 +172,7 @@ export default function AnalyticsPage() {
         </div>
       )}
       {!loading && streams.length > 0 && active.length === 0 && (
-        <p style={{ color: "#6b7280" }}>No active streams — showing history only.</p>
+        <p style={{ color: "var(--foreground-muted)" }}>No active streams — showing history only.</p>
       )}
 
       {/* Forecast summary — lazy */}
@@ -213,7 +213,7 @@ export default function AnalyticsPage() {
 
       {/* Data-source notice */}
       {staleNote && (
-        <p style={{ color: "#9ca3af", fontSize: "0.75rem", marginTop: "2rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
+        <p style={{ color: "var(--foreground-muted)", fontSize: "0.75rem", marginTop: "2rem", borderTop: "1px solid var(--border-default)", paddingTop: "1rem" }}>
           ℹ {staleNote}
         </p>
       )}

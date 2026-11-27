@@ -76,6 +76,9 @@ export interface MessageParams {
   "form.nativeContractNote": { contractId: string };
   "form.amountsNote": { decimals: number; code: string };
   "form.policyDepositLow": { min: string };
+  "form.multisigSender": { threshold: number; signers: number };
+  "form.multisigRecipient": { threshold: number; signers: number };
+  "form.multisigCancel": { count: number };
   "form.policyDurationLow": { actual: number; min: number };
   "form.policyDurationHigh": { actual: number; max: number };
   "form.policyRateLow": { rate: string; min: string };
@@ -86,6 +89,7 @@ export interface MessageParams {
   "form.batchRowIssue": { row: number; detail: string };
   "notFound.stream.malformedBody": { id: string };
   "notFound.address.malformedBody": { address: string };
+  "settings.theme.current": { theme: string };
 }
 
 export type ParamsOf<K extends MessageKey> = K extends keyof MessageParams
@@ -149,6 +153,9 @@ export const MESSAGE_SAMPLES: { [K in keyof MessageParams]: MessageParams[K] } =
   "form.nativeContractNote": { contractId: "CAAP…AB4D" },
   "form.amountsNote": { decimals: 7, code: "XLM" },
   "form.policyDepositLow": { min: "1000" },
+  "form.multisigSender": { threshold: 2, signers: 3 },
+  "form.multisigRecipient": { threshold: 2, signers: 3 },
+  "form.multisigCancel": { count: 1 },
   "form.policyDurationLow": { actual: 60, min: 300 },
   "form.policyDurationHigh": { actual: 60, max: 300 },
   "form.policyRateLow": { rate: "1", min: "10" },
@@ -159,6 +166,7 @@ export const MESSAGE_SAMPLES: { [K in keyof MessageParams]: MessageParams[K] } =
   "form.batchRowIssue": { row: 2, detail: "Enter a valid Stellar address." },
   "notFound.stream.malformedBody": { id: "abc" },
   "notFound.address.malformedBody": { address: "GABC" },
+  "settings.theme.current": { theme: "Dark" },
 };
 
 /** Every key, in catalog order. Used by the snapshot suite and the CI check. */

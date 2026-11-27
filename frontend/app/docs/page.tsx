@@ -41,7 +41,7 @@ export default function DocsPage() {
         <Link
           href="/"
           style={{
-            color: "#60a5fa",
+            color: "var(--accent-primary)",
             textDecoration: "none",
             fontSize: "0.875rem",
             display: "inline-block",
@@ -56,13 +56,13 @@ export default function DocsPage() {
           </h1>
           <span
             style={{
-              background: "#1e293b",
-              color: "#38bdf8",
+              background: "var(--surface-subtle)",
+              color: "var(--status-info)",
               padding: "0.25rem 0.75rem",
               borderRadius: "9999px",
               fontSize: "0.8125rem",
               fontWeight: 600,
-              border: "1px solid #334155",
+              border: "1px solid var(--border-strong)",
             }}
           >
             OpenAPI 3.1
@@ -72,8 +72,8 @@ export default function DocsPage() {
             target="_blank"
             rel="noopener noreferrer"
             style={{
-              background: "#0284c7",
-              color: "#ffffff",
+              background: "var(--accent-secondary-strong)",
+              color: "var(--foreground-on-accent)",
               padding: "0.35rem 0.85rem",
               borderRadius: "6px",
               fontSize: "0.8125rem",
@@ -84,7 +84,7 @@ export default function DocsPage() {
             Raw openapi.json ↗
           </a>
         </div>
-        <p style={{ color: "#94a3b8", fontSize: "1.05rem", marginTop: "0.5rem" }}>
+        <p style={{ color: "var(--foreground-muted)", fontSize: "1.05rem", marginTop: "0.5rem" }}>
           Continuous on-the-fly accrual curves computed directly from contract state with ETag
           caching, honest staleness indicators, and shared RPC rate budgeting.
         </p>
@@ -101,18 +101,18 @@ export default function DocsPage() {
       >
         <div
           style={{
-            background: "#0f172a",
-            border: "1px solid #1e293b",
+            background: "var(--surface-inset)",
+            border: "1px solid var(--surface-subtle)",
             borderRadius: "8px",
             padding: "1.25rem",
           }}
         >
-          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "#38bdf8" }}>
+          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "var(--status-info)" }}>
             1. Computed, Never Stored
           </h3>
-          <p style={{ color: "#cbd5e1", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
+          <p style={{ color: "var(--foreground-default)", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
             Curve points are derived in real-time using the contract’s exact pure math:
-            <code style={{ display: "block", margin: "0.5rem 0", background: "#1e293b", padding: "0.4rem", borderRadius: "4px" }}>
+            <code style={{ display: "block", margin: "0.5rem 0", background: "var(--surface-subtle)", padding: "0.4rem", borderRadius: "4px" }}>
               streamed(t) = deposit × elapsed / duration
             </code>
             Zero points are persisted in databases or files.
@@ -121,55 +121,55 @@ export default function DocsPage() {
 
         <div
           style={{
-            background: "#0f172a",
-            border: "1px solid #1e293b",
+            background: "var(--surface-inset)",
+            border: "1px solid var(--surface-subtle)",
             borderRadius: "8px",
             padding: "1.25rem",
           }}
         >
-          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "#38bdf8" }}>
+          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "var(--status-info)" }}>
             2. State Hash & ETag Caching
           </h3>
-          <p style={{ color: "#cbd5e1", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
-            Response includes exact <code style={{ color: "#fcd34d" }}>X-State-Hash</code> computed as SHA-256 of on-chain state.
-            ETag is derived from <code style={{ color: "#fcd34d" }}>hash:id:from:to:step</code>. Clients sending
-            <code style={{ color: "#fcd34d" }}>If-None-Match</code> receive <code style={{ color: "#4ade80" }}>304 Not Modified</code> with zero payload.
+          <p style={{ color: "var(--foreground-default)", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
+            Response includes exact <code style={{ color: "var(--status-warning)" }}>X-State-Hash</code> computed as SHA-256 of on-chain state.
+            ETag is derived from <code style={{ color: "var(--status-warning)" }}>hash:id:from:to:step</code>. Clients sending
+            <code style={{ color: "var(--status-warning)" }}>If-None-Match</code> receive <code style={{ color: "var(--status-success)" }}>304 Not Modified</code> with zero payload.
           </p>
         </div>
 
         <div
           style={{
-            background: "#0f172a",
-            border: "1px solid #1e293b",
+            background: "var(--surface-inset)",
+            border: "1px solid var(--surface-subtle)",
             borderRadius: "8px",
             padding: "1.25rem",
           }}
         >
-          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "#38bdf8" }}>
+          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "var(--status-info)" }}>
             3. Honest Staleness Headers
           </h3>
-          <p style={{ color: "#cbd5e1", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
-            Every response discloses exact freshness: <code style={{ color: "#fcd34d" }}>X-As-Of-Ledger</code>,
-            <code style={{ color: "#fcd34d" }}>X-As-Of-Timestamp</code>, and <code style={{ color: "#fcd34d" }}>Age</code>. If indexer lag exceeds threshold (&gt;60s), an explicit
-            <code style={{ color: "#f87171" }}>Warning: 199</code> header is emitted.
+          <p style={{ color: "var(--foreground-default)", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
+            Every response discloses exact freshness: <code style={{ color: "var(--status-warning)" }}>X-As-Of-Ledger</code>,
+            <code style={{ color: "var(--status-warning)" }}>X-As-Of-Timestamp</code>, and <code style={{ color: "var(--status-warning)" }}>Age</code>. If indexer lag exceeds threshold (&gt;60s), an explicit
+            <code style={{ color: "var(--status-danger)" }}>Warning: 199</code> header is emitted.
           </p>
         </div>
 
         <div
           style={{
-            background: "#0f172a",
-            border: "1px solid #1e293b",
+            background: "var(--surface-inset)",
+            border: "1px solid var(--surface-subtle)",
             borderRadius: "8px",
             padding: "1.25rem",
           }}
         >
-          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "#38bdf8" }}>
+          <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.5rem 0", color: "var(--status-info)" }}>
             4. Shared RPC Budget Manager (#56)
           </h3>
-          <p style={{ color: "#cbd5e1", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
+          <p style={{ color: "var(--foreground-default)", fontSize: "0.9rem", lineHeight: 1.5, margin: 0 }}>
             Calls draw from a unified rate budget protecting both node RPC quotas and per-client budgets.
-            Exhaustion triggers <code style={{ color: "#f87171" }}>429 Too Many Requests</code> with a standard
-            <code style={{ color: "#fcd34d" }}>Retry-After</code> header, serving stale cache when safe.
+            Exhaustion triggers <code style={{ color: "var(--status-danger)" }}>429 Too Many Requests</code> with a standard
+            <code style={{ color: "var(--status-warning)" }}>Retry-After</code> header, serving stale cache when safe.
           </p>
         </div>
       </div>
@@ -177,15 +177,15 @@ export default function DocsPage() {
       {/* Interactive Swagger UI Container */}
       <div
         style={{
-          background: "#ffffff",
+          background: "var(--surface-raised)",
           borderRadius: "8px",
           padding: "1.5rem",
-          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+          boxShadow: "0 4px 6px -1px var(--shadow-card), 0 2px 4px -1px var(--shadow-card)",
         }}
       >
         <div id="swagger-ui">
           {!swaggerReady && (
-            <p style={{ color: "#64748b", textAlign: "center", padding: "2rem" }}>
+            <p style={{ color: "var(--foreground-muted)", textAlign: "center", padding: "2rem" }}>
               Loading interactive OpenAPI schema viewer...
             </p>
           )}

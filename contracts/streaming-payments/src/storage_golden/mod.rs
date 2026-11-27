@@ -372,6 +372,7 @@ pub(crate) fn kind_for_key(env: &Env, key_sc: &xdr::ScVal) -> Option<String> {
             // dispatched here but not yet in `COVERED_KINDS`.
             DataKey::StreamNftLink(_) => "stream_nft_link",
             DataKey::AtomicMintLock => "atomic_mint_lock",
+            DataKey::StreamLineage(_) => "stream_lineage",
         }));
     }
     if let Ok(pk) = PolicyDataKey::try_from_val(env, key_sc) {
