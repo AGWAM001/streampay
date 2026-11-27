@@ -16,6 +16,8 @@ use crate::{
     PendingSenderTransfer, PendingUpgrade, PeriodSpend, Proposal, RateSegment, ReceivablesConfig,
     ReputationView, ScheduledIntent, SenderHistory, SponsorConfig, Stream, StreamCondition,
     StreamError, StreamHook, StreamInput, StreamPolicy, StreamTemplate, TemplateLineage,
+    ScheduledIntent, SenderHistory, SponsorConfig, Stream, StreamCondition, StreamError,
+    StreamHook, StreamInput, StreamLineage, StreamPolicy, StreamTemplate, TemplateLineage,
     TreasuryStatus, WithdrawAllResult, WithdrawEntry,
 };
 
@@ -393,4 +395,18 @@ pub trait StreamingPaymentsApi {
         event_class: HookEventClass,
     ) -> Result<(), StreamError>;
     fn get_hook(env: Env, stream_id: u64, event_class: HookEventClass) -> Option<StreamHook>;
+
+    // ------------------------------------------------- dust economics (#78)
+    fn sweep_stream(env: Env, stream_id: u64) -> Result<u32, StreamError>;
+    fn is_sweepable(env: Env, stream_id: u64) -> bool;
+    // ------------------------------------------------- stream lineage (#197)
+    fn split_stream(
+        env: Env,
+        stream_id: u64,
+        first_remaining: i128,
+        first_end_time: u64,
+        second_end_time: u64,
+    ) -> Result<Vec<u64>, StreamError>;
+    fn merge_streams(env: Env, first_id: u64, second_id: u64) -> Result<u64, StreamError>;
+    fn split_merge_lineage(env: Env, stream_id: u64) -> Option<StreamLineage>;
 }

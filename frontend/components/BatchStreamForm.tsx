@@ -246,7 +246,7 @@ export default function BatchStreamForm({
           <div
             className="stream-preview"
             style={{
-              background: "rgba(255, 255, 255, 0.02)",
+              background: "var(--surface-subtle)",
               border: "1px solid var(--line)",
               borderRadius: "8px",
               padding: "12px 16px",

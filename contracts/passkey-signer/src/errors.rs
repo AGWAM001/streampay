@@ -30,4 +30,12 @@ pub enum PasskeyError {
     SignatureInvalid = 10,
     /// This challenge has already been used; replay prevented.
     ChallengeAlreadyUsed = 11,
+    /// Assertion sign-count did not strictly advance beyond the stored sign-count.
+    SignCountRegression = 12,
+    /// Assertion challenge has passed its expiry timestamp.
+    ChallengeExpired = 13,
+    /// Cannot revoke the last active credential without explicit confirmation or recovery.
+    LastCredentialProtected = 14,
+    /// Account recovery requires at least one active credential or governance approval.
+    RecoveryNotAuthorized = 15,
 }

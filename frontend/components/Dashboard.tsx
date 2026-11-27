@@ -164,6 +164,7 @@ export default function Dashboard() {
 
       <Suspense fallback={<PanelLoading />}>
       <StreamForm
+          sender={address}
           onCreate={async (args: StreamArgs) => {
             setError("");
             try {

@@ -8,7 +8,8 @@ import {
   type AssetMeta,
   type StreamArgs,
 } from "@/lib/stellar";
-import { readStreamPolicyAction } from "@/app/actions";
+import { readMultisigConfigAction, readStreamPolicyAction } from "@/app/actions";
+import { isContractAddress, type MultisigView } from "@/lib/multisig";
 import type { StreamPolicyView } from "@/lib/stream-types";
 import { useLocale } from "@/lib/i18n/provider";
 import { parseTokenAmount } from "@/lib/i18n/amounts";
@@ -28,11 +29,42 @@ import {
 /** Asset choices on the create form: native XLM, or a token contract id. */
 type AssetChoice = "native" | "contract";
 
+/**
+ * Signer requirements of a contract address, read once per address: `null`
+ * while loading or when the contract is not a multisig. `undefined` for a
+ * non-contract address (nothing to explain).
+ */
+function useMultisig(address: string | undefined): MultisigView | null | undefined {
+  const trimmed = address?.trim() ?? "";
+  const isContract = isContractAddress(trimmed);
+  const [view, setView] = useState<{ address: string; view: MultisigView | null } | null>(
+    null
+  );
+  useEffect(() => {
+    if (!isContract) return;
+    let active = true;
+    readMultisigConfigAction(trimmed).then((v) => {
+      if (active) setView({ address: trimmed, view: v });
+    });
+    return () => {
+      active = false;
+    };
+  }, [trimmed, isContract]);
+  if (!isContract) return undefined;
+  return view?.address === trimmed ? view.view : null;
+}
+
 export default function StreamForm({
   onCreate,
   submitting = false,
+  sender,
 }: {
   onCreate: (args: StreamArgs) => Promise<void>;
+  /**
+   * The connected sender address. When it is a multisig contract (`C…`), the
+   * form shows how many signer approvals creating the stream will need.
+   */
+  sender?: string;
   /**
    * Render the in-flight (submitting) state directly instead of only reaching it
    * by interaction. The internal `busy` flag is seeded from this prop, so the
@@ -59,6 +91,12 @@ export default function StreamForm({
   const [formError, setFormError] = useState<string | null>(null);
 
   const { t, locale, formatToken } = useLocale();
+
+  // Multisig detection (issue #50): explain signer requirements for a
+  // contract sender or recipient. The streaming contract itself treats them
+  // like any other address.
+  const senderMultisig = useMultisig(sender);
+  const recipientMultisig = useMultisig(args.recipient);
 
   // The deposit field is locale-aware text, not `type="number"`: an HTML number
   // input means a German keyboard's comma can never be typed, and a field that
@@ -332,7 +370,7 @@ export default function StreamForm({
             id={recipientId}
             type="text"
             required
-            placeholder="G…"
+            placeholder="G… / C…"
             value={args.recipient}
             onChange={set("recipient")}
             onBlur={() =>
@@ -356,8 +394,30 @@ export default function StreamForm({
           >
             {fieldErrors.recipient ?? ""}
           </span>
+          {recipientMultisig !== undefined && (
+            <p className="muted" role="status" data-testid="multisig-recipient">
+              {recipientMultisig
+                ? t("form.multisigRecipient", {
+                    threshold: recipientMultisig.threshold,
+                    signers: recipientMultisig.signers,
+                  })
+                : t("form.contractRecipient")}
+            </p>
+          )}
         </div>
       </div>
+
+      {senderMultisig && (
+        <p className="muted" role="status" data-testid="multisig-sender">
+          {t("form.multisigSender", {
+            threshold: senderMultisig.threshold,
+            signers: senderMultisig.signers,
+          })}
+          {senderMultisig.cancelThreshold !== null && (
+            <> {t("form.multisigCancel", { count: senderMultisig.cancelThreshold })}</>
+          )}
+        </p>
+      )}
 
       {asset === "native" && (
         <p className="muted mono" style={{ wordBreak: "break-all" }}>
@@ -462,7 +522,7 @@ export default function StreamForm({
           <div
             className="stream-preview"
             style={{
-              background: "rgba(255, 255, 255, 0.02)",
+              background: "var(--surface-subtle)",
               border: "1px solid var(--line)",
               borderRadius: "8px",
               padding: "12px 16px",
@@ -544,7 +604,7 @@ export default function StreamForm({
       )}
 
       {formError && (
-        <div role="alert" style={{ color: "#ef4444", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div role="alert" style={{ color: "var(--status-danger)", marginBottom: "1rem", fontSize: "0.9rem" }}>
           {formError}
         </div>
       )}

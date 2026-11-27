@@ -1012,6 +1012,47 @@
         }
       ]
     },
+    "MergeStream": {
+      "canonical": "streampay-event/v1|MergeStream|key=merge_stream|topics=[child_id:u64],data=[claimable:i128,end_time:u64,first_parent_id:u64,merged_at:u64,remaining:i128,second_parent_id:u64,withdrawn:i128]",
+      "data": [
+        {
+          "name": "first_parent_id",
+          "type": "u64"
+        },
+        {
+          "name": "second_parent_id",
+          "type": "u64"
+        },
+        {
+          "name": "merged_at",
+          "type": "u64"
+        },
+        {
+          "name": "remaining",
+          "type": "i128"
+        },
+        {
+          "name": "end_time",
+          "type": "u64"
+        },
+        {
+          "name": "claimable",
+          "type": "i128"
+        },
+        {
+          "name": "withdrawn",
+          "type": "i128"
+        }
+      ],
+      "event_key": "merge_stream",
+      "fingerprint": "sha256:70a8dd6e5d4ae8d5fe0b3359d32845f91dcc91471c59dbb79ab5a1c0ce46599f",
+      "topics": [
+        {
+          "name": "child_id",
+          "type": "u64"
+        }
+      ]
+    },
     "OperatorKeyRotated": {
       "canonical": "streampay-event/v1|OperatorKeyRotated|key=operator_key_rotated|topics=[sponsor:Address,kind:Symbol],data=[new_operator_key:BytesN<32>]",
       "data": [
@@ -1489,6 +1530,55 @@
         }
       ]
     },
+    "SplitStream": {
+      "canonical": "streampay-event/v1|SplitStream|key=split_stream|topics=[parent_id:u64],data=[claimable:i128,first_child_id:u64,first_end_time:u64,first_remaining:i128,second_child_id:u64,second_end_time:u64,second_remaining:i128,split_at:u64,withdrawn:i128]",
+      "data": [
+        {
+          "name": "first_child_id",
+          "type": "u64"
+        },
+        {
+          "name": "second_child_id",
+          "type": "u64"
+        },
+        {
+          "name": "split_at",
+          "type": "u64"
+        },
+        {
+          "name": "first_remaining",
+          "type": "i128"
+        },
+        {
+          "name": "second_remaining",
+          "type": "i128"
+        },
+        {
+          "name": "first_end_time",
+          "type": "u64"
+        },
+        {
+          "name": "second_end_time",
+          "type": "u64"
+        },
+        {
+          "name": "claimable",
+          "type": "i128"
+        },
+        {
+          "name": "withdrawn",
+          "type": "i128"
+        }
+      ],
+      "event_key": "split_stream",
+      "fingerprint": "sha256:38f05ba0dac924929ccf0fc69bdf97ea3ed9d8833f57f21a0154af857f46b674",
+      "topics": [
+        {
+          "name": "parent_id",
+          "type": "u64"
+        }
+      ]
+    },
     "SponsorActiveSet": {
       "canonical": "streampay-event/v1|SponsorActiveSet|key=sponsor_active_set|topics=[sponsor:Address,kind:Symbol],data=[active:bool]",
       "data": [
@@ -1832,6 +1922,31 @@
         }
       ]
     },
+    "StreamSwept": {
+      "canonical": "streampay-event/v1|StreamSwept|key=stream_swept|topics=[stream_id:u64],data=[depleted:bool,entries_removed:u32,refund_target:Address]",
+      "data": [
+        {
+          "name": "refund_target",
+          "type": "Address"
+        },
+        {
+          "name": "depleted",
+          "type": "bool"
+        },
+        {
+          "name": "entries_removed",
+          "type": "u32"
+        }
+      ],
+      "event_key": "stream_swept",
+      "fingerprint": "sha256:245343ff47cced9cf5751fb6977185d758cce635735e9f112dff7a82fa94e35d",
+      "topics": [
+        {
+          "name": "stream_id",
+          "type": "u64"
+        }
+      ]
+    },
     "StreamToppedUp": {
       "canonical": "streampay-event/v1|StreamToppedUp|key=stream_topped_up|topics=[stream_id:u64],data=[amount:i128,new_deposit:i128,sender:Address]",
       "data": [
@@ -2020,6 +2135,7 @@
     "HookFailed": "sha256:7fba9960155e2e33b3f357c702946c62c9a7d873c054d4e85e6acba47894324f",
     "HookInvoked": "sha256:11cae2306cfb934411dc921d7d98e1441f494b980474db591c2f7f9ff6555a2e",
     "HookRegistered": "sha256:be27fe4f3537259a7dbc0b805c963dd2393d49967ca47f74de98d438b47fb9c0",
+    "MergeStream": "sha256:70a8dd6e5d4ae8d5fe0b3359d32845f91dcc91471c59dbb79ab5a1c0ce46599f",
     "OperatorKeyRotated": "sha256:e173c61697b4045d0fb1e94358fe8b4675bfca312369ac887f2ff23f21fb413b",
     "OracleConfigUpdated": "sha256:91f894797f41c1566560dd5c04581611fb8d29bd0ac48bfc022d0ab4de0e6099",
     "OracleStaleFallback": "sha256:d1baed22ab39c524cd1297b2a5f14d39eeec300ef27ce95583562f1e2e26dbec",
@@ -2041,6 +2157,7 @@
     "SenderTransferExpired": "sha256:52f1ec5001642966297a3a1d96e94c2a155edfeccf6622164a0834724863ba60",
     "SenderTransferProposed": "sha256:7012eae001bbc92c7ecce6275cab31714970ba85e5ab1bde135e93dff4ec0f92",
     "SenderTransferred": "sha256:db820aba8791ee0f230ae1ae551812251458457ad061bd13b996b21a2c18cf0d",
+    "SplitStream": "sha256:38f05ba0dac924929ccf0fc69bdf97ea3ed9d8833f57f21a0154af857f46b674",
     "SponsorActiveSet": "sha256:7bbd39680d30fd7bd9d76fcd1adbf06561b0a338af9de46d09960a87476ba8a5",
     "SponsorClaim": "sha256:0fcc98031e4670bce6e2722764f5033590803a9c84681e2f7dccf74f8457c864",
     "SponsorRegistered": "sha256:d725d4b0decb76963259805f48770b81d0c2530094f16d2241daa27e41bc28c5",
@@ -2053,6 +2170,7 @@
     "StreamRefundTargetChanged": "sha256:20f8ba96f8e86083b6e7f70644ec49d8958349f8dc3b1ee7462e3868dae8d943",
     "StreamResumed": "sha256:76526b2a695c524df20dcea647e64f0cd38a3f8322d5196a26b10134ca4158c0",
     "StreamScheduled": "sha256:fcfb97a34e2115fabfcea45aa6a1a8e807ab85dd467186eb5e25e494fe490487",
+    "StreamSwept": "sha256:245343ff47cced9cf5751fb6977185d758cce635735e9f112dff7a82fa94e35d",
     "StreamToppedUp": "sha256:846293901988cf6cfb2fc5e8a7821a66f8c61c2496e7e4c52c0e2f099df932c9",
     "StreamsCreated": "sha256:affd0ccd120eb20fa19a2b6072ab17bb95cf1349fdc89898e4eb9187583fbdd3",
     "TemplateApproved": "sha256:2556ce26fef265a2d6a39bec5ffe01924ad60ca4e3bd4f96310ad439fb6f0b3b",

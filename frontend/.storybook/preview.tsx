@@ -1,5 +1,6 @@
 import type { Preview } from "@storybook/nextjs-vite";
 import { fn, mocked, sb } from "storybook/test";
+import { useEffect } from "react";
 
 import "../app/globals.css";
 
@@ -8,12 +9,20 @@ import {
   readAvailableAction,
   readRefundTargetAction,
   readStreamAction,
+  readMultisigConfigAction,
   readStreamPolicyAction,
 } from "../app/actions";
 import { LocaleProvider } from "../lib/i18n/provider";
 import { SUPPORTED_LOCALES, localeDir, type Locale } from "../lib/i18n/locales";
 import { checkWalletNetwork } from "../lib/network";
+import {
+  applyTheme,
+  subscribeToSystemTheme,
+  systemPrefersDark,
+  type ThemePreference,
+} from "../lib/theme";
 import { useWallet, type WalletState } from "../lib/wallet-context";
+import { availableAmountAt } from "../lib/accrual";
 import { FIXED_NOW_MS, installFakeClock } from "./fake-clock";
 import {
   ACTIVE_AVAILABLE,
@@ -77,6 +86,23 @@ function applyLocale(locale: Locale) {
   document.documentElement.dir = localeDir(locale);
 }
 
+/** Keep the toolbar's System option live without persisting into app settings. */
+function StorybookThemeSync({ preference }: { preference: ThemePreference }) {
+  useEffect(() => {
+    if (preference !== "system") return;
+    return subscribeToSystemTheme(() => {
+      applyTheme(preference, systemPrefersDark(), { storage: null });
+    });
+  }, [preference]);
+  return null;
+}
+
+const THEME_ITEMS: { value: ThemePreference; title: string }[] = [
+  { value: "light", title: "Light" },
+  { value: "dark", title: "Dark" },
+  { value: "system", title: "System" },
+];
+
 const preview: Preview = {
   parameters: {
     // The components are App Router client components: `next/navigation`
@@ -101,15 +127,29 @@ const preview: Preview = {
         dynamicTitle: true,
       },
     },
+    theme: {
+      description: "Color theme",
+      toolbar: {
+        title: "Theme",
+        icon: "circlehollow",
+        items: THEME_ITEMS,
+        dynamicTitle: true,
+      },
+    },
   },
-  initialGlobals: { locale: "en" },
+  initialGlobals: { locale: "en", theme: "dark" },
 
   decorators: [
     (Story, context) => {
       const locale = (context.globals.locale ?? "en") as Locale;
+      const preference = (context.globals.theme ?? "dark") as ThemePreference;
       applyLocale(locale);
+      // Apply during render, not in an effect: screenshots must never capture
+      // the previous theme for one frame. Toolbar changes do not write storage.
+      applyTheme(preference, systemPrefersDark(), { storage: null });
       return (
         <LocaleProvider locale={locale}>
+          <StorybookThemeSync preference={preference} />
           <Story />
         </LocaleProvider>
       );
@@ -138,12 +178,31 @@ const preview: Preview = {
       if (!stream) throw new Error(`Stream #${id} not found`);
       return stream;
     });
-    mocked(readAvailableAction).mockResolvedValue(ACTIVE_AVAILABLE);
+    // The active fixture answers the contract formula at the (fake) clock,
+    // which is ACTIVE_AVAILABLE at FIXED_NOW. The live counter anchors to the
+    // value `available` confirms (issue #39), so when a story or the visual
+    // suite moves the clock, the next refresh has to agree with it; a pinned
+    // value would freeze the counter. Every other id keeps the pinned value.
+    mocked(readAvailableAction).mockImplementation(async (id) => {
+      if (id !== activeStream.id) return ACTIVE_AVAILABLE;
+      const now = BigInt(Math.floor(Date.now() / 1000));
+      return availableAmountAt(
+        {
+          deposit: BigInt(activeStream.deposit),
+          startTime: activeStream.startTime,
+          endTime: activeStream.endTime,
+          withdrawn: BigInt(activeStream.withdrawn),
+          status: activeStream.status,
+        },
+        now
+      ).toString();
+    });
     mocked(readRefundTargetAction).mockImplementation(
       async (id) => STREAMS_BY_ID.get(id)?.sender ?? activeStream.sender
     );
     mocked(fetchStreamIdsPageAction).mockResolvedValue({ ids: [], hasMore: false });
     mocked(readStreamPolicyAction).mockResolvedValue(openPolicy);
+    mocked(readMultisigConfigAction).mockResolvedValue(null);
     // Token metadata: `fetchAssetMeta` answers from this session cache before
     // it would simulate `symbol()` / `decimals()` against the RPC.
     sessionStorage.setItem(

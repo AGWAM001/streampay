@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { nativeToScVal, scValToNative, xdr } from "@stellar/stellar-sdk";
+import { nativeToScVal, scValToNative, StrKey, xdr } from "@stellar/stellar-sdk";
 
 import {
   decodeCreateStreamsBatchResult,
@@ -220,7 +220,8 @@ test("decodes multi-topic events and events with no data fields", () => {
     },
   } as unknown as xdr.ContractEvent;
 
-  const decoded = decodeStreamPayEvent(oracleEvent);
+  const expectedContractId = StrKey.encodeContract(contractId);
+  const decoded = decodeStreamPayEvent(oracleEvent, expectedContractId);
   assert.equal(decoded?.type, "OracleTimeReported");
   if (decoded?.type !== "OracleTimeReported") throw new Error("wrong event type");
   assert.equal(decoded.publisher, GOVERNOR);
@@ -240,10 +241,26 @@ test("decodes multi-topic events and events with no data fields", () => {
       },
     },
   } as unknown as xdr.ContractEvent;
-  const handoff = decodeStreamPayEvent(handoffEvent);
+  const handoff = decodeStreamPayEvent(handoffEvent, expectedContractId);
   assert.equal(handoff?.type, "PolicyHandoffAccepted");
   if (handoff?.type !== "PolicyHandoffAccepted") throw new Error("wrong event type");
   assert.equal(handoff.newAdmin, GOVERNOR);
+
+  const foreignContractId = StrKey.encodeContract(new Uint8Array(32).fill(8));
+  assert.equal(decodeStreamPayEvent(oracleEvent, foreignContractId), null);
+  assert.equal(
+    decodeStreamPayEvent({ ...oracleEvent, type: { name: "diagnostic" } } as unknown as xdr.ContractEvent, expectedContractId),
+    null
+  );
+});
+
+test("unknown contract errors fail decoding instead of escaping the error union", () => {
+  assert.throws(
+    () => decodeCreateStreamsBatchResult(xdr.ScVal.scvVec([
+      xdr.ScVal.scvError(xdr.ScError.sceContract(1_000_000)),
+    ])),
+    /unknown StreamPay contract error #1000000/
+  );
 });
 
 test("batch results decode Ok values and contract errors per entry", () => {

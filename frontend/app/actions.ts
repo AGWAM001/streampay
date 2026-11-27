@@ -5,6 +5,7 @@ import {
   readAvailable,
   readRefundTarget,
   readStream,
+  readMultisigConfig,
   readStreamPolicy,
 } from "@/lib/stellar-read";
 import {
@@ -36,6 +37,10 @@ export async function fetchStreamIdsPageAction(
 
 export async function readStreamPolicyAction(token?: string) {
   return readStreamPolicy(token);
+}
+
+export async function readMultisigConfigAction(address: string) {
+  return readMultisigConfig(address);
 }
 
 export interface PaymentLinkResolution {

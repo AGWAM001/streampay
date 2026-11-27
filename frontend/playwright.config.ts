@@ -57,6 +57,8 @@ export default defineConfig({
     // components (e.g. TimeSeriesChart's axis labels).
     locale: "en-US",
     timezoneId: "UTC",
+    // Overridden by each theme project; Storybook's toolbar is also pinned in
+    // visual/storybook.ts so System never makes a baseline machine-dependent.
     colorScheme: "dark",
     // Escape hatch for hosts the bundled Chromium does not support (macOS 12):
     // PLAYWRIGHT_CHANNEL=chrome uses the installed Google Chrome. Such runs are
@@ -64,6 +66,17 @@ export default defineConfig({
     channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
     trace: "off",
   },
+
+  projects: [
+    {
+      name: "dark",
+      use: { ...devices["Desktop Chrome"], colorScheme: "dark" },
+    },
+    {
+      name: "light",
+      use: { ...devices["Desktop Chrome"], colorScheme: "light" },
+    },
+  ],
 
   webServer: {
     // Serves the output of `npm run build-storybook`; the visual suite never

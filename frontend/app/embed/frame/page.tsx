@@ -20,11 +20,17 @@
  * <Suspense> boundary required by useSearchParams() sits at the page level.
  */
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { readStreamAction, readAvailableAction } from "@/app/actions";
 import { formatAmount } from "@/lib/format";
 import { checkOrigin, parseAllowedOriginsParam } from "@/lib/embed/origin-guard";
+import {
+  applyTheme,
+  embedThemePreference,
+  subscribeToSystemTheme,
+  systemPrefersDark,
+} from "@/lib/theme";
 import {
   isEmbedRequest,
   isKnownRequestType,
@@ -54,7 +60,7 @@ function EmbedFrameInner() {
   const params = useSearchParams();
   const streamId = params?.get("streamId") ?? "";
   const mode = params?.get("mode") ?? "read";
-  const theme = params?.get("theme") ?? "auto";
+  const themePreference = embedThemePreference(params?.toString() ?? "");
   const widgetId = params?.get("widgetId") ?? "";
   const hostOrigin = params?.get("origin") ?? "";
   const allowedOriginsParam = params?.get("allowedOrigins") ?? "";
@@ -171,12 +177,15 @@ function EmbedFrameInner() {
   // ---------------------------------------------------------------------------
   // Apply theme to <html>.
   // ---------------------------------------------------------------------------
-  useEffect(() => {
-    const el = document.documentElement;
-    if (theme === "dark") el.setAttribute("data-theme", "dark");
-    else if (theme === "light") el.setAttribute("data-theme", "light");
-    else el.removeAttribute("data-theme");
-  }, [theme]);
+  // Apply theme to <html>. The root initializer already selects it before paint;
+  // this layout effect also covers client-side navigation into the embed route.
+  useLayoutEffect(() => {
+    applyTheme(themePreference, systemPrefersDark(), { storage: null });
+    if (themePreference !== "system") return;
+    return subscribeToSystemTheme((systemDark) => {
+      applyTheme(themePreference, systemDark, { storage: null });
+    });
+  }, [themePreference]);
 
   // ---------------------------------------------------------------------------
   // Render.
@@ -198,7 +207,9 @@ function EmbedFrameInner() {
     >
       {error && (
         <p
-          style={{ color: "var(--color-error, #c0392b)" }}
+          role="alert"
+          aria-live="assertive"
+          style={{ color: "var(--color-error, var(--status-danger))" }}
         >
           {error}
         </p>
@@ -208,7 +219,7 @@ function EmbedFrameInner() {
         <p
           aria-busy="true"
           aria-label="Loading stream"
-          style={{ color: "var(--color-muted, #666)" }}
+          style={{ color: "var(--color-muted, var(--foreground-muted))" }}
         >
           Loading stream…
         </p>

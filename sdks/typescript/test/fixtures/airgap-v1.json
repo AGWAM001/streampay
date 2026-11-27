@@ -1,0 +1,19 @@
+{
+  "schema": "streampay-airgap-vector/v1",
+  "unsigned": {
+    "schema": "streampay-airgap/v1",
+    "contractId": "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
+    "networkPassphrase": "Test SDF Network ; September 2015",
+    "sourceAccount": "GBTL47RTFR5EKMZSXWOQU735WBK7LRPPDIDK3JTNTCZZ7NUBBRDTVSK2",
+    "method": "withdraw",
+    "transactionXdr": "AAAAAgAAAABmvn4zLHpFMzK9nQp/fbBV9cXvGgatpm2Ys5+2gQxHOgAPQkAAAAAAAAAAKgAAAAEAAAAAAAAAAAAAAABrBgNHAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMAAAAId2l0aGRyYXcAAAABAAAABQAAAAAAAAAHAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "contentHash": "6fdf9b82fce1b1590d5af7ff551a216b31c3c4624cfe99b246e0e2e7f089a489"
+  },
+  "serializedSha256": "b9cb571a6f21b8f36e64f100a3b9db8aa0b70d0e6755e16977ad4f0a1fdb9734",
+  "signedTransactionXdrSha256": "2da402ced2d425e928367c6956854823403c2c8278b4650efd3d75db80197efb",
+  "qrChunkSize": 512,
+  "qrChunkSha256": [
+    "29dc32a1ce40f994c1c781746462e3efa8b6c3e1e80e599eae67bf4e3d2de3b6",
+    "4e58e778d87234822a75ea75ac5c6edf37c79eb27c343841308d3b3fbaaaaf9a"
+  ]
+}

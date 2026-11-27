@@ -3012,6 +3012,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "streampay-multisig"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek 3.0.0",
+ "soroban-sdk",
+ "streampay-contract",
+]
+
+[[package]]
 name = "streampay-passkey"
 version = "0.1.0"
 dependencies = [

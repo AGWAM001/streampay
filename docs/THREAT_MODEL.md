@@ -33,6 +33,7 @@ StreamPay provides continuous, per-second linear payment streaming on the Stella
 | **Contract** | `contracts/streaming-payments/` | Rust, `soroban-sdk` 28.0.0 | Immutable escrow engine. Enforces auth checks (`require_auth`), monotonic stream ID assignment, capacity validation, linear accrual math, Checks-Effects-Interactions (CEI) token transfers, event emission, and persistent storage management. |
 | **Passkey Signer** | `contracts/passkey-signer/` | Rust, `soroban-sdk` 28.0.0 | On-chain WebAuthn Level 3 assertion verifier. Verifies P-256 ECDSA signatures over clientDataJSON/authData, validates relying party IDs and user presence/verification flags, and prevents challenge replay via single-use persistent nonces. |
 | **Stream NFT** | `contracts/stream-nft/` | Rust, `soroban-sdk` 28.0.0 | Companion single-unit SEP-41 non-fungible token contract. Binds recipient rights for a stream to an NFT with transferable ownership, operator allowances, delegated withdrawals, and terminal burn-on-finalize enforcement. |
+| **Multisig (reference)** | `contracts/multisig/` | Rust, `soroban-sdk` 29.0.1 | Optional K-of-N ed25519 custom account (`__check_auth`) plus on-chain propose/approve/execute, usable as a stream sender or recipient. The core contract does not special-case it; security notes (cross-network replay, stale proposals, relaxed per-function thresholds) are in [`docs/MULTISIG.md`](./MULTISIG.md#6-security-notes). |
 | **Sponsorship** | `contracts/streaming-payments/src/sponsor.rs` | Rust, `soroban-sdk` 28.0.0 | Inner-authorization gas sponsorship module. Manages sponsor budgets, per-period and per-beneficiary limits, dual ed25519 signature verification over canonical domain-separated digests, and single-use claim nonces. |
 | **Frontend** | `frontend/` | Next.js 16 (App Router), React 19, TypeScript, `@stellar/stellar-sdk`, `@stellar/freighter-api` | Non-custodial client interface. Connects to Freighter wallet, discovers user streams via on-chain indexes, estimates transaction resources, simulates calls against Soroban RPC, and submits signed XDR envelopes. |
 | **Indexer** | Roadmap (spec in `docs/GOOD_FIRST_ISSUES.md:65-85`, drill simulation in `scripts/drill_indexer_corruption.sh`) | TypeScript / Node.js worker + SQLite/Postgres | Asynchronous off-chain worker. Ingests contract events (`StreamCreated`, `Withdrawn`, `StreamCancelled`, `StreamToppedUp`) via RPC `getEvents`, indexes historical state transitions, and serves analytical queries. |
@@ -192,6 +193,16 @@ contracts/streaming-payments/
     ├── test.rs                 # Comprehensive unit & integration test suite
     ├── error_surface_test.rs   # Exhaustive reachability matrix tests
     └── test_client.rs          # Test harness contract client bindings
+
+contracts/multisig/
+├── Cargo.toml
+├── src/
+│   ├── lib.rs                  # Multisig contract: __check_auth, propose/approve/revoke/execute, policies
+│   ├── errors.rs               # MultisigError enum & numeric code definitions
+│   ├── events.rs               # Proposal and config events
+│   └── test.rs                 # Unit tests (real ed25519 signatures)
+└── tests/
+    └── stream_integration.rs   # End-to-end with the real streaming contract
 
 contracts/passkey-signer/
 ├── Cargo.toml

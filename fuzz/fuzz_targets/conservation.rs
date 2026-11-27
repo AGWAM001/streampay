@@ -87,6 +87,19 @@ pub enum FuzzOp {
     AdvanceTime {
         seconds: u32,
     },
+    /// `split_stream` (#197): `share` is the per-mille of the unaccrued
+    /// remainder that goes to the first child.
+    SplitStream {
+        stream_idx: u8,
+        share: u16,
+        first_extra_secs: u16,
+        second_extra_secs: u16,
+    },
+    /// `merge_streams` (#197).
+    MergeStreams {
+        first_idx: u8,
+        second_idx: u8,
+    },
 }
 
 #[derive(Arbitrary, Debug)]
@@ -401,6 +414,62 @@ fuzz_target!(|campaign: ConservationCampaign| {
                         .try_set_fee_bps(&governor, &new_fee_bps);
                 }
             }
+            FuzzOp::SplitStream {
+                stream_idx,
+                share,
+                first_extra_secs,
+                second_extra_secs,
+            } => {
+                if !created_stream_ids.is_empty() {
+                    let stream_id =
+                        created_stream_ids[(stream_idx as usize) % created_stream_ids.len()];
+                    if let Ok(Ok(parent)) = client.try_get_stream(&stream_id) {
+                        let before = lineage_value(&client, &[stream_id]);
+                        let refundable = parent.deposit - before.0 - before.1;
+                        let first = refundable * (share % 1001) as i128 / 1000;
+                        let escrow = TokenClient::new(&env, &parent.token).balance(&contract_id);
+                        if let Ok(Ok(ids)) = client.mock_all_auths().try_split_stream(
+                            &stream_id,
+                            &first,
+                            &(parent.end_time + first_extra_secs as u64),
+                            &(parent.end_time + second_extra_secs as u64),
+                        ) {
+                            let (a, b) = (ids.get_unchecked(0), ids.get_unchecked(1));
+                            created_stream_ids.push(a);
+                            created_stream_ids.push(b);
+                            assert_eq!(
+                                lineage_value(&client, &[a, b]),
+                                before,
+                                "split of {stream_id} changed withdrawn/claimable/refundable"
+                            );
+                            assert_eq!(
+                                TokenClient::new(&env, &parent.token).balance(&contract_id),
+                                escrow,
+                                "split of {stream_id} moved tokens"
+                            );
+                        }
+                    }
+                }
+            }
+            FuzzOp::MergeStreams {
+                first_idx,
+                second_idx,
+            } => {
+                if !created_stream_ids.is_empty() {
+                    let len = created_stream_ids.len();
+                    let x = created_stream_ids[(first_idx as usize) % len];
+                    let y = created_stream_ids[(second_idx as usize) % len];
+                    let before = lineage_value(&client, &[x, y]);
+                    if let Ok(Ok(m)) = client.mock_all_auths().try_merge_streams(&x, &y) {
+                        created_stream_ids.push(m);
+                        assert_eq!(
+                            lineage_value(&client, &[m]),
+                            before,
+                            "merge of {x} and {y} changed withdrawn/claimable/refundable"
+                        );
+                    }
+                }
+            }
             FuzzOp::AdvanceTime { seconds } => {
                 let delta = (seconds % 86400).max(1) as u64;
                 env.ledger().with_mut(|li| li.timestamp += delta);
@@ -522,3 +591,17 @@ fuzz_target!(|campaign: ConservationCampaign| {
         }
     }
 });
+
+/// `(withdrawn, claimable, refundable)` summed over `ids`, read only through
+/// the public views.
+fn lineage_value(client: &Client, ids: &[u64]) -> (i128, i128, i128) {
+    let mut total = (0, 0, 0);
+    for &id in ids {
+        let s = client.get_stream(&id);
+        let claimable = client.available(&id);
+        total.0 += s.withdrawn;
+        total.1 += claimable;
+        total.2 += s.deposit - s.withdrawn - claimable;
+    }
+    total
+}

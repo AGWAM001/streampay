@@ -4,11 +4,17 @@
  */
 
 import { expect, test } from "@playwright/test";
-import { loadStories, renderStory } from "./storybook";
+import {
+  loadStories,
+  projectTheme,
+  renderStory,
+  snapshotName,
+} from "./storybook";
 
 for (const story of loadStories()) {
-  test(`${story.title} › ${story.name}`, async ({ page }) => {
-    await renderStory(page, story.id);
-    await expect(page).toHaveScreenshot(`${story.id}.png`, { fullPage: true });
+  test(`${story.title} › ${story.name}`, async ({ page }, testInfo) => {
+    const theme = projectTheme(testInfo.project.name);
+    await renderStory(page, story.id, theme);
+    await expect(page).toHaveScreenshot(snapshotName(story.id, theme), { fullPage: true });
   });
 }

@@ -616,16 +616,55 @@ export class RpcManager {
     h.failures += 1;
     if (h.failures >= this.opts.failureThreshold) {
       h.healthy = false;
-      // Schedule a re-probe after 30 s. unref() so a manager that was only ever
-      // constructed (tests, short-lived commands) cannot hold the process open.
-      setTimeout(() => {
-        const hh = this.health.get(url);
-        if (hh && !hh.healthy) { hh.healthy = true; hh.failures = 0; }
-      }, 30_000).unref();
+      this.scheduleReprobe(url);
     }
-    // Log without crashing — the manager must stay operational.
+    // Log without crashing - the manager must stay operational.
     if (process.env.NODE_ENV !== "test") {
       console.warn(`[RpcManager] ${url} failure (${reason}); failure count: ${h.failures}`);
+    }
+  }
+
+  private scheduleReprobe(url: string): void {
+    // Schedule a re-probe after 30 s. unref() so a manager that was only ever
+    // constructed (tests, short-lived commands) cannot hold the process open.
+    setTimeout(async () => {
+      const hh = this.health.get(url);
+      if (hh && !hh.healthy) {
+        const ok = await this.probeEndpoint(url);
+        if (ok) {
+          hh.healthy = true;
+          hh.failures = 0;
+          hh.lastSuccessAt = Date.now();
+        } else {
+          // Endpoint still failing; remain ejected and re-arm probe
+          this.scheduleReprobe(url);
+        }
+      }
+    }, 30_000).unref();
+  }
+
+  private async probeEndpoint(url: string): Promise<boolean> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs);
+    const headers = { "Content-Type": "application/json", ...(this.credentials.get(url) ?? {}) };
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getLatestLedger", params: {} }),
+        signal: controller.signal,
+      });
+      if (!resp.ok) return false;
+      const json = (await resp.json()) as { result?: { sequence?: number }; error?: { message: string } };
+      if (json.error) return false;
+      if (json.result && typeof json.result === "object" && typeof json.result.sequence === "number") {
+        this.updateLedger(url, json.result.sequence);
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

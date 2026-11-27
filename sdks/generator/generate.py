@@ -2,24 +2,23 @@
 """Generate StreamPay client code from the canonical spec.
 
 Inputs
-  * ``sdks/spec/streampay.spec.json`` — the spec IR, derived from the Rust
-    contract by ``check_contract_surface.py --write-spec``.
+  * ``sdks/spec/streampay.spec.json`` — parsed and validated by ``ir.py`` into
+    an immutable, language-agnostic IR.
   * ``frontend/lib/errors.ts`` — the canonical error catalog (itself generated
-    from ``contracts/streaming-payments/src/errors.rs`` and gated in CI). The
-    generator reads error codes and names from it; no language target keeps a
-    second error table.
+    from ``contracts/streaming-payments/src/errors.rs`` and gated in CI). No
+    language target keeps a second error table.
 
 Targets
   Each language target is an ``emit_<language>.py`` module next to this file
-  exposing ``PACKAGE_DIR`` and ``outputs(spec, fingerprint, errors)``. A target
-  is generated only when its package directory exists in the checkout, so the
-  shared spec/generator change carries no language package, and each language
-  change adds its package plus its emitter and is covered by the same
-  ``--check`` gate.
+  exposing ``PACKAGE_DIR`` and ``outputs(spec, fingerprint, errors)``. Every
+  declared target must have its package directory in the checkout.
 
-  Files listed in ``FINGERPRINT_CARRIERS`` are not emitted, only stamped: their
-  spec-digest literals are rewritten here so a hand-written package cannot keep
-  a stale fingerprint.
+Outputs
+  Every emitted code artifact is hashed by relative POSIX path into
+  ``sdks/generator/GENERATED_FINGERPRINT``. Both the artifact bytes and that
+  manifest are checked by ``--check``; writes are explicitly UTF-8 with LF
+  newlines. ``FINGERPRINT_CARRIERS`` remains for hand-written packages that only
+  need their public spec digest stamped.
 
 The output is deterministic, so ``--check`` is a valid CI gate: regeneration
 must be a no-op.
@@ -31,26 +30,28 @@ Usage
 from __future__ import annotations
 
 import argparse
-import difflib
+import hashlib
 import importlib
 import json
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from check_contract_surface import fingerprint  # noqa: E402
+import ir  # noqa: E402
+from check_contract_surface import fingerprint  # noqa: E402,F401
 
 ROOT = HERE.parents[1]
 SPEC_PATH = ROOT / "sdks" / "spec" / "streampay.spec.json"
 CATALOG_PATH = ROOT / "frontend" / "lib" / "errors.ts"
+GENERATED_FINGERPRINT = HERE / "GENERATED_FINGERPRINT"
+GENERATION_SCHEMA = "streampay-generation/v1"
 
-# Hand-written packages that embed the spec digest without being emitted from
-# scratch. Without this they keep the fingerprint of whatever spec was current
-# when a human last edited them, and their conformance report then disagrees
-# with the Rust and TypeScript SDKs about which spec the vectors describe.
-FINGERPRINT_CARRIERS = (ROOT / "sdks" / "python" / "streampay" / "_generated.py",)
+# Python is now emitted from the IR rather than maintained as a hand-written
+# subset. Keep the hook for packages that intentionally only carry a digest.
+FINGERPRINT_CARRIERS: tuple[Path, ...] = ()
 
 
 def carriers(digest: str) -> dict[Path, str]:
@@ -73,8 +74,9 @@ def carriers(digest: str) -> dict[Path, str]:
     return stamped
 
 
-def load_spec() -> dict:
-    return json.loads(SPEC_PATH.read_text(encoding="utf-8"))
+def load_spec(path: Path = SPEC_PATH) -> ir.SpecIR:
+    """Read the canonical UTF-8 spec and return its validated IR."""
+    return ir.load_spec(path)
 
 
 def load_error_catalog(path: Path = CATALOG_PATH) -> list[tuple[int, str]]:
@@ -96,28 +98,120 @@ def load_error_catalog(path: Path = CATALOG_PATH) -> list[tuple[int, str]]:
         raise ValueError(f"could not read the error catalog from {path}")
     if len({code for code, _ in entries}) != len(entries):
         raise ValueError("duplicate error codes in the catalog")
+    if len({name for _, name in entries}) != len(entries):
+        raise ValueError("duplicate error names in the catalog")
     return sorted(entries)
 
 
 def emitters() -> list[object]:
-    """Language emitters whose package exists in this checkout."""
+    """All declared language emitters, requiring every package in the checkout."""
     found = []
     for path in sorted(HERE.glob("emit_*.py")):
         module = importlib.import_module(path.stem)
-        if Path(module.PACKAGE_DIR).is_dir():
-            found.append(module)
+        package = Path(module.PACKAGE_DIR)
+        if not package.is_dir():
+            raise ValueError(f"generator target {path.stem} is missing package {package}")
+        found.append(module)
+    if not found:
+        raise ValueError("no SDK generator targets were declared")
     return found
 
 
-def outputs() -> dict[Path, str]:
-    spec = load_spec()
-    digest = fingerprint(spec)
+def _ordered(targets: Mapping[Path, str], root: Path = ROOT) -> dict[Path, str]:
+    return dict(sorted(targets.items(), key=lambda item: item[0].relative_to(root).as_posix()))
+
+
+def outputs(spec: ir.SpecIR | Mapping | None = None) -> dict[Path, str]:
+    """Render every present language target from one validated IR instance."""
+    parsed = load_spec() if spec is None else ir.parse_spec(spec)
+    digest = parsed.fingerprint
     errors = load_error_catalog()
     targets: dict[Path, str] = {}
     for module in emitters():
-        targets.update(module.outputs(spec, digest, errors))
-    targets.update(carriers(digest))
-    return targets
+        for path, content in module.outputs(parsed, digest, errors).items():
+            if path in targets:
+                raise ValueError(f"multiple emitters own {path.relative_to(ROOT).as_posix()}")
+            targets[path] = content
+    for path, content in carriers(digest).items():
+        if path in targets:
+            raise ValueError(f"an emitter and carrier both own {path.relative_to(ROOT).as_posix()}")
+        targets[path] = content
+    return _ordered(targets)
+
+
+def _artifacts(targets: Mapping[Path, str], root: Path = ROOT) -> list[tuple[str, str]]:
+    """Sorted ``(relative POSIX path, content sha256)`` records."""
+    return [
+        (
+            path.relative_to(root).as_posix(),
+            hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        )
+        for path, content in _ordered(targets, root).items()
+    ]
+
+
+def generation_fingerprint(
+    targets: Mapping[Path, str], spec_fingerprint: str, root: Path = ROOT
+) -> str:
+    """Hash the spec revision and every emitted code artifact, never host paths."""
+    digest = hashlib.sha256()
+    digest.update(GENERATION_SCHEMA.encode("ascii"))
+    digest.update(b"\0")
+    digest.update(spec_fingerprint.encode("ascii"))
+    for path, content_hash in _artifacts(targets, root):
+        digest.update(b"\0")
+        digest.update(path.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(content_hash.encode("ascii"))
+    return digest.hexdigest()
+
+
+def generation_manifest(
+    targets: Mapping[Path, str], spec_fingerprint: str, root: Path = ROOT
+) -> str:
+    """Deterministic JSON manifest for the generated code artifacts."""
+    manifest = {
+        "schema": GENERATION_SCHEMA,
+        "specFingerprint": spec_fingerprint,
+        "artifacts": [
+            {"path": path, "sha256": content_hash}
+            for path, content_hash in _artifacts(targets, root)
+        ],
+        "sha256": generation_fingerprint(targets, spec_fingerprint, root),
+    }
+    return json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
+
+
+def _all_outputs(
+    targets: Mapping[Path, str], spec_fingerprint: str, root: Path = ROOT
+) -> dict[Path, str]:
+    rendered = dict(targets)
+    rendered[root / GENERATED_FINGERPRINT.relative_to(ROOT)] = generation_manifest(
+        targets, spec_fingerprint, root
+    )
+    return _ordered(rendered, root)
+
+
+def write_outputs(
+    targets: Mapping[Path, str], spec_fingerprint: str, root: Path = ROOT
+) -> None:
+    """Write code artifacts and their manifest as exact UTF-8/LF bytes."""
+    for path, content in _all_outputs(targets, spec_fingerprint, root).items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8", newline="\n")
+
+
+def check_outputs(
+    targets: Mapping[Path, str], spec_fingerprint: str, root: Path = ROOT
+) -> list[str]:
+    """Return relative paths whose committed bytes or manifest are stale."""
+    stale: list[str] = []
+    for path, content in _all_outputs(targets, spec_fingerprint, root).items():
+        expected = content.encode("utf-8")
+        existing = path.read_bytes() if path.exists() else b""
+        if existing != expected:
+            stale.append(path.relative_to(root).as_posix())
+    return stale
 
 
 def main() -> int:
@@ -130,37 +224,27 @@ def main() -> int:
     args = parser.parse_args()
 
     spec = load_spec()
-    digest = fingerprint(spec)
-    targets = outputs()
-
-    stale = False
-    for path, content in targets.items():
-        if args.check:
-            existing = path.read_text(encoding="utf-8") if path.exists() else ""
-            if existing != content:
-                stale = True
-                diff = difflib.unified_diff(
-                    existing.splitlines(keepends=True),
-                    content.splitlines(keepends=True),
-                    fromfile=str(path),
-                    tofile=str(path) + " (generated)",
-                )
-                sys.stderr.writelines(list(diff)[:80])
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8", newline="\n")
-            print(f"wrote {path.relative_to(ROOT)}")
-    if args.check and stale:
-        print(
-            "generated clients are stale; run `python3 sdks/generator/generate.py`",
-            file=sys.stderr,
-        )
-        return 1
+    targets = outputs(spec)
     if args.check:
+        stale = check_outputs(targets, spec.fingerprint)
+        for path in stale:
+            print(f"stale generated artifact: {path}", file=sys.stderr)
+        if stale:
+            print(
+                "generated clients are stale; run `python3 sdks/generator/generate.py`",
+                file=sys.stderr,
+            )
+            return 1
         print(
-            f"generated clients match the spec: {len(spec['functions'])} operations, "
-            f"{len(targets)} file(s), sha256 {digest[:12]}…"
+            f"generated clients match the spec: {len(spec.functions)} operations, "
+            f"{len(targets)} code artifact(s) + fingerprint, "
+            f"sha256 {spec.fingerprint[:12]}…"
         )
+        return 0
+
+    write_outputs(targets, spec.fingerprint)
+    for path in _all_outputs(targets, spec.fingerprint):
+        print(f"wrote {path.relative_to(ROOT).as_posix()}")
     return 0
 
 

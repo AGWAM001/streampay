@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ir import SpecIR, TypeRef, parse_spec
+
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_DIR = ROOT / "sdks" / "typescript"
 TS_SRC = PACKAGE_DIR / "src"
@@ -20,9 +22,14 @@ HEADER = (
     "// Do not edit by hand: change the spec, then regenerate.\n"
 )
 
-SPEC: dict = {}
+SPEC: SpecIR | None = None
 FINGERPRINT = ""
 ERRORS: list[tuple[int, str]] = []
+
+
+def _spec() -> SpecIR:
+    assert SPEC is not None, "outputs() must install the spec before rendering"
+    return SPEC
 
 
 def camel(name: str) -> str:
@@ -46,10 +53,11 @@ def _type_codec_names() -> set:
     by hand-editing generated output.
     """
     names = set()
-    for group in ("structs", "enums", "unions"):
-        for entry in SPEC.get(group, []):
-            names.add(f"decode{entry['name']}")
-            names.add(f"encode{entry['name']}")
+    spec = _spec()
+    for group in (spec.structs, spec.enums, spec.unions):
+        for entry in group:
+            names.add(f"decode{entry.name}")
+            names.add(f"encode{entry.name}")
     return names
 
 
@@ -82,18 +90,22 @@ def jsdoc(doc: str, indent: str = "") -> str:
 # --------------------------------------------------------------------------- #
 
 
-def value_type(t: object) -> str:
+def value_type(t: TypeRef) -> str:
     """TypeScript type of a decoded value."""
-    if isinstance(t, dict):
-        if "vec" in t:
-            return f"{value_type(t['vec'])}[]"
-        if "option" in t:
-            return f"{value_type(t['option'])} | null"
-        if "result" in t:
-            return (
-                f"({{ ok: {value_type(t['result']['ok'])} }} | "
-                "{ error: StreamErrorName })"
-            )
+    if t.kind == "vec":
+        assert t.item is not None
+        inner = value_type(t.item)
+        return f"({inner})[]" if " | " in inner else f"{inner}[]"
+    if t.kind == "option":
+        assert t.item is not None
+        return f"{value_type(t.item)} | null"
+    if t.kind == "result":
+        assert t.ok is not None
+        return (
+            f"({{ ok: {value_type(t.ok)} }} | "
+            "{ error: StreamErrorName })"
+        )
+    if t.kind != "primitive" and t.kind != "named":
         raise ValueError(f"unknown IR type {t!r}")
     table = {
         "address": "string",
@@ -109,109 +121,108 @@ def value_type(t: object) -> str:
         "bytes64": "Bytes",
         "void": "void",
     }
-    if t in table:
-        return table[t]
-    return str(t)  # named struct or enum
+    if t.name in table:
+        return table[t.name]
+    return str(t.name)  # named struct or enum
 
 
-def input_type(t: object) -> str:
+def input_type(t: TypeRef) -> str:
     """TypeScript type accepted for an argument or struct field."""
-    if isinstance(t, dict):
-        if "vec" in t:
-            return f"{input_type(t['vec'])}[]"
-        if "option" in t:
-            return f"{input_type(t['option'])} | null"
-        if "result" in t:
-            return value_type(t)
+    if t.kind == "vec":
+        assert t.item is not None
+        inner = input_type(t.item)
+        return f"({inner})[]" if " | " in inner else f"{inner}[]"
+    if t.kind == "option":
+        assert t.item is not None
+        return f"{input_type(t.item)} | null"
+    if t.kind == "result":
+        return value_type(t)
+    if t.kind != "primitive" and t.kind != "named":
         raise ValueError(f"unknown IR type {t!r}")
-    if t == "i128" or t == "u128":
+    if t.name in ("i128", "u128"):
         return "Int128"
-    if t == "u64":
+    if t.name == "u64":
         return "U64"
-    if t == "u32" or t == "i32":
+    if t.name in ("u32", "i32"):
         return "U32"
     return value_type(t)
 
 
-def type_label(t: object) -> str:
+def type_label(t: TypeRef) -> str:
     """Compact type string carried in the generated FUNCTIONS metadata."""
-    if isinstance(t, dict):
-        if "vec" in t:
-            return "vec:" + type_label(t["vec"])
-        if "option" in t:
-            return "option:" + type_label(t["option"])
-        if "result" in t:
-            return "result:" + type_label(t["result"]["ok"])
-        raise ValueError(f"unknown IR type {t!r}")
-    return str(t)
+    return t.label
 
 
-def encode_expr(t: object, expr: str, label: str) -> str:
+def encode_expr(t: TypeRef, expr: str, label: str) -> str:
     """An expression producing an xdr.ScVal from a typed value."""
-    if isinstance(t, dict):
-        if "vec" in t:
-            inner = encode_expr(t["vec"], "item", f"{label}[index]")
-            return (
-                f"xdr.ScVal.scvVec(({expr}).map((item, index) => {inner}))"
-            )
-        if "option" in t:
-            inner = encode_expr(t["option"], expr, label)
-            return f"(({expr}) == null ? xdr.ScVal.scvVoid() : {inner})"
-        if "result" in t:
-            raise ValueError("Result values are return-only; cannot encode")
+    if t.kind == "vec":
+        assert t.item is not None
+        inner = encode_expr(t.item, "item", f"{label}[index]")
+        return (
+            f"xdr.ScVal.scvVec(({expr}).map((item, index) => {inner}))"
+        )
+    if t.kind == "option":
+        assert t.item is not None
+        inner = encode_expr(t.item, expr, label)
+        return f"(({expr}) == null ? xdr.ScVal.scvVoid() : {inner})"
+    if t.kind == "result":
+        raise ValueError("Result values are return-only; cannot encode")
+    if t.kind != "primitive" and t.kind != "named":
         raise ValueError(f"unknown IR type {t!r}")
-    if t == "address":
+    if t.name == "address":
         return f"addressToScVal({expr})"
-    if t in ("i128", "u128"):
-        return f'nativeToScVal(asBigInt({expr}, "{label}"), {{ type: "{t}" }})'
-    if t == "u64":
+    if t.name in ("i128", "u128"):
+        return f'nativeToScVal(asBigInt({expr}, "{label}"), {{ type: "{t.name}" }})'
+    if t.name == "u64":
         return f'nativeToScVal(asBigInt({expr}, "{label}"), {{ type: "u64" }})'
-    if t in ("u32", "i32"):
-        return f'nativeToScVal(asNumber({expr}, "{label}"), {{ type: "{t}" }})'
-    if t == "bool":
+    if t.name in ("u32", "i32"):
+        return f'nativeToScVal(asNumber({expr}, "{label}"), {{ type: "{t.name}" }})'
+    if t.name == "bool":
         return f"nativeToScVal({expr})"
-    if t == "string":
+    if t.name == "string":
         return f'nativeToScVal({expr}, {{ type: "string" }})'
-    if t == "symbol":
+    if t.name == "symbol":
         return f'nativeToScVal({expr}, {{ type: "symbol" }})'
-    if t == "bytes32":
+    if t.name == "bytes32":
         return f'nativeToScVal(asBytes({expr}, "{label}", 32), {{ type: "bytes" }})'
-    if t == "bytes64":
+    if t.name == "bytes64":
         return f'nativeToScVal(asBytes({expr}, "{label}", 64), {{ type: "bytes" }})'
-    if t == "void":
+    if t.name == "void":
         return f"(void {expr}, xdr.ScVal.scvVoid())"
-    return f"encode{t}({expr})"
+    return f"encode{t.name}({expr})"
 
 
-def decode_expr(t: object, expr: str, label: str) -> str:
+def decode_expr(t: TypeRef, expr: str, label: str) -> str:
     """An expression decoding a *native* value (from scValToNative)."""
-    if isinstance(t, dict):
-        if "vec" in t:
-            inner = decode_expr(t["vec"], "item", f"{label}[index]")
-            return (
-                f"asArray({expr}, \"{label}\").map((item, index) => {inner})"
-            )
-        if "option" in t:
-            inner = decode_expr(t["option"], expr, label)
-            return f"(({expr}) == null ? null : {inner})"
-        if "result" in t:
-            raise ValueError("Result values are decoded from ScVal, not native")
+    if t.kind == "vec":
+        assert t.item is not None
+        inner = decode_expr(t.item, "item", f"{label}[index]")
+        return (
+            f"asArray({expr}, \"{label}\").map((item, index) => {inner})"
+        )
+    if t.kind == "option":
+        assert t.item is not None
+        inner = decode_expr(t.item, expr, label)
+        return f"(({expr}) == null ? null : {inner})"
+    if t.kind == "result":
+        raise ValueError("Result values are decoded from ScVal, not native")
+    if t.kind != "primitive" and t.kind != "named":
         raise ValueError(f"unknown IR type {t!r}")
-    if t in ("address", "string", "symbol"):
+    if t.name in ("address", "string", "symbol"):
         return f'asString({expr}, "{label}")'
-    if t in ("i128", "u128", "u64"):
+    if t.name in ("i128", "u128", "u64"):
         return f'asBigInt({expr}, "{label}")'
-    if t in ("u32", "i32"):
+    if t.name in ("u32", "i32"):
         return f'asNumber({expr}, "{label}")'
-    if t == "bool":
+    if t.name == "bool":
         return f'asBool({expr}, "{label}")'
-    if t == "bytes32":
+    if t.name == "bytes32":
         return f'asBytes({expr}, "{label}", 32)'
-    if t == "bytes64":
+    if t.name == "bytes64":
         return f'asBytes({expr}, "{label}", 64)'
-    if t == "void":
+    if t.name == "void":
         return "undefined"
-    return f"decode{t}({expr})"
+    return f"decode{t.name}({expr})"
 
 
 # --------------------------------------------------------------------------- #
@@ -220,22 +231,23 @@ def decode_expr(t: object, expr: str, label: str) -> str:
 
 
 def generate_generated_ts() -> str:
+    spec = _spec()
     errors = ERRORS
     lines: list[str] = [HEADER.format(fingerprint=FINGERPRINT), ""]
     lines += [
         'import { Address, StrKey, nativeToScVal, scValToNative, xdr } from "@stellar/stellar-sdk";',
         "",
         f'export const SPEC_FINGERPRINT = "{FINGERPRINT}";',
-        f'export const CONTRACT_VERSION = "{SPEC["contract"]["version"]}";',
+        f'export const CONTRACT_VERSION = "{spec.contract.version}";',
     ]
-    for name, constant in SPEC["constants"].items():
-        lines.append(f"export const {name} = {constant['value']};")
+    for constant in spec.constants:
+        lines.append(f"export const {constant.name} = {constant.value};")
     lines.append("")
 
     lines.append("/** Contract method names, e.g. `METHODS.createStream`. */")
     lines.append("export const METHODS = {")
-    for function in SPEC["functions"]:
-        lines.append(f'  {camel(function["name"])}: "{function["name"]}",')
+    for function in spec.functions:
+        lines.append(f'  {camel(function.name)}: "{function.name}",')
     lines.append("} as const;")
     lines.append("")
 
@@ -247,40 +259,40 @@ def generate_generated_ts() -> str:
         "",
     ]
 
-    for enum in SPEC["enums"]:
-        lines.append(jsdoc(enum.get("doc", "")).rstrip())
-        union = " | ".join(f'"{case["name"]}"' for case in enum["cases"])
-        lines.append(f"export type {enum['name']} = {union};")
+    for enum in spec.enums:
+        lines.append(jsdoc(enum.doc).rstrip())
+        union = " | ".join(f'"{case.name}"' for case in enum.cases)
+        lines.append(f"export type {enum.name} = {union};")
         lines.append("")
 
-    for union in SPEC.get("unions", []):
-        lines.append(jsdoc(union.get("doc", "")).rstrip())
-        lines.append(f"export type {union['name']} =")
-        for index, case in enumerate(union["cases"]):
-            payload = ", ".join(input_type(t) for t in case["types"])
-            suffix = ";" if index == len(union["cases"]) - 1 else ""
-            lines.append(f'  | {{ variant: "{case["name"]}"; payload: [{payload}] }}{suffix}')
+    for union in spec.unions:
+        lines.append(jsdoc(union.doc).rstrip())
+        lines.append(f"export type {union.name} =")
+        for index, case in enumerate(union.cases):
+            payload = ", ".join(input_type(t) for t in case.types)
+            suffix = ";" if index == len(union.cases) - 1 else ""
+            lines.append(f'  | {{ variant: "{case.name}"; payload: [{payload}] }}{suffix}')
         lines.append("")
 
-    for struct in SPEC["structs"]:
-        lines.append(jsdoc(struct.get("doc", "")).rstrip())
-        lines.append(f"export interface {struct['name']} {{")
-        for field in struct["fields"]:
-            if field.get("doc"):
-                lines.append(f"  /** {field['doc'].replace(chr(10), ' ')} */")
-            lines.append(f"  {camel(field['name'])}: {value_type(field['type'])};")
+    for struct in spec.structs:
+        lines.append(jsdoc(struct.doc).rstrip())
+        lines.append(f"export interface {struct.name} {{")
+        for field in struct.fields:
+            if field.doc:
+                lines.append(f"  /** {field.doc.replace(chr(10), ' ')} */")
+            lines.append(f"  {camel(field.name)}: {value_type(field.type)};")
         lines.append("}")
         lines.append("")
 
-    for function in SPEC["functions"]:
-        if not function["args"]:
+    for function in spec.functions:
+        if not function.args:
             continue
-        lines.append(jsdoc(function.get("doc", "")).rstrip())
-        lines.append(f"export interface {pascal(function['name'])}Args {{")
-        for arg in function["args"]:
-            if arg.get("doc"):
-                lines.append(f"  /** {arg['doc'].replace(chr(10), ' ')} */")
-            lines.append(f"  {camel(arg['name'])}: {input_type(arg['type'])};")
+        lines.append(jsdoc(function.doc).rstrip())
+        lines.append(f"export interface {pascal(function.name)}Args {{")
+        for arg in function.args:
+            if arg.doc:
+                lines.append(f"  /** {arg.doc.replace(chr(10), ' ')} */")
+            lines.append(f"  {camel(arg.name)}: {input_type(arg.type)};")
         lines.append("}")
         lines.append("")
 
@@ -342,10 +354,10 @@ def generate_generated_ts() -> str:
         "",
     ]
 
-    for enum in SPEC["enums"]:
-        name = enum["name"]
-        cases = ", ".join(f'"{case["name"]}"' for case in enum["cases"])
-        if enum["encoding"] == "symbol":
+    for enum in spec.enums:
+        name = enum.name
+        cases = ", ".join(f'"{case.name}"' for case in enum.cases)
+        if enum.encoding == "symbol":
             # Soroban encodes a unit enum without discriminants as
             # `Vec[Symbol(case)]`; scValToNative yields `["Case"]`.
             lines.append(f"const {name.upper()}_CASES: readonly string[] = [{cases}];")
@@ -368,9 +380,9 @@ def generate_generated_ts() -> str:
             continue
         lines.append(f"export function encode{name}(value: {name}): xdr.ScVal {{")
         lines.append("  switch (value) {")
-        for case in enum["cases"]:
-            lines.append(f'    case "{case["name"]}":')
-            lines.append(f'      return nativeToScVal({case["value"]}, {{ type: "u32" }});')
+        for case in enum.cases:
+            lines.append(f'    case "{case.name}":')
+            lines.append(f'      return nativeToScVal({case.value}, {{ type: "u32" }});')
         lines.append("    default:")
         lines.append(f"      throw new Error(`invalid {name}: ${{String(value)}}`);")
         lines.append("  }")
@@ -378,27 +390,27 @@ def generate_generated_ts() -> str:
         lines.append("")
         lines.append(f"export function decode{name}(value: unknown): {name} {{")
         lines.append("  switch (Number(value)) {")
-        for case in enum["cases"]:
-            lines.append(f'    case {case["value"]}:')
-            lines.append(f'      return "{case["name"]}";')
+        for case in enum.cases:
+            lines.append(f'    case {case.value}:')
+            lines.append(f'      return "{case.name}";')
         lines.append("    default:")
         lines.append(f"      throw new Error(`unknown {name}: ${{String(value)}}`);")
         lines.append("  }")
         lines.append("}")
         lines.append("")
 
-    for union in SPEC.get("unions", []):
-        name = union["name"]
+    for union in spec.unions:
+        name = union.name
         lines.append(f"export function encode{name}(value: {name}): xdr.ScVal {{")
         lines.append("  switch (value.variant) {")
-        for case in union["cases"]:
-            lines.append(f'    case "{case["name"]}": {{')
-            if case["types"]:
+        for case in union.cases:
+            lines.append(f'    case "{case.name}": {{')
+            if case.types:
                 lines.append("      const payload = value.payload;")
             parts = ["xdr.ScVal.scvSymbol(value.variant)"]
-            for index, case_type in enumerate(case["types"]):
+            for index, case_type in enumerate(case.types):
                 parts.append(
-                    encode_expr(case_type, f"payload[{index}]", f"{name}.{case['name']}[{index}]")
+                    encode_expr(case_type, f"payload[{index}]", f"{name}.{case.name}[{index}]")
                 )
             lines.append(f"      return xdr.ScVal.scvVec([{', '.join(parts)}]);")
             lines.append("    }")
@@ -411,56 +423,56 @@ def generate_generated_ts() -> str:
         lines.append(f'  const items = asArray(value, "{name}");')
         lines.append(f'  const variant = asString(items[0], "{name} variant");')
         lines.append("  switch (variant) {")
-        for case in union["cases"]:
-            lines.append(f'    case "{case["name"]}":')
-            lines.append(f"      if (items.length !== {len(case['types']) + 1}) {{")
-            lines.append(f'        throw new Error("{name}.{case["name"]}: expected {len(case["types"])} payload value(s)");')
+        for case in union.cases:
+            lines.append(f'    case "{case.name}":')
+            lines.append(f"      if (items.length !== {len(case.types) + 1}) {{")
+            lines.append(f'        throw new Error("{name}.{case.name}: expected {len(case.types)} payload value(s)");')
             lines.append("      }")
             decoded = [
-                decode_expr(case_type, f"items[{index + 1}]", f"{name}.{case['name']}[{index}]")
-                for index, case_type in enumerate(case["types"])
+                decode_expr(case_type, f"items[{index + 1}]", f"{name}.{case.name}[{index}]")
+                for index, case_type in enumerate(case.types)
             ]
-            lines.append(f'      return {{ variant: "{case["name"]}", payload: [{", ".join(decoded)}] }};')
+            lines.append(f'      return {{ variant: "{case.name}", payload: [{", ".join(decoded)}] }};')
         lines.append("    default:")
         lines.append(f"      throw new Error(`unknown {name} variant: ${{variant}}`);")
         lines.append("  }")
         lines.append("}")
         lines.append("")
 
-    for struct in SPEC["structs"]:
-        lines.append(f"export function encode{struct['name']}(value: {struct['name']}): xdr.ScVal {{")
+    for struct in spec.structs:
+        lines.append(f"export function encode{struct.name}(value: {struct.name}): xdr.ScVal {{")
         lines.append("  return structScVal([")
-        for field in struct["fields"]:
-            entry = encode_expr(field["type"], f"value.{camel(field['name'])}", f"{struct['name']}.{field['name']}")
-            lines.append(f'    ["{field["name"]}", {entry}],')
+        for field in struct.fields:
+            entry = encode_expr(field.type, f"value.{camel(field.name)}", f"{struct.name}.{field.name}")
+            lines.append(f'    ["{field.name}", {entry}],')
         lines.append("  ]);")
         lines.append("}")
         lines.append("")
-        lines.append(f"export function decode{struct['name']}(value: unknown): {struct['name']} {{")
+        lines.append(f"export function decode{struct.name}(value: unknown): {struct.name} {{")
         lines.append("  if (value === null || typeof value !== \"object\") {")
-        lines.append(f'    throw new Error("decode{struct["name"]}: expected a map");')
+        lines.append(f'    throw new Error("decode{struct.name}: expected a map");')
         lines.append("  }")
         lines.append("  const native = value as Record<string, unknown>;")
         lines.append("  return {")
-        for field in struct["fields"]:
-            entry = decode_expr(field["type"], f"native.{field['name']}", f"{struct['name']}.{field['name']}")
-            lines.append(f"    {camel(field['name'])}: {entry},")
+        for field in struct.fields:
+            entry = decode_expr(field.type, f"native.{field.name}", f"{struct.name}.{field.name}")
+            lines.append(f"    {camel(field.name)}: {entry},")
         lines.append("  };")
         lines.append("}")
         lines.append("")
 
-    for function in SPEC["functions"]:
-        name = function["name"]
+    for function in spec.functions:
+        name = function.name
         args_type = pascal(name) + "Args"
         encoder = args_encoder_name(name)
-        if function["args"]:
+        if function.args:
             lines.append(
                 f"export function {encoder}(args: {args_type}): xdr.ScVal[] {{"
             )
             lines.append("  return [")
-            for arg in function["args"]:
+            for arg in function.args:
                 entry = encode_expr(
-                    arg["type"], f"args.{camel(arg['name'])}", f"{name}.{arg['name']}"
+                    arg.type, f"args.{camel(arg.name)}", f"{name}.{arg.name}"
                 )
                 lines.append(f"    {entry},")
             lines.append("  ];")
@@ -473,38 +485,36 @@ def generate_generated_ts() -> str:
             lines.append("}")
         lines.append("")
 
-        returns = function["returns"]
+        returns = function.returns
         lines.append(
             f"export function {result_decoder_name(name)}(value: xdr.ScVal): {value_type(returns)} {{"
         )
-        if returns == "void":
+        if returns.is_void:
             lines.append("  void value;")
             lines.append("  return undefined;")
-        elif isinstance(returns, dict) and "result" in returns:
-            ok = returns["result"]["ok"]
-            # Ok values are the raw inner ScVal; Err is an ScVal error.
+        elif returns.kind == "result":
+            assert returns.ok is not None
+            ok = returns.ok
+            lines.append(
+                f'  return decodeResult(value, (item) => {decode_expr(ok, "asNative(item)", name + " result")});'
+            )
+        elif returns.kind == "vec" and returns.item is not None and returns.item.kind == "result":
+            assert returns.item.ok is not None
+            ok = returns.item.ok
             lines.append(
                 f'  return decodeResultVec(value, (item) => {decode_expr(ok, "asNative(item)", name + " result")}, "{name}");'
             )
-        elif (
-            isinstance(returns, dict)
-            and "vec" in returns
-            and isinstance(returns["vec"], dict)
-            and "result" in returns["vec"]
-        ):
-            ok = returns["vec"]["result"]["ok"]
-            lines.append(
-                f'  return decodeResultVec(value, (item) => {decode_expr(ok, "asNative(item)", name + " result")}, "{name}");'
-            )
-        elif isinstance(returns, dict) and "vec" in returns:
+        elif returns.kind == "vec":
+            assert returns.item is not None
             inner = decode_expr(
-                returns["vec"], "item", f"{name} result[index]"
+                returns.item, "item", f"{name} result[index]"
             )
             lines.append(
                 f'  return asArray(asNative(value), "{name} result").map((item, index) => {inner});'
             )
-        elif isinstance(returns, dict) and "option" in returns:
-            inner = decode_expr(returns["option"], "asNative(value)", f"{name} result")
+        elif returns.kind == "option":
+            assert returns.item is not None
+            inner = decode_expr(returns.item, "asNative(value)", f"{name} result")
             lines.append(f"  return asNative(value) == null ? null : {inner};")
         else:
             entry = decode_expr(returns, "asNative(value)", f"{name} result")
@@ -519,17 +529,17 @@ def generate_generated_ts() -> str:
         "}",
         "",
     ]
-    for event in SPEC["events"]:
-        lines.append(jsdoc(event.get("doc", "")).rstrip())
-        lines.append(f"export interface {event['name']}Event extends EventBase {{")
-        lines.append(f'  type: "{event["name"]}";')
-        for field in event["topicFields"] + event["dataFields"]:
-            if field.get("doc"):
-                lines.append(f"  /** {field['doc'].replace(chr(10), ' ')} */")
-            lines.append(f"  {camel(field['name'])}: {value_type(field['type'])};")
+    for event in spec.events:
+        lines.append(jsdoc(event.doc).rstrip())
+        lines.append(f"export interface {event.name}Event extends EventBase {{")
+        lines.append(f'  type: "{event.name}";')
+        for field in event.topic_fields + event.data_fields:
+            if field.doc:
+                lines.append(f"  /** {field.doc.replace(chr(10), ' ')} */")
+            lines.append(f"  {camel(field.name)}: {value_type(field.type)};")
         lines.append("}")
         lines.append("")
-    variants = " | ".join(f"{event['name']}Event" for event in SPEC["events"])
+    variants = " | ".join(f"{event.name}Event" for event in spec.events)
     lines.append(f"export type StreamPayEvent = {variants};")
     lines.append("")
 
@@ -560,38 +570,46 @@ def generate_generated_ts() -> str:
         "",
     ]
 
-    lines.append("/** Decodes a StreamPay contract event; `null` for foreign events. */")
-    lines.append("export function decodeStreamPayEvent(event: xdr.ContractEvent): StreamPayEvent | null {")
+    lines.append("/** Decodes a StreamPay contract event; supply `expectedContractId` to reject foreign contracts. */")
+    lines.append("export function decodeStreamPayEvent(")
+    lines.append("  event: xdr.ContractEvent,")
+    lines.append("  expectedContractId?: string,")
+    lines.append("): StreamPayEvent | null {")
     lines.append("  const type = (event as unknown as { type?: { name?: string } }).type;")
     lines.append("  if (type?.name !== \"contract\") return null;")
+    lines.append("  const contractId = eventContractId(event);")
+    lines.append("  if (expectedContractId !== undefined && contractId !== expectedContractId) return null;")
     lines.append("  const body = (event as unknown as { body?: { v0?: { topics: xdr.ScVal[]; data: xdr.ScVal } } }).body;")
     lines.append("  if (!body?.v0) throw new Error(\"unsupported ContractEvent body\");")
     lines.append("  const topics = body.v0.topics;")
     lines.append("  const name = asString(asNative(topicValue(topics, 0, \"<unknown>\")), \"event name\");")
-    lines.append("  const contractId = eventContractId(event);")
     lines.append("  const data = asNative(body.v0.data) as Record<string, unknown>;")
     lines.append("  switch (name) {")
-    for event in SPEC["events"]:
-        lines.append(f'    case "{event["topic"]}": {{')
+    for event in spec.events:
+        lines.append(f'    case "{event.topic}": {{')
+        topic_count = 1 + len(event.topic_fields)
+        lines.append(
+            f'      if (topics.length !== {topic_count}) throw new Error(`event {event.topic} has ${{topics.length}} topics; expected {topic_count}`);'
+        )
         lines.append("      return {")
-        lines.append(f'        type: "{event["name"]}",')
+        lines.append(f'        type: "{event.name}",')
         lines.append("        contractId,")
         index = 1
-        for field in event["topicFields"]:
+        for field in event.topic_fields:
             entry = decode_expr(
-                field["type"],
-                f"asNative(topicValue(topics, {index}, {json.dumps(event['topic'])}))",
-                f"{event['name']}.{field['name']}",
+                field.type,
+                f"asNative(topicValue(topics, {index}, {json.dumps(event.topic)}))",
+                f"{event.name}.{field.name}",
             )
-            lines.append(f"        {camel(field['name'])}: {entry},")
+            lines.append(f"        {camel(field.name)}: {entry},")
             index += 1
-        for field in event["dataFields"]:
+        for field in event.data_fields:
             entry = decode_expr(
-                field["type"],
-                f"dataValue(data, {json.dumps(field['name'])})",
-                f"{event['name']}.{field['name']}",
+                field.type,
+                f"dataValue(data, {json.dumps(field.name)})",
+                f"{event.name}.{field.name}",
             )
-            lines.append(f"        {camel(field['name'])}: {entry},")
+            lines.append(f"        {camel(field.name)}: {entry},")
         lines.append("      };")
         lines.append("    }")
     lines.append("    default:")
@@ -600,8 +618,27 @@ def generate_generated_ts() -> str:
     lines.append("}")
     lines.append("")
 
-    # Result-vector helper (batch entry results).
+    # Result helpers.
     lines += [
+        "/** Decodes a bare Result<T, StreamError>; Ok carries the raw inner ScVal. */",
+        "function decodeResult<T>(",
+        "  value: xdr.ScVal,",
+        "  decodeOk: (value: xdr.ScVal) => T,",
+        "): { ok: T } | { error: StreamErrorName } {",
+        "  const errorValue = value as unknown as {",
+        "    type?: string;",
+        "    error?: { type?: string; contractCode?: number };",
+        "  };",
+        "  if (errorValue.type === \"scvError\") {",
+        "    const code = errorValue.error?.contractCode;",
+        "    if (typeof code !== \"number\") throw new Error(\"expected a contract error\");",
+        "    const name = contractErrorName(code);",
+        "    if (name === undefined) throw new Error(`unknown StreamPay contract error #${code}`);",
+        "    return { error: name };",
+        "  }",
+        "  return { ok: decodeOk(value) };",
+        "}",
+        "",
         "/** Decodes a Vec<Result<T, StreamError>> (batch per-entry results). */",
         "function decodeResultVec<T>(",
         "  value: xdr.ScVal,",
@@ -612,18 +649,7 @@ def generate_generated_ts() -> str:
         "  if (tagged.type !== \"scvVec\" || !Array.isArray(tagged.vec)) {",
         "    throw new Error(`${label}: expected a vec`);",
         "  }",
-        "  return tagged.vec.map((item) => {",
-        "    const errorValue = item as unknown as {",
-        "      type?: string;",
-        "      error?: { type?: string; contractCode?: number };",
-        "    };",
-        "    if (errorValue.type === \"scvError\") {",
-        "      const code = errorValue.error?.contractCode;",
-        "      const name = typeof code === \"number\" ? contractErrorName(code) : undefined;",
-        "      return { error: (name ?? \"UnknownContractError\") as StreamErrorName };",
-        "    }",
-        "    return { ok: decodeOk(item) };",
-        "  });",
+        "  return tagged.vec.map((item) => decodeResult(item, decodeOk));",
         "}",
         "",
     ]
@@ -653,17 +679,17 @@ def generate_generated_ts() -> str:
     lines.append("}")
     lines.append("")
     lines.append("export const FUNCTIONS: readonly FunctionSpec[] = [")
-    for function in SPEC["functions"]:
-        arg_names = ", ".join(json.dumps(arg["name"]) for arg in function["args"])
+    for function in spec.functions:
+        arg_names = ", ".join(json.dumps(arg.name) for arg in function.args)
         arg_types = ", ".join(
-            json.dumps(type_label(arg["type"])) for arg in function["args"]
+            json.dumps(type_label(arg.type)) for arg in function.args
         )
         lines.append("  {")
-        lines.append(f"    name: {json.dumps(function['name'])},")
+        lines.append(f"    name: {json.dumps(function.name)},")
         lines.append(f"    argNames: [{arg_names}],")
         lines.append(f"    argTypes: [{arg_types}],")
-        lines.append(f"    returnType: {json.dumps(type_label(function['returns']))},")
-        lines.append(f"    mutating: {'true' if function['mutating'] else 'false'},")
+        lines.append(f"    returnType: {json.dumps(type_label(function.returns))},")
+        lines.append(f"    mutating: {'true' if function.mutating else 'false'},")
         lines.append("  },")
     lines.append("];")
     lines.append("")
@@ -676,40 +702,41 @@ def generate_generated_ts() -> str:
 
 
 def generate_methods_ts() -> str:
+    spec = _spec()
     lines: list[str] = [HEADER.format(fingerprint=FINGERPRINT), ""]
     lines.append('import { xdr } from "@stellar/stellar-sdk";')
     lines.append("")
     imported = ["METHODS"]
     type_imports: list[str] = []
-    for function in SPEC["functions"]:
-        name = pascal(function["name"])
-        imported.append(args_encoder_name(function["name"]))
-        imported.append(result_decoder_name(function["name"]))
-        if function["args"]:
+    for function in spec.functions:
+        name = pascal(function.name)
+        imported.append(args_encoder_name(function.name))
+        imported.append(result_decoder_name(function.name))
+        if function.args:
             type_imports.append(f"{name}Args")
-        returns = function["returns"]
-        if isinstance(returns, str):
-            if returns in ("i128", "u128"):
+        returns = function.returns
+        if returns.kind in ("primitive", "named"):
+            if returns.name in ("i128", "u128"):
                 type_imports.append("Int128")
-            elif returns == "u64":
+            elif returns.name == "u64":
                 type_imports.append("U64")
-            elif returns in ("u32", "i32"):
+            elif returns.name in ("u32", "i32"):
                 type_imports.append("U32")
-            elif returns in ("bytes32", "bytes64"):
+            elif returns.name in ("bytes32", "bytes64"):
                 type_imports.append("Bytes")
-            elif returns not in (
+            elif returns.name not in (
                 "address",
                 "bool",
                 "string",
                 "symbol",
                 "void",
             ):
-                type_imports.append(returns)
+                type_imports.append(str(returns.name))
         else:
             # Named types inside containers are referenced by the helper
             # signatures; the interfaces themselves are exported already.
             type_imports.extend(_named_types(returns))
-        ret_type = value_type(function["returns"])
+        ret_type = value_type(function.returns)
         if "StreamErrorName" in ret_type:
             type_imports.append("StreamErrorName")
         if "Bytes" in ret_type:
@@ -730,21 +757,21 @@ def generate_methods_ts() -> str:
     lines.append("    decode: (value: xdr.ScVal) => T")
     lines.append("  ): Promise<T>;")
     lines.append("")
-    for function in SPEC["functions"]:
-        name = pascal(function["name"])
-        method = camel(function["name"])
-        returns = value_type(function["returns"])
-        params = f"args: {name}Args" if function["args"] else ""
+    for function in spec.functions:
+        name = pascal(function.name)
+        method = camel(function.name)
+        returns = value_type(function.returns)
+        params = f"args: {name}Args" if function.args else ""
         args_expr = (
-            f"{args_encoder_name(function['name'])}(args)"
-            if function["args"]
-            else f"{args_encoder_name(function['name'])}()"
+            f"{args_encoder_name(function.name)}(args)"
+            if function.args
+            else f"{args_encoder_name(function.name)}()"
         )
-        lines.append(jsdoc(function.get("doc", ""), "  ").rstrip())
+        lines.append(jsdoc(function.doc, "  ").rstrip())
         lines.append(f"  {method}({params}): Promise<{returns}> {{")
         lines.append(
             f"    return this.call(METHODS.{method}, {args_expr}, "
-            f"{'true' if function['mutating'] else 'false'}, {result_decoder_name(function['name'])});"
+            f"{'true' if function.mutating else 'false'}, {result_decoder_name(function.name)});"
         )
         lines.append("  }")
         lines.append("")
@@ -753,36 +780,21 @@ def generate_methods_ts() -> str:
     return "\n".join(lines)
 
 
-def _named_types(t: object) -> list[str]:
-    if isinstance(t, dict):
-        names: list[str] = []
-        for key in ("vec", "option"):
-            if key in t:
-                names.extend(_named_types(t[key]))
-        if "result" in t:
-            names.extend(_named_types(t["result"]["ok"]))
-        return names
-    if isinstance(t, str) and t not in {
-        "address",
-        "bool",
-        "i32",
-        "u32",
-        "i128",
-        "u128",
-        "u64",
-        "string",
-        "symbol",
-        "bytes32",
-        "bytes64",
-        "void",
-    }:
-        return [t]
+def _named_types(t: TypeRef) -> list[str]:
+    if t.kind in ("vec", "option"):
+        assert t.item is not None
+        return _named_types(t.item)
+    if t.kind == "result":
+        assert t.ok is not None
+        return _named_types(t.ok)
+    if t.kind == "named":
+        return [str(t.name)]
     return []
 
 
-def outputs(spec: dict, fingerprint: str, errors: list[tuple[int, str]]) -> dict[Path, str]:
+def outputs(spec: SpecIR | dict, fingerprint: str, errors: list[tuple[int, str]]) -> dict[Path, str]:
     global SPEC, FINGERPRINT, ERRORS
-    SPEC, FINGERPRINT, ERRORS = spec, fingerprint, errors
+    SPEC, FINGERPRINT, ERRORS = parse_spec(spec), fingerprint, errors
     return {
         TS_SRC / "generated.ts": generate_generated_ts(),
         TS_SRC / "methods.ts": generate_methods_ts(),

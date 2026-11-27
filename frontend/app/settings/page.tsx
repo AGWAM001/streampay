@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import SettingsNav from "@/components/SettingsNav";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useT } from "@/lib/i18n/provider";
 
 export default function SettingsPage() {
@@ -19,6 +20,7 @@ export default function SettingsPage() {
         <h1>{t("settings.title")}</h1>
         <p className="muted">{t("settings.description")}</p>
       </header>
+      <ThemeToggle />
     </main>
   );
 }
