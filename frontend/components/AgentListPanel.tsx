@@ -11,21 +11,21 @@ export const AgentListPanel: React.FC<AgentPanelProps> = ({ streamId, agents, on
   const [newAgent, setNewAgent] = React.useState('');
 
   return (
-    <div className="bg-white shadow rounded-lg p-6 max-w-md mx-auto">
-      <h3 className="text-lg font-medium text-gray-900 mb-4">Authorized Withdrawer Agents (Stream #{streamId})</h3>
-      <ul className="divide-y divide-gray-200 mb-4">
+    <div className="bg-[var(--surface-raised)] shadow-[var(--shadow-card)] rounded-lg p-6 max-w-md mx-auto">
+      <h3 className="text-lg font-medium text-[var(--foreground-default)] mb-4">Authorized Withdrawer Agents (Stream #{streamId})</h3>
+      <ul className="divide-y divide-[var(--border-default)] mb-4">
         {agents.map((agent, index) => (
           <li key={index} className="py-2 flex justify-between items-center text-sm font-mono">
             <span>{agent}</span>
             <button
               onClick={() => onRemoveAgent(agent)}
-              className="text-red-600 hover:text-red-900 text-xs font-sans"
+              className="bg-transparent text-[var(--status-danger)] hover:text-[var(--foreground-danger-emphasis)] text-xs font-sans"
             >
               Remove
             </button>
           </li>
         ))}
-        {agents.length === 0 && <p className="text-sm text-gray-500">No agents authorized.</p>}
+        {agents.length === 0 && <p className="text-sm text-[var(--foreground-muted)]">No agents authorized.</p>}
       </ul>
       <div className="flex gap-2">
         <input
@@ -37,7 +37,7 @@ export const AgentListPanel: React.FC<AgentPanelProps> = ({ streamId, agents, on
         />
         <button
           onClick={() => { if (newAgent) { onAddAgent(newAgent); setNewAgent(''); }}}
-          className="bg-indigo-600 text-white px-4 py-1 rounded text-sm hover:bg-indigo-700"
+          className="bg-[var(--accent-strong)] text-[var(--foreground-on-accent)] px-4 py-1 rounded text-sm hover:bg-[var(--accent-strong-hover)]"
         >
           Add Agent
         </button>

@@ -66,26 +66,26 @@ export default function BenchmarkDashboardPage() {
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
           <span
             style={{
-              background: "rgba(57, 197, 255, 0.12)",
+              background: "var(--status-info-subtle)",
               color: "var(--accent2)",
               padding: "0.25rem 0.75rem",
               borderRadius: "9999px",
               fontSize: "0.8125rem",
               fontWeight: 600,
-              border: "1px solid rgba(57, 197, 255, 0.3)",
+              border: "1px solid var(--status-info-border)",
             }}
           >
             Public &amp; Reproducible
           </span>
           <span
             style={{
-              background: "rgba(61, 220, 132, 0.12)",
+              background: "var(--status-success-subtle)",
               color: "var(--green)",
               padding: "0.25rem 0.75rem",
               borderRadius: "9999px",
               fontSize: "0.8125rem",
               fontWeight: 600,
-              border: "1px solid rgba(61, 220, 132, 0.3)",
+              border: "1px solid var(--status-success-border)",
             }}
           >
             CI Verified Fresh
@@ -136,8 +136,8 @@ export default function BenchmarkDashboardPage() {
             id="unit-mode-usd-btn"
             onClick={() => setUnitMode("usd")}
             style={{
-              background: unitMode === "usd" ? "var(--accent)" : "rgba(255, 255, 255, 0.05)",
-              color: unitMode === "usd" ? "#ffffff" : "var(--muted)",
+              background: unitMode === "usd" ? "var(--accent-strong)" : "var(--surface-subtle)",
+              color: unitMode === "usd" ? "var(--foreground-on-accent)" : "var(--muted)",
               border: "1px solid " + (unitMode === "usd" ? "var(--accent)" : "var(--line)"),
               padding: "0.5rem 1rem",
               borderRadius: "8px",
@@ -154,8 +154,8 @@ export default function BenchmarkDashboardPage() {
             id="unit-mode-native-btn"
             onClick={() => setUnitMode("native")}
             style={{
-              background: unitMode === "native" ? "var(--accent)" : "rgba(255, 255, 255, 0.05)",
-              color: unitMode === "native" ? "#ffffff" : "var(--muted)",
+              background: unitMode === "native" ? "var(--accent-strong)" : "var(--surface-subtle)",
+              color: unitMode === "native" ? "var(--foreground-on-accent)" : "var(--muted)",
               border: "1px solid " + (unitMode === "native" ? "var(--accent)" : "var(--line)"),
               padding: "0.5rem 1rem",
               borderRadius: "8px",
@@ -174,7 +174,7 @@ export default function BenchmarkDashboardPage() {
       <section
         aria-labelledby="simulator-heading"
         style={{
-          background: "linear-gradient(180deg, var(--panel) 0%, rgba(17, 23, 37, 0.8) 100%)",
+          background: "linear-gradient(180deg, var(--panel) 0%, var(--surface-hover) 100%)",
           border: "1px solid var(--line-light)",
           borderRadius: "16px",
           padding: "2rem",
@@ -277,7 +277,7 @@ export default function BenchmarkDashboardPage() {
           <div
             id="sim-streampay-card"
             style={{
-              background: "rgba(139, 124, 255, 0.08)",
+              background: "var(--accent-subtle)",
               border: "2px solid var(--accent)",
               borderRadius: "12px",
               padding: "1.25rem",
@@ -288,7 +288,7 @@ export default function BenchmarkDashboardPage() {
               <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--accent)" }}>StreamPay</span>
               <span style={{ fontSize: "0.75rem", background: "var(--panel)", padding: "0.2rem 0.5rem", borderRadius: "4px" }}>Stellar</span>
             </div>
-            <div style={{ fontSize: "1.85rem", fontWeight: 800, color: "#ffffff", marginBottom: "0.75rem" }}>
+            <div style={{ fontSize: "1.85rem", fontWeight: 800, color: "var(--foreground-default)", marginBottom: "0.75rem" }}>
               ${lifecycle.streampay.totalUsd < 0.01 ? lifecycle.streampay.totalUsd.toFixed(4) : lifecycle.streampay.totalUsd.toFixed(2)}
             </div>
             <div style={{ fontSize: "0.8125rem", color: "var(--muted)", display: "flex", flexDirection: "column", gap: "0.3rem" }}>
@@ -405,7 +405,7 @@ export default function BenchmarkDashboardPage() {
                   key={key}
                   style={{
                     borderBottom: idx < 2 ? "1px solid var(--line)" : "none",
-                    background: idx % 2 === 1 ? "rgba(255, 255, 255, 0.02)" : "transparent",
+                    background: idx % 2 === 1 ? "var(--surface-row-alt)" : "transparent",
                   }}
                 >
                   <th scope="row" style={{ padding: "0.85rem 1rem", fontWeight: 600, color: "var(--text)" }}>
@@ -453,7 +453,7 @@ export default function BenchmarkDashboardPage() {
                   key={key}
                   style={{
                     borderBottom: idx < 2 ? "1px solid var(--line)" : "none",
-                    background: idx % 2 === 1 ? "rgba(255, 255, 255, 0.02)" : "transparent",
+                    background: idx % 2 === 1 ? "var(--surface-row-alt)" : "transparent",
                   }}
                 >
                   <th scope="row" style={{ padding: "0.85rem 1rem", fontWeight: 600, color: "var(--text)" }}>
@@ -506,7 +506,7 @@ export default function BenchmarkDashboardPage() {
                   key={idx}
                   style={{
                     borderBottom: idx < OPERATIONS_BENCHMARK.claim.length - 1 ? "1px solid var(--line)" : "none",
-                    background: idx % 2 === 1 ? "rgba(255, 255, 255, 0.02)" : "transparent",
+                    background: idx % 2 === 1 ? "var(--surface-row-alt)" : "transparent",
                   }}
                 >
                   <th scope="row" style={{ padding: "0.85rem 1rem", fontWeight: 600, color: "var(--text)" }}>
@@ -548,7 +548,7 @@ export default function BenchmarkDashboardPage() {
                   key={idx}
                   style={{
                     borderBottom: idx < OPERATIONS_BENCHMARK.cancel.length - 1 ? "1px solid var(--line)" : "none",
-                    background: idx % 2 === 1 ? "rgba(255, 255, 255, 0.02)" : "transparent",
+                    background: idx % 2 === 1 ? "var(--surface-row-alt)" : "transparent",
                   }}
                 >
                   <th scope="row" style={{ padding: "0.85rem 1rem", fontWeight: 600, color: "var(--text)" }}>
@@ -583,7 +583,7 @@ export default function BenchmarkDashboardPage() {
         <div style={{ marginBottom: "1.5rem" }}>
           <span
             style={{
-              background: "rgba(139, 124, 255, 0.15)",
+              background: "var(--accent-subtle)",
               color: "var(--accent)",
               padding: "0.2rem 0.6rem",
               borderRadius: "4px",
@@ -767,8 +767,8 @@ export default function BenchmarkDashboardPage() {
             id="copy-raw-json-btn"
             onClick={copyRawJson}
             style={{
-              background: rawCopied ? "var(--green)" : "var(--panel)",
-              color: rawCopied ? "#000000" : "var(--text)",
+              background: rawCopied ? "var(--status-success-button)" : "var(--panel)",
+              color: rawCopied ? "var(--foreground-on-success)" : "var(--text)",
               border: "1px solid var(--line-light)",
               padding: "0.5rem 1rem",
               borderRadius: "8px",

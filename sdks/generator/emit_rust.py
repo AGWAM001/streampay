@@ -17,8 +17,9 @@ owns only the generated file, and ``generate.py --check`` fails on drift.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from ir import EnumType, Field, Function, SpecIR, StructType, TypeRef, UnionType, parse_spec
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_DIR = ROOT / "sdks" / "rust"
@@ -30,7 +31,7 @@ HEADER = (
     "// Do not edit by hand: change the spec, then regenerate.\n"
 )
 
-SPEC: dict = {}
+SPEC: SpecIR | None = None
 FINGERPRINT = ""
 ERRORS: list[tuple[int, str]] = []
 
@@ -49,7 +50,10 @@ VALUE_TYPES = {
     "void": "()",
 }
 
-PRIMITIVES = set(VALUE_TYPES)
+
+def _spec() -> SpecIR:
+    assert SPEC is not None, "outputs() must install the spec before rendering"
+    return SPEC
 
 
 def pascal(name: str) -> str:
@@ -68,22 +72,35 @@ def rustdoc(doc: str, indent: str = "") -> list[str]:
 
 
 def quote(value: str) -> str:
-    return json.dumps(value)
+    escapes = {
+        "\\": "\\\\",
+        '"': '\\"',
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "\0": "\\0",
+    }
+    rendered = []
+    for character in value:
+        codepoint = ord(character)
+        if 0xD800 <= codepoint <= 0xDFFF:
+            raise ValueError("Rust string literals cannot contain surrogate code points")
+        if character in escapes:
+            rendered.append(escapes[character])
+        elif codepoint < 0x20 or codepoint == 0x7F:
+            rendered.append(f"\\u{{{codepoint:x}}}")
+        else:
+            rendered.append(character)
+    return '"' + "".join(rendered) + '"'
 
 
-def _is_named(t: object) -> bool:
+def _is_named(t: TypeRef) -> bool:
     """True for a struct/enum/union type (something with `from_scval`)."""
-    return isinstance(t, str) and t not in PRIMITIVES
+    return t.kind == "named"
 
 
-def _mentions(types: list[object], wanted: str) -> bool:
-    for t in types:
-        if isinstance(t, dict):
-            if _mentions(list(t.values()), wanted):
-                return True
-        elif t == wanted:
-            return True
-    return False
+def _mentions(types: list[TypeRef], wanted: str) -> bool:
+    return any(wanted in value.named_types() for value in types)
 
 
 # --------------------------------------------------------------------------- #
@@ -91,57 +108,32 @@ def _mentions(types: list[object], wanted: str) -> bool:
 # --------------------------------------------------------------------------- #
 
 
-def read_functions() -> list[dict]:
+ENCODABLE_ARGUMENTS = frozenset({"address", "bool", "i32", "u32", "i128", "u128", "u64"})
+
+
+def _can_encode_argument(value: TypeRef) -> bool:
+    if value.kind == "option":
+        assert value.item is not None
+        return _can_encode_argument(value.item)
+    return value.kind == "primitive" and value.name in ENCODABLE_ARGUMENTS
+
+
+def read_functions() -> list[Function]:
     """Operations a read-only client exposes, in spec order."""
-    return [function for function in SPEC["functions"] if not function["mutating"]]
+    functions = list(_spec().read_functions)
+    for function in functions:
+        for arg in function.args:
+            if not _can_encode_argument(arg.type):
+                raise ValueError(
+                    f"Rust read argument {function.name}.{arg.name} has unsupported "
+                    f"type {arg.type.label!r}"
+                )
+    return functions
 
 
-def reachable_types() -> tuple[list[dict], list[dict], list[dict]]:
-    """Structs, enums and unions reachable from the read surface, in spec order.
-
-    Emitting only the reachable closure keeps write-only types (``StreamInput``,
-    ``WithdrawEntry``, …) out of a read-only crate instead of shipping dead code
-    that would suggest write support exists.
-    """
-    structs = {item["name"]: item for item in SPEC["structs"]}
-    enums = {item["name"]: item for item in SPEC["enums"]}
-    unions = {item["name"]: item for item in SPEC.get("unions", [])}
-    seen: set[str] = set()
-
-    def walk(t: object) -> None:
-        if isinstance(t, dict):
-            for key in ("vec", "option"):
-                if key in t:
-                    walk(t[key])
-            if "result" in t:
-                walk(t["result"]["ok"])
-            return
-        if t in structs:
-            if t in seen:
-                return
-            seen.add(t)
-            for field in structs[t]["fields"]:
-                walk(field["type"])
-        elif t in unions:
-            if t in seen:
-                return
-            seen.add(t)
-            for case in unions[t]["cases"]:
-                for inner in case["types"]:
-                    walk(inner)
-        elif t in enums:
-            seen.add(t)
-
-    for function in read_functions():
-        walk(function["returns"])
-        for arg in function["args"]:
-            walk(arg["type"])
-
-    return (
-        [item for item in SPEC["structs"] if item["name"] in seen],
-        [item for item in SPEC["enums"] if item["name"] in seen],
-        [item for item in SPEC.get("unions", []) if item["name"] in seen],
-    )
+def reachable_types() -> tuple[list[StructType], list[EnumType], list[UnionType]]:
+    """Structs, enums and unions reachable from the read surface, in spec order."""
+    return tuple(list(group) for group in _spec().reachable_types(read_only=True))
 
 
 # --------------------------------------------------------------------------- #
@@ -149,52 +141,58 @@ def reachable_types() -> tuple[list[dict], list[dict], list[dict]]:
 # --------------------------------------------------------------------------- #
 
 
-def value_type(t: object) -> str:
+def value_type(t: TypeRef) -> str:
     """Rust type of a decoded value."""
-    if isinstance(t, dict):
-        if "vec" in t:
-            return f"Vec<{value_type(t['vec'])}>"
-        if "option" in t:
-            return f"Option<{value_type(t['option'])}>"
-        if "result" in t:
-            raise ValueError("read methods never return a bare Result in the IR")
+    if t.kind == "vec":
+        assert t.item is not None
+        return f"Vec<{value_type(t.item)}>"
+    if t.kind == "option":
+        assert t.item is not None
+        return f"Option<{value_type(t.item)}>"
+    if t.kind == "result":
+        raise ValueError("read methods never return a bare Result in the IR")
+    if t.kind not in ("primitive", "named"):
         raise ValueError(f"unknown IR type {t!r}")
-    if t in VALUE_TYPES:
-        return VALUE_TYPES[t]
-    return str(t)
+    if t.name in VALUE_TYPES:
+        return VALUE_TYPES[t.name]
+    return str(t.name)
 
 
-def arg_type(t: object) -> str:
+def arg_type(t: TypeRef) -> str:
     """Rust parameter type for a read argument."""
-    if isinstance(t, dict) and "option" in t:
-        return f"Option<{arg_type(t['option'])}>"
-    if t == "address":
+    if t.kind == "option":
+        assert t.item is not None
+        return f"Option<{arg_type(t.item)}>"
+    if t.name == "address":
         return "&str"
     return value_type(t)
 
 
-def encode_expr(t: object, expr: str) -> str:
+def encode_expr(t: TypeRef, expr: str) -> str:
     """An expression producing an ``ScVal`` from a typed argument."""
-    if isinstance(t, dict) and "option" in t:
-        inner = encode_expr(t["option"], "item")
+    if t.kind == "option":
+        assert t.item is not None
+        inner = encode_expr(t.item, "item")
         return f"match {expr} {{ Some(item) => {inner}, None => ScVal::Void }}"
-    if t == "address":
+    if t.kind not in ("primitive", "named"):
+        raise ValueError(f"cannot encode read argument of type {t!r}")
+    if t.name == "address":
         return f"crate::address_to_scval({expr})?"
-    if t == "bool":
+    if t.name == "bool":
         return f"ScVal::Bool({expr})"
-    if t == "u32":
+    if t.name == "u32":
         return f"ScVal::U32({expr})"
-    if t == "i32":
+    if t.name == "i32":
         return f"ScVal::I32({expr})"
-    if t == "u64":
+    if t.name == "u64":
         return f"ScVal::U64({expr})"
-    if t == "i128":
+    if t.name == "i128":
         return (
             "ScVal::I128(Int128Parts { "
             f"hi: ({expr} >> 64) as i64, lo: {expr} as u64 "
             "})"
         )
-    if t == "u128":
+    if t.name == "u128":
         return (
             "ScVal::U128(UInt128Parts { "
             f"hi: ({expr} >> 64) as u64, lo: {expr} as u64 "
@@ -203,25 +201,27 @@ def encode_expr(t: object, expr: str) -> str:
     raise ValueError(f"cannot encode read argument of type {t!r}")
 
 
-def decode_expr(t: object, expr: str, context: str) -> str:
+def decode_expr(t: TypeRef, expr: str, context: str) -> str:
     """An expression of type ``Result<T, DecodeError>`` decoding ``expr``."""
-    if isinstance(t, dict):
-        if "vec" in t:
-            if _is_named(t["vec"]):
-                decode = f"{t['vec']}::from_scval"
-            else:
-                inner = decode_expr(t["vec"], "item", context + "[]")
-                decode = f"|item| {inner}"
-            return f"crate::decode_vec({expr}, {quote(context)}, {decode})"
-        if "option" in t:
-            if _is_named(t["option"]):
-                decode = f"{t['option']}::from_scval"
-            else:
-                inner = decode_expr(t["option"], "item", context)
-                decode = f"|item| {inner}"
-            return f"crate::decode_option({expr}, {quote(context)}, {decode})"
-        if "result" in t:
-            raise ValueError("read results are already unwrapped in the IR")
+    if t.kind == "vec":
+        assert t.item is not None
+        if _is_named(t.item):
+            decode = f"{t.item.name}::from_scval"
+        else:
+            inner = decode_expr(t.item, "item", context + "[]")
+            decode = f"|item| {inner}"
+        return f"crate::decode_vec({expr}, {quote(context)}, {decode})"
+    if t.kind == "option":
+        assert t.item is not None
+        if _is_named(t.item):
+            decode = f"{t.item.name}::from_scval"
+        else:
+            inner = decode_expr(t.item, "item", context)
+            decode = f"|item| {inner}"
+        return f"crate::decode_option({expr}, {quote(context)}, {decode})"
+    if t.kind == "result":
+        raise ValueError("read results are already unwrapped in the IR")
+    if t.kind not in ("primitive", "named"):
         raise ValueError(f"unknown IR type {t!r}")
     helpers = {
         "address": "address_from_scval",
@@ -237,24 +237,25 @@ def decode_expr(t: object, expr: str, context: str) -> str:
         "bytes64": "scval_bytes64",
         "void": "scval_void",
     }
-    if t in helpers:
-        return f"crate::{helpers[t]}({expr}, {quote(context)})"
-    return f"{t}::from_scval({expr})"
+    if t.name in helpers:
+        return f"crate::{helpers[t.name]}({expr}, {quote(context)})"
+    return f"{t.name}::from_scval({expr})"
 
 
-def field_expr(field: dict, struct_name: str) -> str:
+def field_expr(field: Field, struct_name: str) -> str:
     """The value expression for one decoded struct field."""
-    key = quote(field["name"])
-    context = quote(f"{struct_name}.{field['name']}")
-    spec_type = field["type"]
-    if isinstance(spec_type, dict) and "option" in spec_type:
-        inner = decode_expr(spec_type["option"], "item", f"{struct_name}.{field['name']}")
+    key = quote(field.name)
+    context = quote(f"{struct_name}.{field.name}")
+    spec_type = field.type
+    if spec_type.kind == "option":
+        assert spec_type.item is not None
+        inner = decode_expr(spec_type.item, "item", f"{struct_name}.{field.name}")
         return (
             f"crate::decode_optional_field(&fields, {key}, {context}, "
             f"|item| {inner})?"
         )
     lookup = f"crate::field(&fields, {key}, {quote(struct_name)})?"
-    return f"{decode_expr(spec_type, lookup, f'{struct_name}.{field['name']}')}?"
+    return f"{decode_expr(spec_type, lookup, f'{struct_name}.{field.name}')}?"
 
 
 # --------------------------------------------------------------------------- #
@@ -262,14 +263,14 @@ def field_expr(field: dict, struct_name: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def generate_struct(struct: dict) -> list[str]:
-    name = struct["name"]
-    lines = rustdoc(struct.get("doc", ""))
+def generate_struct(struct: StructType) -> list[str]:
+    name = struct.name
+    lines = rustdoc(struct.doc)
     lines.append("#[derive(Clone, Debug, PartialEq, Eq)]")
     lines.append(f"pub struct {name} {{")
-    for field in struct["fields"]:
-        lines += rustdoc(field.get("doc", ""), "    ")
-        lines.append(f"    pub {field['name']}: {value_type(field['type'])},")
+    for field in struct.fields:
+        lines += rustdoc(field.doc, "    ")
+        lines.append(f"    pub {field.name}: {value_type(field.type)},")
     lines.append("}")
     lines.append("")
     lines.append(f"impl {name} {{")
@@ -277,8 +278,8 @@ def generate_struct(struct: dict) -> list[str]:
     lines.append(f"    pub fn from_scval(value: &ScVal) -> Result<Self, crate::DecodeError> {{")
     lines.append(f"        let fields = crate::struct_fields(value, {quote(name)})?;")
     lines.append("        Ok(Self {")
-    for field in struct["fields"]:
-        lines.append(f"            {field['name']}: {field_expr(field, name)},")
+    for field in struct.fields:
+        lines.append(f"            {field.name}: {field_expr(field, name)},")
     lines.append("        })")
     lines.append("    }")
     lines.append("}")
@@ -286,18 +287,18 @@ def generate_struct(struct: dict) -> list[str]:
     return lines
 
 
-def generate_enum(enum: dict) -> list[str]:
-    name = enum["name"]
-    cases = enum["cases"]
-    lines = rustdoc(enum.get("doc", ""))
+def generate_enum(enum: EnumType) -> list[str]:
+    name = enum.name
+    cases = enum.cases
+    lines = rustdoc(enum.doc)
     lines.append("#[derive(Clone, Copy, Debug, PartialEq, Eq)]")
     lines.append(f"pub enum {name} {{")
     for case in cases:
-        lines += rustdoc(case.get("doc", ""), "    ")
-        lines.append(f"    {case['name']},")
+        lines += rustdoc(case.doc, "    ")
+        lines.append(f"    {case.name},")
     lines.append("}")
     lines.append("")
-    names = ", ".join(f"Self::{case['name']}" for case in cases)
+    names = ", ".join(f"Self::{case.name}" for case in cases)
     lines.append(f"impl {name} {{")
     lines.append("    pub const ALL: &'static [Self] = &[" + names + "];")
     lines.append("")
@@ -305,17 +306,17 @@ def generate_enum(enum: dict) -> list[str]:
     lines.append("    pub fn name(self) -> &'static str {")
     lines.append("        match self {")
     for case in cases:
-        lines.append(f"            Self::{case['name']} => {quote(case['name'])},")
+        lines.append(f"            Self::{case.name} => {quote(case.name)},")
     lines.append("        }")
     lines.append("    }")
     lines.append("")
     lines.append("    /// Decodes the contract's wire encoding of this enum.")
     lines.append(f"    pub fn from_scval(value: &ScVal) -> Result<Self, crate::DecodeError> {{")
-    if enum["encoding"] == "u32":
+    if enum.encoding == "u32":
         lines.append(f"        let code = crate::scval_u32(value, {quote(name)})?;")
         lines.append("        match code {")
         for case in cases:
-            lines.append(f"            {case['value']} => Ok(Self::{case['name']}),")
+            lines.append(f"            {case.value} => Ok(Self::{case.name}),")
         lines.append(
             "            other => Err(crate::DecodeError::unknown_case("
             f"{quote(name)}, &other.to_string())),"
@@ -338,7 +339,7 @@ def generate_enum(enum: dict) -> list[str]:
         lines.append("        };")
         lines.append("        match tag.as_str() {")
         for case in cases:
-            lines.append(f"            {quote(case['name'])} => Ok(Self::{case['name']}),")
+            lines.append(f"            {quote(case.name)} => Ok(Self::{case.name}),")
         lines.append(
             "            other => Err(crate::DecodeError::unknown_case("
             f"{quote(name)}, other)),"
@@ -350,18 +351,18 @@ def generate_enum(enum: dict) -> list[str]:
     return lines
 
 
-def generate_union(union: dict) -> list[str]:
-    name = union["name"]
-    lines = rustdoc(union.get("doc", ""))
+def generate_union(union: UnionType) -> list[str]:
+    name = union.name
+    lines = rustdoc(union.doc)
     lines.append("#[derive(Clone, Debug, PartialEq, Eq)]")
     lines.append(f"pub enum {name} {{")
-    for case in union["cases"]:
+    for case in union.cases:
         payload = None
-        if case["types"]:
-            payload = ", ".join(value_type(t) for t in case["types"])
-        lines += rustdoc(case.get("doc", ""), "    ")
+        if case.types:
+            payload = ", ".join(value_type(t) for t in case.types)
+        lines += rustdoc(case.doc, "    ")
         suffix = f"({payload})" if payload is not None else ""
-        lines.append(f"    {case['name']}{suffix},")
+        lines.append(f"    {case.name}{suffix},")
     lines.append("}")
     lines.append("")
     lines.append(f"impl {name} {{")
@@ -386,25 +387,25 @@ def generate_union(union: dict) -> list[str]:
     )
     lines.append("        };")
     lines.append("        match tag.as_str() {")
-    for case in union["cases"]:
-        expected = len(case["types"]) + 1
-        lines.append(f"            {quote(case['name'])} => {{")
+    for case in union.cases:
+        expected = len(case.types) + 1
+        lines.append(f"            {quote(case.name)} => {{")
         lines.append(f"                if items.len() != {expected} {{")
         lines.append(
             "                    return Err(crate::DecodeError::union_arity("
-            f"{quote(name + '.' + case['name'])}, {expected}, items.len()));"
+            f"{quote(name + '.' + case.name)}, {expected}, items.len()));"
         )
         lines.append("                }")
-        if case["types"]:
+        if case.types:
             values = []
-            for index, case_type in enumerate(case["types"]):
-                context = f"{name}.{case['name']}[{index}]"
+            for index, case_type in enumerate(case.types):
+                context = f"{name}.{case.name}[{index}]"
                 values.append(
                     decode_expr(case_type, f"&items[{index + 1}]", context) + "?"
                 )
-            lines.append(f"                Ok(Self::{case['name']}({', '.join(values)}))")
+            lines.append(f"                Ok(Self::{case.name}({', '.join(values)}))")
         else:
-            lines.append(f"                Ok(Self::{case['name']})")
+            lines.append(f"                Ok(Self::{case.name})")
         lines.append("            }")
     lines.append(
         "            other => Err(crate::DecodeError::unknown_case("
@@ -469,19 +470,19 @@ def generate_error_enum() -> list[str]:
     return lines
 
 
-def generate_args(function: dict) -> list[str]:
-    name = function["name"]
+def generate_args(function: Function) -> list[str]:
+    name = function.name
     params = ", ".join(
-        f"{arg['name']}: {arg_type(arg['type'])}" for arg in function["args"]
+        f"{arg.name}: {arg_type(arg.type)}" for arg in function.args
     )
-    lines = rustdoc(function.get("doc", ""))
+    lines = rustdoc(function.doc)
     lines.append(
         f"pub fn {name}_args({params}) -> Result<Vec<ScVal>, EncodeError> {{"
     )
-    if function["args"]:
+    if function.args:
         lines.append("    Ok(vec![")
-        for arg in function["args"]:
-            lines.append(f"        {encode_expr(arg['type'], arg['name'])},")
+        for arg in function.args:
+            lines.append(f"        {encode_expr(arg.type, arg.name)},")
         lines.append("    ])")
     else:
         lines.append("    Ok(Vec::new())")
@@ -490,9 +491,9 @@ def generate_args(function: dict) -> list[str]:
     return lines
 
 
-def generate_decoder(function: dict) -> list[str]:
-    name = function["name"]
-    returns = function["returns"]
+def generate_decoder(function: Function) -> list[str]:
+    name = function.name
+    returns = function.returns
     lines = [
         f"/// Decodes the `{name}` call result into its typed form.",
         f"pub fn decode_{name}_result(value: &ScVal) -> Result<{value_type(returns)}, DecodeError> {{",
@@ -504,7 +505,7 @@ def generate_decoder(function: dict) -> list[str]:
     return lines
 
 
-def generate_client(functions: list[dict]) -> list[str]:
+def generate_client(functions: list[Function]) -> list[str]:
     lines = [
         "/// A read-only client over any [`crate::ReadTransport`].",
         "pub struct ReadClient<T> {",
@@ -524,17 +525,17 @@ def generate_client(functions: list[dict]) -> list[str]:
         "impl<T: crate::ReadTransport> ReadClient<T> {",
     ]
     for function in functions:
-        name = function["name"]
+        name = function.name
         params = [
-            f"{arg['name']}: {arg_type(arg['type'])}" for arg in function["args"]
+            f"{arg.name}: {arg_type(arg.type)}" for arg in function.args
         ]
         signature = ", ".join(["&self"] + params)
-        lines += rustdoc(function.get("doc", ""), "    ")
+        lines += rustdoc(function.doc, "    ")
         lines.append(
-            f"    pub fn {name}({signature}) -> Result<{value_type(function['returns'])}, "
+            f"    pub fn {name}({signature}) -> Result<{value_type(function.returns)}, "
             "crate::CallError<T::Error>> {"
         )
-        arguments = ", ".join(arg["name"] for arg in function["args"])
+        arguments = ", ".join(arg.name for arg in function.args)
         lines.append(f"        let args = {name}_args({arguments})?;")
         lines.append(
             f"        let value = self.transport.simulate({name.upper()}, args)"
@@ -549,9 +550,10 @@ def generate_client(functions: list[dict]) -> list[str]:
 
 
 def generate_generated_rs() -> str:
+    spec = _spec()
     structs, enums, unions = reachable_types()
     functions = read_functions()
-    arg_types: list[object] = [arg["type"] for function in functions for arg in function["args"]]
+    arg_types: list[object] = [arg.type for function in functions for arg in function.args]
     imported = ["ScVal"]
     if _mentions(arg_types, "i128"):
         imported.append("Int128Parts")
@@ -574,19 +576,19 @@ def generate_generated_rs() -> str:
         "use crate::{DecodeError, EncodeError};",
         "",
         f"pub const SPEC_FINGERPRINT: &str = {quote(FINGERPRINT)};",
-        f"pub const CONTRACT_VERSION: &str = {quote(SPEC['contract']['version'])};",
+        f"pub const CONTRACT_VERSION: &str = {quote(spec.contract.version)};",
         "",
     ]
 
-    for name, constant in SPEC["constants"].items():
-        rust_type = VALUE_TYPES.get(constant["type"], "u64")
-        lines.append(f"pub const {name}: {rust_type} = {constant['value']};")
+    for constant in spec.constants:
+        rust_type = VALUE_TYPES.get(constant.type, "u64")
+        lines.append(f"pub const {constant.name}: {rust_type} = {constant.value};")
     lines.append("")
 
     lines.append("/// Contract method names, e.g. `GET_STREAM`.")
     for function in functions:
         lines.append(
-            f"pub const {function['name'].upper()}: &str = {quote(function['name'])};"
+            f"pub const {function.name.upper()}: &str = {quote(function.name)};"
         )
     lines.append("")
 
@@ -608,7 +610,7 @@ def generate_generated_rs() -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def outputs(spec: dict, fingerprint: str, errors: list[tuple[int, str]]) -> dict[Path, str]:
+def outputs(spec: SpecIR | dict, fingerprint: str, errors: list[tuple[int, str]]) -> dict[Path, str]:
     global SPEC, FINGERPRINT, ERRORS
-    SPEC, FINGERPRINT, ERRORS = spec, fingerprint, errors
+    SPEC, FINGERPRINT, ERRORS = parse_spec(spec), fingerprint, errors
     return {RUST_SRC / "generated.rs": generate_generated_rs()}

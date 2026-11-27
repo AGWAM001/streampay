@@ -22,6 +22,7 @@ import {
   NETWORKS,
   READ_COMMANDS,
   SIGNER_MODES,
+  TUI_COMMAND,
   TRANSACTION_COMMANDS,
   booleanFlags as registryBooleanFlags,
 } from "./registry.ts";
@@ -51,7 +52,11 @@ import {
   validateProfileName,
   type Profile,
 } from "./profiles.ts";
+import { runJsonLines, runTui } from "./tui/runtime.ts";
+import type { PendingAction, StreamRow } from "./tui/model.ts";
 import { durationSecondsFromDays } from "../../../scripts/lib/duration.ts";
+import { dryRun, executeManifest, loadManifest, readCheckpoint, writeCheckpoint } from "./batch-manifest.ts";
+import { diffSurface, exploreSurface, renderTable, type ContractSpec } from "./abi-explorer.ts";
 
 type OutputMode = "json" | "text";
 type SignerMode = (typeof SIGNER_MODES)[number];
@@ -123,9 +128,12 @@ function usage(): string {
   return `Usage:
   streampay [global options] <create|withdraw|cancel|top-up|claim-all> [options]
   streampay [global options] <status|get> --stream-id <n> [--watch] [options]
+  streampay [global options] tui [--recipient <G...>] [--interval <ms>]
   streampay key encrypt --out <file> [--secret-env <name>] [--password-env <name>]
   streampay completion <bash|zsh|fish>
   streampay profile <list|show|set|remove|use|resolve> [name] [settings]
+  streampay batch --manifest <file> [--confirm yes] [--checkpoint <file>]
+  streampay abi --spec <file> [--kind <function|error|event>] [--name <name>] [--diff <file>]
 
 Global options:
   --contract <C...>       StreamPay contract id
@@ -147,6 +155,8 @@ Commands:
   cancel --stream-id <n>
   top-up --stream-id <n> --amount <units>
   claim-all
+  batch --manifest <file> [--confirm yes] [--checkpoint <file>]
+  abi --spec <file> [--kind <function|error|event>] [--name <name>] [--diff <file>]
   profile set <name> --network <testnet|mainnet> [--rpc-url ...] [--contract C...] [--signer ...]
   profile list | show <name> | remove <name> | use <name> | resolve
   status, get             Read and print one decoded stream snapshot
@@ -154,6 +164,15 @@ Commands:
     --watch               Poll and emit JSON Lines, one line per state change
     --interval <ms>       Watch poll interval in milliseconds
                           (default: ${DEFAULT_WATCH_INTERVAL_MS}; minimum: ${MIN_WATCH_INTERVAL_MS})
+
+  tui                     Interactive dashboard: Streams, Accrual, Forecast, Events panels
+    --recipient <G...>    Recipient to show (default: --source, else the signing key)
+    --interval <ms>       Refresh interval (default: 5000; minimum: 1000); failed
+                          refreshes back off exponentially up to 30s
+  Keys: tab/arrows or 1-4 switch panels, j/k select, w withdraw, c cancel,
+  r refresh, q quit. w and c only stage an action; nothing is submitted until
+  you press y at the confirmation prompt. Without a TTY (or with --json) tui
+  prints JSON Lines (one change line per stream, then a summary) and exits.
 
 Watch mode always emits JSON Lines, even without --json. It prints a baseline
 line on the first successful poll, nothing for unchanged polls, and a final
@@ -518,6 +537,130 @@ function flushStdout(): Promise<void> {
   return new Promise((resolve) => process.stdout.write("", () => resolve()));
 }
 
+/** Every stream the recipient owns, with the contract's `available` read for each. */
+async function readRecipientRows(
+  server: rpc.Server,
+  contractId: string,
+  passphrase: string,
+  recipient: string
+): Promise<StreamRow[]> {
+  const ids: string[] = [];
+  for (let offset = 0; ; offset += MAX_PAGE_SIZE) {
+    const page = await simulateRead(server, contractId, passphrase, "recipient_streams", [
+      scAddress(recipient),
+      scInteger(BigInt(offset), "u32"),
+      scInteger(BigInt(MAX_PAGE_SIZE), "u32"),
+    ]) as bigint[];
+    const pageIds = (page ?? []).map(String);
+    ids.push(...pageIds);
+    if (pageIds.length < MAX_PAGE_SIZE || ids.length >= 1_000) break;
+  }
+  const rows: StreamRow[] = [];
+  for (const id of ids) {
+    const stream = await readStreamState(server, contractId, passphrase, id);
+    const available = await simulateRead(server, contractId, passphrase, "available", [
+      scInteger(BigInt(id), "u64"),
+    ]);
+    rows.push({ stream, available: String(available) });
+  }
+  return rows;
+}
+
+function tuiRecipient(options: Options): string {
+  const explicit = getOption(options, "recipient") ?? getOption(options, "source");
+  if (explicit) return parseAddress(explicit, "recipient");
+  const secretEnv = getOption(options, "secret-env") ?? "STREAMPAY_SECRET_KEY";
+  const secret = process.env[secretEnv];
+  if (secret) {
+    try {
+      return Keypair.fromSecret(secret.trim()).publicKey();
+    } catch {
+      throw new CliError(`${secretEnv} does not hold a valid secret key`, "SIGNER", 3);
+    }
+  }
+  throw new CliError("tui needs --recipient <G...> (or --source, or a signing key in the environment)", "USAGE", 2);
+}
+
+async function runTuiCommand(options: Options): Promise<{ value: Record<string, unknown>; exitCode: number }> {
+  const contractId = parseAddress(required(options, "contract"), "contract");
+  const network = networkConfig(options);
+  const intervalMs = parseInterval(options);
+  const recipient = tuiRecipient(options);
+  const server = createServer(network.rpcUrl);
+  const fetchRows = () => readRecipientRows(server, contractId, network.passphrase, recipient);
+
+  if (options.json || !process.stdin.isTTY || !process.stdout.isTTY) {
+    await runJsonLines(
+      { network: network.label, contract: contractId, recipient },
+      fetchRows,
+      (line) => console.log(JSON.stringify(line))
+    );
+    await flushStdout();
+    process.exit(0);
+  }
+
+  const submit = async (action: PendingAction, row: StreamRow | undefined): Promise<string> => {
+    const values = new Map(options.values);
+    values.set("stream-id", action.streamId);
+    if (action.kind === "withdraw") {
+      if (!row) throw new CliError("stream is no longer listed", "USAGE", 2);
+      values.set("amount", row.available);
+    }
+    const result = await resolveOptionsAndRun({
+      ...options,
+      command: action.kind,
+      subcommand: undefined,
+      values,
+      flags: new Set(options.flags),
+      json: true,
+      dryRun: false,
+      watch: false,
+      positionals: [action.kind],
+    });
+    return `${action.kind} #${action.streamId}: ${String(result.value.status)}`;
+  };
+
+  const controller = new AbortController();
+  const onSigint = () => controller.abort();
+  process.once("SIGINT", onSigint);
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.setEncoding("utf8");
+  process.stdout.write("\u001b[?25l");
+  try {
+    await runTui(
+      { recipient, network: network.label, intervalMs, signal: controller.signal },
+      {
+        fetchRows,
+        submit,
+        nowSeconds: () => Math.floor(Date.now() / 1000),
+        sleep: (ms, signal) => new Promise<void>((resolve) => {
+          const timer = setTimeout(done, ms);
+          function done(): void {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", done);
+            resolve();
+          }
+          signal.addEventListener("abort", done, { once: true });
+        }),
+        write: (text) => void process.stdout.write(text),
+        columns: () => process.stdout.columns ?? 80,
+        onInput: (handler) => {
+          process.stdin.on("data", handler);
+          return () => process.stdin.removeListener("data", handler);
+        },
+      }
+    );
+  } finally {
+    process.removeListener("SIGINT", onSigint);
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+    process.stdout.write("\u001b[?25h\n");
+  }
+  await flushStdout();
+  process.exit(0);
+}
+
 async function runReadCommand(
   options: Options
 ): Promise<{ value: Record<string, unknown>; exitCode: number }> {
@@ -750,6 +893,11 @@ async function resolveOptionsAndRun(options: Options): Promise<{ value: Record<s
       throw new CliError(`could not create encrypted key file: ${errorMessage(error)}`, "SIGNER", 3);
     }
     return { value: { schemaVersion: 1, ok: true, command: "key encrypt", keyFile: output }, exitCode: 0 };
+  }
+  if (options.command === TUI_COMMAND) {
+    applyProfile(options);
+    requireProfileContract(options);
+    return await runTuiCommand(options);
   }
   if (READ_COMMANDS.includes(options.command)) {
     applyProfile(options);
@@ -1149,10 +1297,45 @@ function printResult(value: Record<string, unknown>, mode: OutputMode): void {
   if (value.transactions) console.log(JSON.stringify(value.transactions, null, 2));
 }
 
+function runOfflineCommand(options: Options): void {
+  if (options.command === "batch") {
+    const loaded = loadManifest(required(options, "manifest"));
+    if (!loaded.manifest) throw new CliError(loaded.errors.join("; "), "USAGE", 2);
+    const preview = dryRun(loaded.manifest);
+    if (getOption(options, "confirm") !== "yes") {
+      console.log(JSON.stringify({ dryRun: true, ...preview }, null, 2));
+      return;
+    }
+    const checkpointPath = getOption(options, "checkpoint");
+    const current = checkpointPath ? readCheckpoint(checkpointPath) : { completed: [], audit: [] };
+    const next = executeManifest(loaded.manifest, current, true);
+    if (checkpointPath) writeCheckpoint(checkpointPath, next);
+    console.log(JSON.stringify({ dryRun: false, preview, checkpoint: next }, null, 2));
+    return;
+  }
+  const spec = JSON.parse(readFileSync(required(options, "spec"), "utf8")) as ContractSpec;
+  const kind = getOption(options, "kind");
+  const name = getOption(options, "name");
+  if (options.values.has("diff")) {
+    const other = JSON.parse(readFileSync(required(options, "diff"), "utf8")) as ContractSpec;
+    console.log(JSON.stringify(diffSurface(spec, other), null, 2));
+    return;
+  }
+  const model = exploreSurface(spec, {
+    kind: kind === "function" || kind === "error" || kind === "event" ? kind : undefined,
+    name,
+  });
+  console.log(options.json ? JSON.stringify(model, null, 2) : renderTable(model));
+}
+
 async function main(): Promise<void> {
   let options: Options = { command: "help", values: new Map(), flags: new Set(), json: false, dryRun: false, watch: false, positionals: [] };
   try {
     options = parseArgs(process.argv.slice(2));
+    if (options.command === "batch" || options.command === "abi") {
+      runOfflineCommand(options);
+      return;
+    }
     const result = await resolveOptionsAndRun(options);
     printResult(result.value, options.json ? "json" : "text");
     process.exitCode = result.exitCode;

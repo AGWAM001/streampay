@@ -10,6 +10,31 @@ interface: they are only ever appended to, never renumbered or reused.
 ## [Unreleased]
 
 ### Added
+- Reference K-of-N multisig, `contracts/multisig` (`streampay-multisig`) (#50):
+  an ed25519 custom account (`__check_auth`) plus an on-chain
+  propose / approve / revoke / execute flow with per-function thresholds (e.g.
+  a 1-of-N `cancel_stream`), config epochs that invalidate in-flight proposals,
+  and domain-separated proposal signatures. Integration tests drive the
+  unmodified streaming contract with real authorization: a 2-of-3 multisig
+  creates and tops up a stream, one signer cancels, and a multisig recipient
+  withdraws. The create form accepts a contract (`C…`) recipient and shows a
+  multisig's signer requirements. Design, fees and security notes in
+  `docs/MULTISIG.md`. The streaming contract's auth logic is unchanged.
+- Frontend: the stream detail page's "Available now" figure ticks every
+  second between the 15 s chain reads (#39). The counter evaluates a BigInt
+  mirror of the contract's accrual math (`elapsed_seconds_at`, `streamed_at`,
+  rate segments, `withdrawn`, cancel) at the ledger second recovered from the
+  confirmed `available` read, and freezes at the confirmed value when the
+  stream is ended, cancelled, paused or otherwise not reproducible locally.
+  Honors `prefers-reduced-motion`. Detail refreshes now also read
+  `rate_segments`.
+- Frontend: consent-gated real-user monitoring of Core Web Vitals (LCP, INP, CLS)
+  per route, with sampling, rate limits, a remote kill switch, boundary
+  redaction, a field dashboard at `/rum`, and a lab budget gate
+  (`npm run rum:gate`) that fails on regression. See `docs/RUM.md`.
+- Frontend: stream comparison workbench at `/compare`. Overlays accrual curves,
+  exhaustion forecast and fee estimates for up to 5 streams or hypothetical
+  parameter sets, simulated client-side with a shareable parameter URL.
 - TypeScript SDK: opt-in submit retry policy (#497). `retry` on
   `StreamPayClient` adds bounded exponential backoff with full jitter for
   transient RPC failures. Retries resend the same signed envelope, using its

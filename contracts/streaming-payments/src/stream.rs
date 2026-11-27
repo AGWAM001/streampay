@@ -1115,6 +1115,11 @@ pub enum DataKey {
         doc = " Reentrancy lock flag for stream id during hook callback (temporary/persistent storage)."
     )]
     StreamReentrancyLock(u64),
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Split/merge lineage of a stream: the ids it came from and went to."
+    )]
+    StreamLineage(u64),
 }
 
 /// Freeze point of stream `id` while it is paused; `None` while it streams.
@@ -1440,6 +1445,14 @@ pub fn next_stream_id(env: &Env) -> u64 {
     let id: u64 = env.storage().persistent().get(&key).unwrap_or(1);
     env.storage().persistent().set(&key, &id.saturating_add(1));
     id
+}
+
+/// The id [`next_stream_id`] would hand out next, without consuming it.
+pub fn peek_stream_id(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::NextStreamId)
+        .unwrap_or(1)
 }
 
 /// Reserves a contiguous range of stream ids with one persistent write.

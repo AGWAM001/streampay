@@ -1,0 +1,73 @@
+{
+  "$defs": {},
+  "$id": "https://streampay.dev/schemas/events/v1/events/merge_stream.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Emitted when `merge_streams` merges two streams into `child_id`. Both parents become `Cancelled` with no payout; their histories and summed remainders stream on the child until `end_time`, the earlier parent end.",
+  "properties": {
+    "claimable": {
+      "type": "integer",
+      "x-soroban-type": "i128"
+    },
+    "end_time": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    },
+    "first_parent_id": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    },
+    "merged_at": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    },
+    "remaining": {
+      "type": "integer",
+      "x-soroban-type": "i128"
+    },
+    "second_parent_id": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    },
+    "withdrawn": {
+      "type": "integer",
+      "x-soroban-type": "i128"
+    }
+  },
+  "required": [
+    "first_parent_id",
+    "second_parent_id",
+    "merged_at",
+    "remaining",
+    "end_time",
+    "claimable",
+    "withdrawn"
+  ],
+  "title": "MergeStream",
+  "type": "object",
+  "x-streampay": {
+    "event_key": "merge_stream",
+    "fingerprint": "sha256:70a8dd6e5d4ae8d5fe0b3359d32845f91dcc91471c59dbb79ab5a1c0ce46599f",
+    "registry_version": 1,
+    "topicSchema": {
+      "items": [
+        {
+          "minimum": 0,
+          "type": "integer",
+          "x-soroban-type": "u64"
+        }
+      ],
+      "type": "array"
+    },
+    "topics": [
+      {
+        "name": "child_id",
+        "type": "u64"
+      }
+    ]
+  }
+}

@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_contract_surface as guard  # noqa: E402
 import emit_rust  # noqa: E402
 import generate  # noqa: E402
+import ir  # noqa: E402
+from test_ir import minimal_spec  # noqa: E402
 
 
 class RustEmitterTest(unittest.TestCase):
@@ -80,6 +82,31 @@ class RustEmitterTest(unittest.TestCase):
             with self.subTest(error=name):
                 self.assertIn(f"    {name} = {code},", self.generated)
         self.assertIn("pub enum StreamError {", self.generated)
+
+    def test_unicode_and_control_characters_use_rust_string_escapes(self) -> None:
+        self.assertEqual(emit_rust.quote("Σ — demo"), '"Σ — demo"')
+        self.assertEqual(
+            emit_rust.quote("line\n\t\0\x01"),
+            '"line\\n\\t\\0\\u{1}"',
+        )
+        with self.assertRaisesRegex(ValueError, "surrogate"):
+            emit_rust.quote("\ud800")
+
+    def test_unsupported_read_argument_types_fail_during_emission(self) -> None:
+        saved = (emit_rust.SPEC, emit_rust.FINGERPRINT, emit_rust.ERRORS)
+        try:
+            for argument_type in ({"vec": "u32"}, "Demo", "string"):
+                with self.subTest(argument_type=argument_type):
+                    raw = minimal_spec()
+                    raw["functions"][0]["args"][0]["type"] = argument_type
+                    raw["functions"][0]["returns"] = "u32"
+                    spec = ir.parse_spec(raw)
+                    with self.assertRaisesRegex(ValueError, "unsupported type"):
+                        emit_rust.outputs(
+                            spec, spec.fingerprint, generate.load_error_catalog()
+                        )
+        finally:
+            (emit_rust.SPEC, emit_rust.FINGERPRINT, emit_rust.ERRORS) = saved
 
     def test_generated_rust_is_unsafe_free_and_fingerprinted(self) -> None:
         self.assertNotIn("unsafe", self.generated)

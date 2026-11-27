@@ -1017,6 +1017,104 @@ pub enum StreamError {
         doc = " A migration page is empty or exceeds the maximum record count."
     )]
     MigrationPageTooLarge = 146,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `create_stream` / `create_streams` / `create_streams_batch`: the deposit is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " below [`crate::MIN_STREAM_DEPOSIT`], the dust floor under which creating a"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " stream costs more in fees and rent than it can ever pay out (#78)."
+    )]
+    DepositBelowMinimum = 130,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `withdraw` / `withdraw_max`: the claim is below [`crate::MIN_CLAIM_AMOUNT`] while"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the stream is still accruing, so the network fee would eat the payout. The"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " floor lifts once accrual stops (window ended, or paused) so nothing is ever"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " locked (#78).")]
+    ClaimBelowMinimum = 131,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `sweep_stream`: the stream does not meet the sweep predicate — it is not"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " terminal and settled, its post-end grace period has not elapsed, or it is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " still encumbered (disputed, pending proposal, outstanding advance,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " release-gated, hook-bound or reentrancy-locked) (#78)."
+    )]
+    StreamNotSweepable = 132,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " A lineage operation (`split_stream` / `merge_streams`) hit a stream that"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " is paused, disputed, hook-bound, release-gated, carries an outstanding"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " advance, or has a pending rate, ownership or sender-transfer proposal."
+    )]
+    StreamEncumbered = 133,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `split_stream`: the first child's share of the unaccrued remainder is not"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " strictly between zero and the remainder, so one child would carry nothing."
+    )]
+    InvalidSplitAllocation = 134,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `split_stream`: a child would end before the parent's `end_time` (which"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " would accelerate the sender's payout without the sender's consent)."
+    )]
+    InvalidLineageEndTime = 135,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `split_stream` / `merge_streams`: nothing is left to stream; the window"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " (the earlier one, for a merge) has already elapsed."
+    )]
+    LineageWindowElapsed = 136,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `merge_streams`: both ids name the same stream."
+    )]
+    MergeSameStream = 137,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `merge_streams`: the streams differ in sender, recipient, token, status,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " cancelability, oracle clock or refund target."
+    )]
+    MergeIncompatibleStreams = 138,
 }
 
 impl StreamError {
@@ -1167,6 +1265,15 @@ impl StreamError {
         StreamError::MigrationRecordMismatch,
         StreamError::MigrationExportOrderViolation,
         StreamError::MigrationPageTooLarge,
+        StreamError::DepositBelowMinimum,
+        StreamError::ClaimBelowMinimum,
+        StreamError::StreamNotSweepable,
+        StreamError::StreamEncumbered,
+        StreamError::InvalidSplitAllocation,
+        StreamError::InvalidLineageEndTime,
+        StreamError::LineageWindowElapsed,
+        StreamError::MergeSameStream,
+        StreamError::MergeIncompatibleStreams,
     ];
 
     /// The stable numeric value carried across the contract boundary

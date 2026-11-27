@@ -59,11 +59,16 @@ describe("validateRecipientAddress", () => {
 
   it("rejects a bad checksum instead of a mistyped prefix", () => {
     expect(validateRecipientAddress(BAD_CHECKSUM_RECIPIENT, tEn)).toBe(
-      "Enter a valid Stellar address (G… with a valid checksum)."
+      "Enter a valid Stellar address (G… or C… with a valid checksum)."
     );
     expect(validateRecipientAddress("not-an-address", tEn)).toBe(
-      "Enter a valid Stellar address (G… with a valid checksum)."
+      "Enter a valid Stellar address (G… or C… with a valid checksum)."
     );
+  });
+
+  it("accepts a contract (multisig) recipient", () => {
+    expect(validateRecipientAddress(TOKEN_CONTRACT, tEn)).toBeNull();
+    expect(validateRecipientAddress(TOKEN_CONTRACT.slice(0, -1) + "A", tEn)).not.toBeNull();
   });
 
   it("accepts a checksummed address, in both locales", () => {

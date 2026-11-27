@@ -9,6 +9,7 @@ import {
   isNativeXlm,
   readAvailable,
   readBeneficiaryKey,
+  readRateSegments,
   readRefundTarget,
   readSponsor,
   readStream,
@@ -32,6 +33,7 @@ import {
   type LiveAccrualState,
 } from "@/lib/live-accrual";
 import { useClaimScheduler } from "@/lib/use-claim-scheduler";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import ClaimSchedulerSettings from "@/components/ClaimSchedulerSettings";
 import {
   consentPublicKeyHex,
@@ -45,7 +47,7 @@ import {
 } from "@/lib/sponsor";
 import { useToast } from "@/components/toast";
 import { useWallet } from "@/lib/wallet-context";
-import { validateWithdrawal } from "@/lib/withdrawal";
+import { claimReadiness, MIN_CLAIM_AMOUNT, validateWithdrawal } from "@/lib/withdrawal";
 import { formatAmount } from "@/lib/format";
 import DiscoveryConsentModal from "@/components/DiscoveryConsentModal";
 import PaymentShareActions from "@/components/PaymentShareActions";
@@ -61,6 +63,9 @@ export default function StreamDetailClient() {
 
   const [stream, setStream] = useState<StreamView | null>(null);
   const [live, setLive] = useState<LiveAccrualState>(INITIAL_STATE);
+  // Wall-clock seconds as of the last accrual update; drives the dust-floor
+  // ("not worth claiming yet") state without reading the clock during render.
+  const [nowSeconds, setNowSeconds] = useState<number>(() => Math.floor(Date.now() / 1000));
   const [assetMeta, setAssetMeta] = useState<AssetMeta | null>(null);
   const [amount, setAmount] = useState<string>("");
   const [isAmountDirty, setIsAmountDirty] = useState(false);
@@ -97,7 +102,13 @@ export default function StreamDetailClient() {
     if (!id) return;
     const engine = startLiveAccrual({
       readStream: async () => {
-        const s = await readStream(id);
+        // The schedule is read alongside the stream so the per-second counter
+        // mirrors a renegotiated stream too; a failed schedule read leaves it
+        // out and the engine freezes the counter if the mirror disagrees.
+        const [s, segments] = await Promise.all([
+          readStream(id),
+          readRateSegments(id).catch(() => null),
+        ]);
         setStream(s);
         fetchAssetMeta(s.token).then((meta) => setAssetMeta(meta));
         return {
@@ -106,10 +117,14 @@ export default function StreamDetailClient() {
           endTime: s.endTime,
           withdrawn: BigInt(s.withdrawn),
           status: s.status,
+          ...(segments ? { segments } : {}),
         };
       },
       readAvailable: () => readAvailable(id),
-      onUpdate: setLive,
+      onUpdate: (next) => {
+        setLive(next);
+        setNowSeconds(Math.floor(Date.now() / 1000));
+      },
     });
     engineRef.current = engine;
     return () => {
@@ -134,6 +149,10 @@ export default function StreamDetailClient() {
   const available = live.available;
   const snapshot = live.snapshot;
   const displayAvailable = live.displayAvailable;
+  // Reduced motion: no per-second ticking; the figure moves only when a 15s
+  // chain read lands, exactly as before the live counter (issue #39).
+  const reducedMotion = usePrefersReducedMotion();
+  const tickingLive = live.ticking && !reducedMotion;
   const loadError = live.error ? describeError(live.error) : "";
 
   // Auto-prefill the input with the accrued balance while the user has not
@@ -253,8 +272,19 @@ export default function StreamDetailClient() {
     sponsor !== null && sponsor.active && sponsor.token === stream.token;
   const sponsorBudgetLeft = sponsor !== null && BigInt(sponsor.remaining) > 0n;
 
+  // The contract refuses mid-stream claims below MIN_CLAIM_AMOUNT (#78). The
+  // detail page does not read the pause flag, so it assumes "not paused"; the
+  // contract stays the authority (and lifts the floor while paused).
+  const floorContext = {
+    startTime: stream.startTime,
+    endTime: stream.endTime,
+    deposit,
+    nowSeconds,
+  };
+  const readiness = claimReadiness(available, floorContext);
+
   // Validation is executed strictly against on-chain available balance, NOT cosmetic interpolator
-  const validation = validateWithdrawal(amount, available);
+  const validation = validateWithdrawal(amount, available, floorContext);
 
   async function doWithdraw(max: boolean) {
     if (!address) return;
@@ -392,11 +422,11 @@ export default function StreamDetailClient() {
               display: "inline-flex",
               alignItems: "center",
               gap: "6px",
-              color: "#4ade80",
-              background: "rgba(74, 222, 128, 0.1)",
+              color: "var(--status-success)",
+              background: "var(--status-success-subtle)",
               padding: "2px 8px",
               borderRadius: "999px",
-              border: "1px solid rgba(74, 222, 128, 0.3)",
+              border: "1px solid var(--status-success-border)",
               fontSize: "11px",
               fontWeight: 600,
             }}
@@ -406,8 +436,8 @@ export default function StreamDetailClient() {
                 width: "6px",
                 height: "6px",
                 borderRadius: "50%",
-                background: "#4ade80",
-                boxShadow: "0 0 6px #4ade80",
+                background: "var(--status-success)",
+                boxShadow: "0 0 6px var(--status-success)",
               }}
             />
             Live SSE
@@ -462,15 +492,34 @@ export default function StreamDetailClient() {
             <tr>
               <th>Available now</th>
               <td className="mono">
-                {(() => {
-                  const availVal =
-                    snapshot?.status === "Active"
-                      ? (displayAvailable ?? available)
-                      : available;
-                  if (availVal === null) return "…";
-                  if (!assetMeta) return availVal.toString();
-                  return `${formatAmount(availVal, assetMeta.decimals)} ${assetMeta.code}`;
-                })()}
+                <span
+                  className="accrual-counter"
+                  data-live={tickingLive ? "true" : "false"}
+                  title={
+                    tickingLive
+                      ? "Ticks every second from the contract's accrual formula; re-synced with the chain every 15s"
+                      : "On-chain value, refreshed every 15s"
+                  }
+                >
+                  {(() => {
+                    const availVal =
+                      tickingLive && snapshot?.status === "Active"
+                        ? (displayAvailable ?? available)
+                        : available;
+                    if (availVal === null) return "…";
+                    if (!assetMeta) return availVal.toString();
+                    return `${formatAmount(availVal, assetMeta.decimals)} ${assetMeta.code}`;
+                  })()}
+                </span>
+                {tickingLive && (
+                  // The dot is decorative; the text "Live" carries the meaning.
+                  // The counter itself is deliberately not an aria-live region,
+                  // so screen readers are not interrupted every second.
+                  <span className="live-indicator accrual-live" aria-label="Live accrual — updates every second">
+                    <span className="live-dot" aria-hidden="true" />
+                    Live
+                  </span>
+                )}
                 {stream.status === "Active" && (
                   <button
                     onClick={async () => {
@@ -560,6 +609,18 @@ export default function StreamDetailClient() {
               Withdraw max
             </button>
           </div>
+          {readiness.state === "not-worth-claiming-yet" && (
+            <p className="muted" role="status" data-testid="claim-dust-notice">
+              Not worth claiming yet: the accrued balance is below the{" "}
+              {assetMeta
+                ? `${formatAmount(MIN_CLAIM_AMOUNT, assetMeta.decimals)} ${assetMeta.code}`
+                : `${MIN_CLAIM_AMOUNT.toString()} units`}{" "}
+              minimum claim, so the network fee would eat most of it. Enough
+              should have accrued by{" "}
+              {new Date(readiness.readyAt * 1000).toISOString()}; after the
+              stream ends any amount can be claimed.
+            </p>
+          )}
           {!validation.valid && validation.error && (
             <p className="err">{validation.error}</p>
           )}

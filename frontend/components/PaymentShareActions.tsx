@@ -75,7 +75,7 @@ export default function PaymentShareActions({
         style={{
           width: 176,
           minHeight: 176,
-          background: "#fff",
+          background: "var(--qr-surface)",
           borderRadius: 8,
           padding: 8,
           marginBottom: 12,

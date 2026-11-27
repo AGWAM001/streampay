@@ -117,6 +117,9 @@ pub fn run(snapshot_path: &str, format: Format) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("cannot read snapshot: {e}"))?;
     let snap: Snapshot =
         serde_json::from_str(&raw).map_err(|e| anyhow::anyhow!("cannot parse snapshot: {e}"))?;
+    if let Err(error) = crate::merkle::verify_snapshot(&snap) {
+        return Err(anyhow::anyhow!("merkle verification failed: {error}"));
+    }
     let report = build_report(&snap);
 
     match format {

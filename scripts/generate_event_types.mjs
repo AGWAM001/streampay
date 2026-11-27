@@ -39,8 +39,10 @@ function readEventSchema(eventKey) {
 const TS_PRIMITIVES = {
   bool: "boolean",
   u32: "number",
+  i32: "number",
   u64: "bigint",
   i64: "bigint",
+  u128: "bigint",
   i128: "bigint",
   Address: "string",
   Symbol: "string",
@@ -55,7 +57,7 @@ function tsType(ty, definitions) {
   if (vec) return `${tsType(vec[1], definitions)}[]`;
   const bare = ty.split("::").pop();
   if (definitions[bare]) return bare;
-  throw new Error(`registry type \`${ty}\` has no TypeScript mapping — extend TS_PRIMITIVES in scripts/generate_event_types.mjs`);
+  throw new Error(`registry type \`${ty}\` has no TypeScript mapping - extend TS_PRIMITIVES in scripts/generate_event_types.mjs`);
 }
 
 function header(kind, registryVersion) {

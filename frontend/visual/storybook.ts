@@ -19,6 +19,18 @@ export interface StoryEntry {
   tags: string[];
 }
 
+export type VisualTheme = "light" | "dark";
+
+export function projectTheme(projectName: string): VisualTheme {
+  if (projectName === "light" || projectName === "dark") return projectName;
+  throw new Error(`Unknown visual theme project: ${projectName}`);
+}
+
+/** Keep existing dark baseline names; add a distinct light-theme suffix. */
+export function snapshotName(storyId: string, theme: VisualTheme): string {
+  return `${storyId}${theme === "light" ? "-light" : ""}.png`;
+}
+
 /**
  * Every story in the built index, minus docs pages and `no-visual` stories.
  * Read at collection time so each story is its own test (and its own line in
@@ -83,7 +95,7 @@ const PIN_RENDERED_STATE = `*, *::before, *::after {
  * Fails the test if the story errored, threw an uncaught exception, or tried
  * to reach anything other than the local Storybook server.
  */
-export async function renderStory(page: Page, id: string): Promise<void> {
+export async function renderStory(page: Page, id: string, theme: VisualTheme): Promise<void> {
   const pageErrors: Error[] = [];
   page.on("pageerror", (error) => pageErrors.push(error));
 
@@ -94,7 +106,10 @@ export async function renderStory(page: Page, id: string): Promise<void> {
     return route.abort();
   });
 
-  await page.goto(`/iframe.html?id=${encodeURIComponent(id)}&viewMode=story`);
+  await page.goto(
+    `/iframe.html?id=${encodeURIComponent(id)}&viewMode=story&globals=theme%3A${theme}`
+  );
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
 
   const handle = await page.waitForFunction(
     (settled) => {

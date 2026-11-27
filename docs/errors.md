@@ -8,6 +8,15 @@ Authoritative registry of all **143** append-only on-chain error codes returned 
 ## Release & Schema Version
 - **Schema Fingerprint**: `f32e203c3b4dd0c6`
 - **Catalog Version Guarantee**: Append-only numeric code preservation (codes 1–143).
+<!-- Version: schema_fingerprint=9b73199563fca39e -->
+
+# StreamPay On-Chain Error Code Catalog
+
+Authoritative registry of all **138** append-only on-chain error codes returned by the StreamPay Soroban smart contract.
+
+## Release & Schema Version
+- **Schema Fingerprint**: `9b73199563fca39e`
+- **Catalog Version Guarantee**: Append-only numeric code preservation (codes 1–138).
 
 ---
 
@@ -158,6 +167,15 @@ Authoritative registry of all **143** append-only on-chain error codes returned 
 | **#144** | `MigrationRecordMismatch` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/144.md) |
 | **#145** | `MigrationExportOrderViolation` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/145.md) |
 | **#146** | `MigrationPageTooLarge` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/146.md) |
+| **#130** | `DepositBelowMinimum` | Active | `error` | No | Raise the deposit to at least MIN_STREAM_DEPOSIT (10,000,000 base units, 1 token at 7 decimals). For schedule_stream the floor applies to each occurrence. See docs/DUST_ECONOMICS.md. | [View Docs](errors/130.md) |
+| **#131** | `ClaimBelowMinimum` | Active | `warning` | Yes | Claim at least MIN_CLAIM_AMOUNT (1,000,000 base units, 0.1 token at 7 decimals), wait until more has accrued, or claim any amount once the stream has ended or is paused. withdraw_many is exempt. See docs/DUST_ECONOMICS.md. | [View Docs](errors/131.md) |
+| **#132** | `StreamNotSweepable` | Active | `warning` | No | Only Depleted or Cancelled streams with nothing pending (dispute, proposal, advance, condition, hook, lock) can be swept, and only 30 days after end_time. Call is_sweepable first. See docs/DUST_ECONOMICS.md. | [View Docs](errors/132.md) |
+| **#133** | `StreamEncumbered` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/133.md) |
+| **#134** | `InvalidSplitAllocation` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/134.md) |
+| **#135** | `InvalidLineageEndTime` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/135.md) |
+| **#136** | `LineageWindowElapsed` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/136.md) |
+| **#137** | `MergeSameStream` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/137.md) |
+| **#138** | `MergeIncompatibleStreams` | Active | `error` | No | Contact protocol support if this error persists. | [View Docs](errors/138.md) |
 
 ---
 

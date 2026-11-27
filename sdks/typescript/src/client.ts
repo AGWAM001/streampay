@@ -11,11 +11,19 @@ import {
   Keypair,
   Networks,
   type FeeBumpTransaction,
-  type Transaction,
+  Transaction,
   TransactionBuilder,
   rpc,
   xdr,
 } from "@stellar/stellar-sdk";
+import {
+  createUnsignedEnvelope,
+  importSignedEnvelope,
+  verifySignedEnvelope,
+  type AirGapSignedEnvelope,
+  type AirGapUnsignedEnvelope,
+  type SignedEnvelopeExpectation,
+} from "./airgap.js";
 import { MAX_PAGE_SIZE, type Stream } from "./generated.js";
 import { StreamPayMethods } from "./methods.js";
 import { StreamPayError } from "./errors.js";
@@ -81,6 +89,26 @@ const DUMMY_SOURCE = new Account(
   "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
   "0"
 );
+
+export interface BuildUnsignedOptions {
+  method: string;
+  args: xdr.ScVal[];
+  sourceAccount: string;
+  /** Expiry window for transport to an offline signer; defaults to one hour. */
+  timeoutSeconds?: number;
+}
+
+export interface ImportSignedOptions {
+  unsignedEnvelope: AirGapUnsignedEnvelope | string;
+  signedTransactionXdr: string;
+  /** Optional out-of-band pin for the original source, method, or content hash. */
+  expected?: SignedEnvelopeExpectation;
+}
+
+export interface SubmitSignedOptions {
+  /** Recheck the original context before using the idempotent submission pipeline. */
+  expected?: SignedEnvelopeExpectation;
+}
 
 export class StreamPayClient extends StreamPayMethods {
   readonly contractId: string;
@@ -156,6 +184,71 @@ export class StreamPayClient extends StreamPayMethods {
     return streams;
   }
 
+  /** Builds a hash-bound, signed-by-nobody envelope for offline signing. */
+  async buildUnsigned(options: BuildUnsignedOptions): Promise<AirGapUnsignedEnvelope> {
+    const timeoutSeconds = options.timeoutSeconds ?? 3_600;
+    if (!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 2_592_000) {
+      throw new RangeError("timeoutSeconds must be an integer between 1 and 2592000");
+    }
+    const { transaction, simulated } = await this.prepare(
+      options.method,
+      options.args,
+      options.sourceAccount,
+      true,
+      timeoutSeconds,
+      true
+    );
+    const ready = rpc.assembleTransaction(transaction, simulated).build();
+    return createUnsignedEnvelope({
+      contractId: this.contractId,
+      networkPassphrase: this.networkPassphrase,
+      sourceAccount: options.sourceAccount,
+      method: options.method,
+      transactionXdr: ready.toXDR(),
+    });
+  }
+
+  /** Verifies externally signed bytes against the exact prepared transaction. */
+  async importSigned(options: ImportSignedOptions): Promise<AirGapSignedEnvelope> {
+    return importSignedEnvelope(
+      options.unsignedEnvelope,
+      options.signedTransactionXdr,
+      {
+        ...options.expected,
+        contractId: this.contractId,
+        networkPassphrase: this.networkPassphrase,
+      }
+    );
+  }
+
+  /** Submits an imported envelope using the normal idempotent retry pipeline. */
+  async submitSigned<T>(
+    envelope: AirGapSignedEnvelope,
+    decode: (value: xdr.ScVal) => T,
+    options: SubmitSignedOptions = {}
+  ): Promise<T> {
+    return sdkTelemetry.track(envelope.method, async () => {
+      const verified = await verifySignedEnvelope(envelope, {
+        ...options.expected,
+        contractId: this.contractId,
+        networkPassphrase: this.networkPassphrase,
+      });
+      const signed = TransactionBuilder.fromXDR(
+        verified.signedTransactionXdr,
+        this.networkPassphrase
+      );
+      if (!(signed instanceof Transaction)) {
+        throw new StreamPayError(
+          "imported envelope must contain a standard transaction",
+          "submission",
+          { transactionXdr: verified.signedTransactionXdr }
+        );
+      }
+      const hash = await this.submit(signed);
+      return this.confirmAndDecode(signed, hash, undefined, decode);
+    });
+  }
+
   // ----------------------------------------------------------------- internals
   private requireSigner(): Signer {
     if (this.signer === undefined) {
@@ -179,15 +272,18 @@ export class StreamPayClient extends StreamPayMethods {
     return sdkTelemetry.track(method, () => this.invoke(method, args, mutating, decode));
   }
 
-  private async invoke<T>(
+  private async prepare(
     method: string,
     args: xdr.ScVal[],
+    source: string,
     mutating: boolean,
-    decode: (value: xdr.ScVal) => T
-  ): Promise<T> {
-    const signer = mutating ? this.requireSigner() : undefined;
-    const source = signer === undefined ? DUMMY_SOURCE.accountId() : signer.publicKey();
-
+    timeoutSeconds = 60,
+    boundedWindow = false
+  ): Promise<{
+    transaction: Transaction;
+    simulated: rpc.Api.SimulateTransactionSuccessResponse;
+    simulatedValue: xdr.ScVal;
+  }> {
     let account: Account;
     try {
       account = mutating
@@ -200,21 +296,25 @@ export class StreamPayClient extends StreamPayMethods {
     }
 
     const operation = new Contract(this.contractId).call(method, ...args);
-    const tx = new TransactionBuilder(account, {
+    const builder = new TransactionBuilder(account, {
       fee: mutating ? "1000000" : "100",
       networkPassphrase: this.networkPassphrase,
-    })
-      .addOperation(operation)
-      .setTimeout(60)
-      .build();
+    }).addOperation(operation);
+    if (boundedWindow) {
+      const now = Math.floor(this.clock.now() / 1_000);
+      builder.setTimebounds(now, now + timeoutSeconds);
+    } else {
+      builder.setTimeout(timeoutSeconds);
+    }
+    const transaction = builder.build();
 
     // Nothing has been signed or sent yet, so a transient preflight failure is
     // always safe to repeat.
     const simulation = await withRetry("simulation", this.retry, this.clock, () =>
-      this.server.simulateTransaction(tx)
+      this.server.simulateTransaction(transaction)
     );
     if (rpc.Api.isSimulationError(simulation)) {
-      throw StreamPayError.fromRpc("simulation", simulation.error, tx.toXDR());
+      throw StreamPayError.fromRpc("simulation", simulation.error, transaction.toXDR());
     }
 
     const simulated = simulation as rpc.Api.SimulateTransactionSuccessResponse;
@@ -223,12 +323,26 @@ export class StreamPayClient extends StreamPayMethods {
       throw new StreamPayError(
         "simulation returned no value",
         "simulation",
-        { transactionXdr: tx.toXDR() }
+        { transactionXdr: transaction.toXDR() }
       );
     }
-    if (!mutating) return this.safeDecode(decode, simulatedValue, tx.toXDR());
+    return { transaction, simulated, simulatedValue };
+  }
 
-    const ready = rpc.assembleTransaction(tx, simulated).build();
+  private async invoke<T>(
+    method: string,
+    args: xdr.ScVal[],
+    mutating: boolean,
+    decode: (value: xdr.ScVal) => T
+  ): Promise<T> {
+    const signer = mutating ? this.requireSigner() : undefined;
+    const source = signer === undefined ? DUMMY_SOURCE.accountId() : signer.publicKey();
+    const prepared = await this.prepare(method, args, source, mutating);
+    if (!mutating) {
+      return this.safeDecode(decode, prepared.simulatedValue, prepared.transaction.toXDR());
+    }
+
+    const ready = rpc.assembleTransaction(prepared.transaction, prepared.simulated).build();
     const signedXdr = await signer!.signTransaction(ready.toXDR(), {
       networkPassphrase: this.networkPassphrase,
     });
@@ -236,11 +350,21 @@ export class StreamPayClient extends StreamPayMethods {
       signedXdr.signedTxXdr,
       this.networkPassphrase
     );
-
-    // From here on the envelope is fixed: retries resend these exact bytes,
-    // and the transaction hash is the idempotency key.
     const hash = await this.submit(signed);
+    return this.confirmAndDecode(
+      signed,
+      hash,
+      prepared.simulatedValue,
+      decode
+    );
+  }
 
+  private async confirmAndDecode<T>(
+    signed: Transaction | FeeBumpTransaction,
+    hash: string,
+    simulatedValue: xdr.ScVal | undefined,
+    decode: (value: xdr.ScVal) => T
+  ): Promise<T> {
     const deadline = this.clock.now() + this.pollTimeoutMs;
     while (this.clock.now() < deadline) {
       await this.clock.sleep(this.pollIntervalMs);
@@ -263,6 +387,13 @@ export class StreamPayClient extends StreamPayMethods {
       if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
         const returned = (result as { returnValue?: xdr.ScVal }).returnValue;
         const value = returned ?? simulatedValue;
+        if (value === undefined) {
+          throw new StreamPayError(
+            "included transaction returned no value",
+            "inclusion",
+            { transactionXdr: signed.toXDR(), transactionHash: hash }
+          );
+        }
         return this.safeDecode(decode, value, signed.toXDR());
       }
     }

@@ -33,7 +33,7 @@ export default function StreamProjectionTable({ streams, nowSeconds }: Props) {
     .sort((a, b) => (b.projectedAccrual > a.projectedAccrual ? 1 : -1));
 
   if (projections.length === 0) {
-    return <p style={{ color: "#6b7280", fontSize: "0.875rem" }}>No active streams.</p>;
+    return <p style={{ color: "var(--foreground-muted)", fontSize: "0.875rem" }}>No active streams.</p>;
   }
 
   return (
@@ -43,7 +43,7 @@ export default function StreamProjectionTable({ streams, nowSeconds }: Props) {
         aria-label="Stream projections"
       >
         <thead>
-          <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+          <tr style={{ background: "var(--surface-subtle)", borderBottom: "1px solid var(--border-default)" }}>
             <th style={thStyle}>Stream ID</th>
             <th style={thStyle}>Token</th>
             <th style={thStyle}>Remaining</th>
@@ -54,9 +54,9 @@ export default function StreamProjectionTable({ streams, nowSeconds }: Props) {
         </thead>
         <tbody>
           {projections.map((p) => (
-            <tr key={p.streamId} style={{ borderBottom: "1px solid #f3f4f6" }}>
+            <tr key={p.streamId} style={{ borderBottom: "1px solid var(--border-default)" }}>
               <td style={tdStyle}>
-                <a href={`/stream/${p.streamId}`} style={{ color: "#2563eb" }}>
+                <a href={`/stream/${p.streamId}`} style={{ color: "var(--accent-primary)" }}>
                   #{p.streamId}
                 </a>
               </td>
@@ -66,7 +66,7 @@ export default function StreamProjectionTable({ streams, nowSeconds }: Props) {
               <td style={tdStyle}>{fmtAmount(p.remaining)}</td>
               <td style={tdStyle}>{fmtDuration(p.secondsRemaining)}</td>
               <td style={tdStyle}>{fmtAmount(p.ratePerSecond)}</td>
-              <td style={{ ...tdStyle, fontWeight: 600, color: "#0369a1" }}>
+              <td style={{ ...tdStyle, fontWeight: 600, color: "var(--status-info)" }}>
                 {fmtAmount(p.projectedAccrual)}
               </td>
             </tr>
@@ -81,7 +81,7 @@ const thStyle: React.CSSProperties = {
   padding: "0.5rem 0.75rem",
   textAlign: "left",
   fontWeight: 600,
-  color: "#374151",
+  color: "var(--foreground-default)",
   fontSize: "0.8rem",
   textTransform: "uppercase",
   letterSpacing: "0.05em",
@@ -89,5 +89,5 @@ const thStyle: React.CSSProperties = {
 
 const tdStyle: React.CSSProperties = {
   padding: "0.5rem 0.75rem",
-  color: "#374151",
+  color: "var(--foreground-default)",
 };

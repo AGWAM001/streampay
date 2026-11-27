@@ -156,6 +156,10 @@
       "fingerprint": "sha256:90bd4976d70d74bf95adc5c47f11e45b8d408cf2443eee6d2b15d6ed81315d6e",
       "schema": "events/migration_imported.json",
       "struct": "MigrationImported"
+      "event_key": "merge_stream",
+      "fingerprint": "sha256:70a8dd6e5d4ae8d5fe0b3359d32845f91dcc91471c59dbb79ab5a1c0ce46599f",
+      "schema": "events/merge_stream.json",
+      "struct": "MergeStream"
     },
     {
       "event_key": "operator_key_rotated",
@@ -278,6 +282,12 @@
       "struct": "SenderTransferred"
     },
     {
+      "event_key": "split_stream",
+      "fingerprint": "sha256:38f05ba0dac924929ccf0fc69bdf97ea3ed9d8833f57f21a0154af857f46b674",
+      "schema": "events/split_stream.json",
+      "struct": "SplitStream"
+    },
+    {
       "event_key": "sponsor_active_set",
       "fingerprint": "sha256:7bbd39680d30fd7bd9d76fcd1adbf06561b0a338af9de46d09960a87476ba8a5",
       "schema": "events/sponsor_active_set.json",
@@ -348,6 +358,12 @@
       "fingerprint": "sha256:fcfb97a34e2115fabfcea45aa6a1a8e807ab85dd467186eb5e25e494fe490487",
       "schema": "events/stream_scheduled.json",
       "struct": "StreamScheduled"
+    },
+    {
+      "event_key": "stream_swept",
+      "fingerprint": "sha256:245343ff47cced9cf5751fb6977185d758cce635735e9f112dff7a82fa94e35d",
+      "schema": "events/stream_swept.json",
+      "struct": "StreamSwept"
     },
     {
       "event_key": "stream_topped_up",
