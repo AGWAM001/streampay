@@ -14,9 +14,9 @@ use crate::{
     Advance, BatchEntry, ConditionPredicate, Dispute, FeeScan, GovernanceAction, HookEventClass,
     HookFailurePolicy, MigrationStatus, PageBounds, PendingOwnership, PendingRateChange,
     PendingSenderTransfer, PendingUpgrade, PeriodSpend, Proposal, RateSegment, ReceivablesConfig,
-    ScheduledIntent, SenderHistory, SponsorConfig, Stream, StreamCondition, StreamError,
-    StreamHook, StreamInput, StreamLineage, StreamPolicy, StreamTemplate, TemplateLineage,
-    TreasuryStatus, WithdrawAllResult, WithdrawEntry,
+    ReputationView, ScheduledIntent, SenderHistory, SponsorConfig, Stream, StreamCondition,
+    StreamError, StreamHook, StreamInput, StreamLineage, StreamPolicy, StreamTemplate,
+    TemplateLineage, TreasuryStatus, WithdrawAllResult, WithdrawEntry,
 };
 
 /// Interface of the StreamPay streaming-payments contract.
@@ -141,6 +141,8 @@ pub trait StreamingPaymentsApi {
     fn pending_rate_change(env: Env, stream_id: u64) -> Option<PendingRateChange>;
     fn rate_segments(env: Env, stream_id: u64) -> Vec<RateSegment>;
     fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError>;
+    fn get_reputation(env: Env, subject: Address) -> ReputationView;
+    fn reputation_score(env: Env, subject: Address) -> u32;
     fn get_dispute(env: Env, stream_id: u64) -> Result<Dispute, StreamError>;
     fn required_dispute_bond(env: Env, stream_id: u64) -> Result<i128, StreamError>;
     fn available(env: Env, stream_id: u64) -> Result<i128, StreamError>;

@@ -1419,6 +1419,37 @@ pub struct StreamSwept {
 
 #[cfg_attr(
     not(target_family = "wasm"),
+    doc = " Emitted when an address's reputation record changes after a resolved"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " dispute (issue #574). Completions emit no event: they are derived at"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " read time from the settlement state itself (see reputation.rs). Carries"
+)]
+#[cfg_attr(not(target_family = "wasm"), doc = " the subject's new")]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " raw (pre-decay) score and completion count so indexers can track the"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " score without re-reading storage."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReputationUpdated {
+    #[topic]
+    pub subject: Address,
+    pub stream_id: u64,
+    pub score: u32,
+    pub completed_streams: u32,
+}
+
+#[cfg_attr(
+    not(target_family = "wasm"),
     doc = " Emitted when `split_stream` splits a stream into two children. The parent"
 )]
 #[cfg_attr(
