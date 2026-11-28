@@ -87,16 +87,16 @@ class IRParsingTest(unittest.TestCase):
     def test_canonical_spec_counts_and_fingerprint(self) -> None:
         spec = ir.load_spec()
         self.assertEqual(spec.schema, "streampay-spec/v3")
-        self.assertEqual(len(spec.functions), 122)
-        self.assertEqual(len(spec.read_functions), 41)
-        self.assertEqual(len(spec.structs), 37)
-        self.assertEqual(len(spec.enums), 6)
-        self.assertEqual(len(spec.unions), 2)
-        self.assertEqual(len(spec.events), 65)
-        self.assertEqual(len(spec.constants), 30)
+        self.assertEqual(len(spec.functions), 136)
+        self.assertEqual(len(spec.read_functions), 44)
+        self.assertEqual(len(spec.structs), 45)
+        self.assertEqual(len(spec.enums), 8)
+        self.assertEqual(len(spec.unions), 3)
+        self.assertEqual(len(spec.events), 71)
+        self.assertEqual(len(spec.constants), 41)
         self.assertEqual(
             spec.fingerprint,
-            "1f8420327b4bef8b80c437b29fee4d4bf325cecd55589f4daae39915c019851f",
+            "eb02ca36b622115b243ec7da48485e0415f6069bba7f934842af4ffde95e6f69",
         )
         self.assertIs(ir.parse_spec(spec), spec)
 

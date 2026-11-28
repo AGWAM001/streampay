@@ -1,0 +1,47 @@
+{
+  "$defs": {},
+  "$id": "https://streampay.dev/schemas/events/v1/events/migration_finalized.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Emitted when a migration is finalized on the target instance. The root is consumed at this point: it can never be imported into this instance again. The target stays frozen until governance unfreezes it.",
+  "properties": {
+    "nonce": {
+      "minimum": 0,
+      "type": "integer",
+      "x-soroban-type": "u64"
+    },
+    "root": {
+      "contentEncoding": "base64",
+      "description": "32-byte hash, base64-encoded on the registry surface.",
+      "type": "string",
+      "x-soroban-type": "BytesN<32>"
+    }
+  },
+  "required": [
+    "nonce",
+    "root"
+  ],
+  "title": "MigrationFinalized",
+  "type": "object",
+  "x-streampay": {
+    "event_key": "migration_finalized",
+    "fingerprint": "sha256:cf155a3ee32b7c146e46fe2089edd692230cb95f0c2558c11565bfaccfd8951c",
+    "registry_version": 1,
+    "topicSchema": {
+      "items": [
+        {
+          "description": "Stellar account or contract address (StrKey).",
+          "type": "string",
+          "x-soroban-type": "Address"
+        }
+      ],
+      "type": "array"
+    },
+    "topics": [
+      {
+        "name": "source",
+        "type": "Address"
+      }
+    ]
+  }
+}

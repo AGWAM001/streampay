@@ -1419,33 +1419,31 @@ pub struct StreamSwept {
 
 #[cfg_attr(
     not(target_family = "wasm"),
-    doc = " Emitted when an address's reputation record changes after a resolved"
+    doc = " Emitted when an emergency state-migration export is finalized on the"
 )]
 #[cfg_attr(
     not(target_family = "wasm"),
-    doc = " dispute (issue #574). Completions emit no event: they are derived at"
+    doc = " source instance (issue #569). `root` is the Merkle root over every"
 )]
 #[cfg_attr(
     not(target_family = "wasm"),
-    doc = " read time from the settlement state itself (see reputation.rs). Carries"
-)]
-#[cfg_attr(not(target_family = "wasm"), doc = " the subject's new")]
-#[cfg_attr(
-    not(target_family = "wasm"),
-    doc = " raw (pre-decay) score and completion count so indexers can track the"
+    doc = " exported record, published on-chain by this event and by the"
 )]
 #[cfg_attr(
     not(target_family = "wasm"),
-    doc = " score without re-reading storage."
+    doc = " `migration_export` view; the source instance is frozen from the"
 )]
+#[cfg_attr(not(target_family = "wasm"), doc = " moment the export began.")]
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ReputationUpdated {
+pub struct MigrationExported {
     #[topic]
-    pub subject: Address,
-    pub stream_id: u64,
-    pub score: u32,
-    pub completed_streams: u32,
+    pub source: Address,
+    pub nonce: u64,
+    pub root: BytesN<32>,
+    pub records: u64,
+    pub total_value: i128,
+    pub pages: u32,
 }
 
 #[cfg_attr(
@@ -1478,6 +1476,51 @@ pub struct SplitStream {
     pub second_end_time: u64,
     pub claimable: i128,
     pub withdrawn: i128,
+}
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when a migration import completes on the target instance:"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " every page verified against the source's published root and written,"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " with the imported totals matching the exported totals (conservation)."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationImported {
+    #[topic]
+    pub source: Address,
+    pub nonce: u64,
+    pub root: BytesN<32>,
+    pub records: u64,
+    pub total_value: i128,
+    pub pages: u32,
+}
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when a migration is finalized on the target instance. The"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " root is consumed at this point: it can never be imported into this"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " instance again. The target stays frozen until governance unfreezes it."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationFinalized {
+    #[topic]
+    pub source: Address,
+    pub nonce: u64,
+    pub root: BytesN<32>,
 }
 
 #[cfg_attr(
@@ -1567,4 +1610,35 @@ pub struct StreamNftLinkFailed {
     )]
     #[cfg_attr(not(target_family = "wasm"), doc = " NFT-contract code).")]
     pub error_code: u32,
+}
+
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " Emitted when an address's reputation record changes after a resolved"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " dispute (issue #574). Completions emit no event: they are derived at"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " read time from the settlement state itself (see reputation.rs). Carries"
+)]
+#[cfg_attr(not(target_family = "wasm"), doc = " the subject's new")]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " raw (pre-decay) score and completion count so indexers can track the"
+)]
+#[cfg_attr(
+    not(target_family = "wasm"),
+    doc = " score without re-reading storage."
+)]
+#[contractevent]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReputationUpdated {
+    #[topic]
+    pub subject: Address,
+    pub stream_id: u64,
+    pub score: u32,
+    pub completed_streams: u32,
 }

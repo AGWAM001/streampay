@@ -97,7 +97,7 @@ class PythonEmitterTest(unittest.TestCase):
             for function in self.spec.functions
         }
         self.assertEqual(generated.METHODS, expected_methods)
-        self.assertEqual(len(generated.FUNCTIONS), 122)
+        self.assertEqual(len(generated.FUNCTIONS), 136)
         read_names = {function.name for function in self.spec.read_functions}
         emitted = {
             name
@@ -105,7 +105,7 @@ class PythonEmitterTest(unittest.TestCase):
             if callable(value) and name != "_read"
         }
         self.assertEqual(emitted, read_names)
-        self.assertEqual(len(emitted), 41)
+        self.assertEqual(len(emitted), 44)
 
     def test_every_argument_codec_and_result_decoder_roundtrips(self) -> None:
         for function in self.spec.functions:

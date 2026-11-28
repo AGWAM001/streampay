@@ -121,6 +121,9 @@ mod hostile_token_fuzz_test;
 mod lineage;
 #[cfg(test)]
 mod lineage_test;
+mod migration;
+#[cfg(test)]
+mod migration_test;
 mod nft_link;
 pub mod oracle;
 mod policy;
@@ -177,20 +180,25 @@ pub use events::{
     ContractUpgraded, DisputeExpired, DisputeRaised, DisputeResolved, FeeCharged, FeeWithdrawn,
     GovernanceActionExecuted, GovernanceActionProposed, GovernanceActionSigned,
     GovernanceActionVetoed, GovernanceSignersSet, HookFailed, HookInvoked, HookRegistered,
-    MergeStream, OperatorKeyRotated, OracleConfigUpdated, OracleStaleFallback, OracleTimeReported,
-    OwnershipAccepted, OwnershipProposed, PolicyAssetExecuted, PolicyAssetQueued,
-    PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized,
-    RateChangeAccepted, RateChangeProposed, ReputationUpdated, ScheduledIntentCancelled,
-    ScheduledIntentExpired, ScheduledStreamExecuted, SenderTransferExpired, SenderTransferProposed,
-    SenderTransferred, SplitStream, SponsorActiveSet, SponsorClaim, SponsorRegistered,
-    StorageMigrated, StreamCancelled, StreamCreated, StreamNftLinkFailed, StreamNftMinted,
-    StreamPaused, StreamPolicySet, StreamRecordMigrated, StreamRefundTargetChanged, StreamResumed,
+    MergeStream, MigrationExported, MigrationFinalized, MigrationImported, OperatorKeyRotated,
+    OracleConfigUpdated, OracleStaleFallback, OracleTimeReported, OwnershipAccepted,
+    OwnershipProposed, PolicyAssetExecuted, PolicyAssetQueued, PolicyHandoffAccepted,
+    PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized, RateChangeAccepted,
+    RateChangeProposed, ReputationUpdated, ScheduledIntentCancelled, ScheduledIntentExpired,
+    ScheduledStreamExecuted, SenderTransferExpired, SenderTransferProposed, SenderTransferred,
+    SplitStream, SponsorActiveSet, SponsorClaim, SponsorRegistered, StorageMigrated,
+    StreamCancelled, StreamCreated, StreamNftLinkFailed, StreamNftMinted, StreamPaused,
+    StreamPolicySet, StreamRecordMigrated, StreamRefundTargetChanged, StreamResumed,
     StreamScheduled, StreamSwept, StreamToppedUp, StreamsCreated, TemplateApproved,
     TemplateInstantiated, UpgradeCancelled, UpgradeProposed, Withdrawn,
 };
 pub use governance::{
     GovernanceAction, Proposal, DEFAULT_VETO_WINDOW_SECONDS, MAX_SIGNERS, MIN_VETO_WINDOW_SECONDS,
     REQUIRED_SIGNATURES, ROTATION_WINDOW_MULTIPLIER,
+};
+pub use migration::{
+    ExportPhase, ExportSession, ImportPhase, ImportSession, MigrationGlobals, MigrationProof,
+    MigrationRecord, MigrationSourceApi, MAX_MIGRATION_PAGE_RECORDS,
 };
 pub use oracle::{OracleConfig, OracleReport, ResolvedTime, DEFAULT_MAX_STALE_SECONDS};
 pub use policy::{
@@ -5707,6 +5715,12 @@ impl StreamingPayments {
             GovernanceAction::SetVetoWindow(window) => {
                 governance::apply_veto_window(env, *window, actor)
             }
+            GovernanceAction::BeginMigrationExport => {
+                Self::apply_begin_migration_export(env, actor).map(|_| ())
+            }
+            GovernanceAction::BeginMigrationImport(source) => {
+                Self::apply_begin_migration_import(env, actor, source).map(|_| ())
+            }
         }
     }
 
@@ -5748,6 +5762,209 @@ impl StreamingPayments {
             .instance()
             .get(&governance::GovernanceDataKey::ProposalCount)
             .unwrap_or(0)
+    }
+
+    // ------------------------------------------- emergency state migration
+    // Issue #569: governed break-glass migration of all state to a fresh
+    // contract instance, with Merkleized export/import proofs. See
+    // `migration.rs` for the protocol. Authorization mirrors the rest of
+    // the admin surface: once the two-key timelock (#119) is bootstrapped,
+    // beginning an export or import is only possible as an executed
+    // `GovernanceAction::BeginMigrationExport` /
+    // `GovernanceAction::BeginMigrationImport` proposal; before bootstrap
+    // the governor may begin directly, exactly like the other pre-timelock
+    // admin paths.
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Begins an emergency migration export on this instance: opens"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the export session, writes page zero (the globals record) and"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " freezes the contract, so the snapshot is taken against still"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " state. Returns the export nonce.")]
+    pub fn migration_begin_export(env: Env, caller: Address) -> Result<u64, StreamError> {
+        if governance::is_initialized(&env) {
+            return Err(surface::reject(Branch::GovernanceTimelockRequired));
+        }
+        treasury::require_governor(&env, &caller)?;
+        Self::apply_begin_migration_export(&env, &caller)
+    }
+
+    /// Shared body of the direct entry point and the governance dispatch:
+    /// the session opens first, then the freeze lands through the same
+    /// helper `set_frozen` uses, keeping one freeze audit trail.
+    fn apply_begin_migration_export(env: &Env, actor: &Address) -> Result<u64, StreamError> {
+        let nonce = migration::begin_export(env, actor)?;
+        Self::apply_set_frozen(env, actor, true)?;
+        Ok(nonce)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Appends one page of records to the open export. Permissionless:"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " every record is verified against this instance's own storage"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " before it is hashed in, so the caller transports state but"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " cannot author it. Returns the page index."
+    )]
+    pub fn migration_export_page(
+        env: Env,
+        records: Vec<MigrationRecord>,
+    ) -> Result<u32, StreamError> {
+        migration::export_page(&env, &records)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Finalizes the export and publishes its Merkle root on-chain."
+    )]
+    pub fn migration_finalize_export(env: Env) -> Result<BytesN<32>, StreamError> {
+        migration::finalize_export(&env)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The export session published by this instance, if any. This is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the view a target instance reads cross-contract when it"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " begins an import.")]
+    pub fn migration_export(env: Env) -> Option<ExportSession> {
+        migration::export_session(&env)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The Merkle root of one exported page, if that page exists."
+    )]
+    pub fn migration_page_root(env: Env, page: u32) -> Option<BytesN<32>> {
+        migration::page_root(&env, page)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The globals record (governor, fee rate, schema version, id"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " counters) as it stands now — the record an export carries as"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " page zero, exposed so an importing operator can assemble page"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " zero's import call.")]
+    pub fn migration_globals(env: Env) -> MigrationGlobals {
+        migration::current_globals(&env)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Begins a migration import into this (fresh) instance from"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `source`: reads the source's published export cross-contract,"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " commits this instance to its root and consumes that root"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " immediately, so it can never be replayed here. Returns the"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " committed root.")]
+    pub fn migration_begin_import(
+        env: Env,
+        caller: Address,
+        source: Address,
+    ) -> Result<BytesN<32>, StreamError> {
+        if governance::is_initialized(&env) {
+            return Err(surface::reject(Branch::GovernanceTimelockRequired));
+        }
+        treasury::require_governor(&env, &caller)?;
+        Self::apply_begin_migration_import(&env, &caller, &source)
+    }
+
+    /// Shared body of the direct entry point and the governance dispatch:
+    /// the session opens first, then the freeze lands through the same
+    /// helper `set_frozen` uses. A frozen target cannot interleave its own
+    /// activity with the import, and it stays frozen after finalization
+    /// until governance unfreezes it for service.
+    fn apply_begin_migration_import(
+        env: &Env,
+        actor: &Address,
+        source: &Address,
+    ) -> Result<BytesN<32>, StreamError> {
+        let root = migration::begin_import(env, actor, source)?;
+        Self::apply_set_frozen(env, actor, true)?;
+        Ok(root)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Imports one page of a begun migration: the page root must bind"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " into the committed root and match the source's published page"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " root, and every record must prove against that page root,"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " before any record is written.")]
+    pub fn migration_import_page(
+        env: Env,
+        page: u32,
+        page_siblings: Vec<BytesN<32>>,
+        records: Vec<MigrationRecord>,
+        proofs: Vec<MigrationProof>,
+    ) -> Result<(), StreamError> {
+        migration::import_page(&env, page, &page_siblings, &records, &proofs)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Finalizes the import: asserts page, record and value"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " conservation against the exported snapshot and closes the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " migration. The instance stays frozen until governance"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " unfreezes it.")]
+    pub fn migration_finalize_import(env: Env) -> Result<(), StreamError> {
+        migration::finalize_import(&env)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The import session on this instance, if any, with its progress"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " against the committed export.")]
+    pub fn migration_import(env: Env) -> Option<ImportSession> {
+        migration::import_session(&env)
     }
 
     // ----------------------------------------------------------- receivables
