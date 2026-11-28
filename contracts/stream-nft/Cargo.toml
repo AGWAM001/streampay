@@ -11,8 +11,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 soroban-sdk.workspace = true
-streampay-contract = { path = "../streaming-payments" }
+streampay-contract = { version = "0.1.0", path = "../streaming-payments" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+# The tests drive the core contract through its `test_client` module, which
+# is gated behind the core crate's `testutils` feature.
+streampay-contract = { version = "0.1.0", path = "../streaming-payments", features = ["testutils"] }
 proptest = "1.6"
