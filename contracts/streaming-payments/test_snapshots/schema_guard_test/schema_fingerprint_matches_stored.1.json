@@ -55,6 +55,30 @@
               "key": {
                 "vec": [
                   {
+                    "symbol": "AtomicMintLock"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "u32": 42
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "key": {
+                "vec": [
+                  {
                     "symbol": "BeneficiaryKey"
                   },
                   {
@@ -632,6 +656,33 @@
                 "vec": [
                   {
                     "symbol": "StreamLineage"
+                  },
+                  {
+                    "u64": "1"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "u32": 42
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "StreamNftLink"
                   },
                   {
                     "u64": "1"

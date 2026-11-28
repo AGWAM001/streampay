@@ -197,6 +197,18 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
             "persistent",
             DataKey::StreamLineage(1)
         ),
+        (
+            "StreamNftLink",
+            "StreamNftLink(u64)",
+            "persistent",
+            DataKey::StreamNftLink(1)
+        ),
+        (
+            "AtomicMintLock",
+            "AtomicMintLock",
+            "temporary",
+            DataKey::AtomicMintLock
+        ),
     ];
 
     let sponsor_key_cases: StdVec<(&str, &str, &str, SponsorKey)> = std::vec![
@@ -400,7 +412,7 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
         }
     });
 
-    // ── 2. Events probe (all 51 contract events) ────────────────────────────
+    // ── 2. Events probe (all 53 contract events) ────────────────────────────
     struct EventCase {
         name: &'static str,
         topics: StdVec<(&'static str, &'static str)>,
@@ -1179,6 +1191,33 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
                 end_time: 300,
                 claimable: 50,
                 withdrawn: 450,
+            }
+        ),
+        event_case!(
+            StreamNftMinted,
+            topics: [("stream_id", "u64"), ("nft_contract", "Address")],
+            data: [
+                ("recipient", "Address")
+            ],
+            StreamNftMinted {
+                stream_id: 1,
+                nft_contract: token.clone(),
+                recipient: recipient.clone(),
+            }
+        ),
+        event_case!(
+            StreamNftLinkFailed,
+            topics: [("stream_id", "u64"), ("nft_contract", "Address")],
+            data: [
+                ("recipient", "Address"),
+                ("error_code", "u32")
+            ],
+            StreamNftLinkFailed {
+                stream_id: 1,
+                nft_contract: token.clone(),
+                recipient: recipient.clone(),
+                error_code: 139,
+
             }
         ),
     ];

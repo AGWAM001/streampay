@@ -133,6 +133,7 @@ READ_ONLY = {
     "sender_streams",
     "sponsor_period_spend",
     "stream_fee",
+    "stream_nft_link",
     "stream_record_version",
     "total_streams",
     "treasury_status",

@@ -57,6 +57,8 @@ Every event the contract emits, with its on-chain topic layout and decoded data 
 | `storage_migrated` | `StorageMigrated` | `from_version: u32`, `to_version: u32` | `start_id: u64`, `end_id: u64`, `is_complete: bool` | `sha256:3e0dc77f4cd…` |
 | `stream_cancelled` | `StreamCancelled` | `stream_id: u64` | `cancelled_by: Address`, `recipient_amount: i128`, `sender_amount: i128` | `sha256:2b3062308e3…` |
 | `stream_created` | `StreamCreated` | `stream_id: u64` | `sender: Address`, `recipient: Address`, `token: Address`, `deposit: i128`, `start_time: u64`, `end_time: u64`, `cancelable: bool` | `sha256:8e7e6d5ab57…` |
+| `stream_nft_link_failed` | `StreamNftLinkFailed` | `stream_id: u64`, `nft_contract: Address` | `recipient: Address`, `error_code: u32` | `sha256:dbb893a694f…` |
+| `stream_nft_minted` | `StreamNftMinted` | `stream_id: u64`, `nft_contract: Address` | `recipient: Address` | `sha256:cf23b906912…` |
 | `stream_paused` | `StreamPaused` | `stream_id: u64` | `paused_at: u64` | `sha256:0d457030c16…` |
 | `stream_policy_set` | `StreamPolicySet` | — | `token: Option<Address>`, `old_policy: Option<StreamPolicy>`, `new_policy: StreamPolicy` | `sha256:b351d5e8904…` |
 | `stream_record_migrated` | `StreamRecordMigrated` | `stream_id: u64` | `from_version: u32`, `to_version: u32` | `sha256:e1a41c8e220…` |
