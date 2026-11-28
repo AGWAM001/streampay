@@ -1008,6 +1008,29 @@ pub enum StreamError {
         doc = " cancelability, oracle clock or refund target."
     )]
     MergeIncompatibleStreams = 138,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The linked stream-NFT mint failed during atomic create+mint;"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the whole transaction (deposit pull and stream record) rolls back."
+    )]
+    NftMintFailed = 139,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The NFT contract is bound to a different stream id than the one"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " just created, so the bidirectional link cannot be established."
+    )]
+    NftLinkMismatch = 140,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Atomic create+mint was re-entered while a mint linkage was in flight."
+    )]
+    AtomicMintReentrancyBlocked = 141,
 }
 
 impl StreamError {
@@ -1153,6 +1176,9 @@ impl StreamError {
         StreamError::LineageWindowElapsed,
         StreamError::MergeSameStream,
         StreamError::MergeIncompatibleStreams,
+        StreamError::NftMintFailed,
+        StreamError::NftLinkMismatch,
+        StreamError::AtomicMintReentrancyBlocked,
     ];
 
     /// The stable numeric value carried across the contract boundary

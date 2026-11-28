@@ -1,7 +1,7 @@
 {
   "schema": "streampay-vector/v1",
   "name": "reclaim-expired",
-  "specFingerprint": "1f8420327b4bef8b80c437b29fee4d4bf325cecd55589f4daae39915c019851f",
+  "specFingerprint": "b8b7fdaf2d0a39fe92616adad14725ed1943591a64fd561e98cff9b79ad5868f",
   "provenance": "schedule_test::reclaim_after_expiry_refunds_sender_permissionlessly: an unexecuted intent reclaimed at expires_at by anyone; escrow refunded to the sender; ScheduledIntentExpired as that test asserts it.",
   "transactionEnvelopeXdr": "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAABhqAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAAPcmVjbGFpbV9leHBpcmVkAAAAAAEAAAAFAAAAAAAAAAEAAAAAAAAAAAAAAAEURtIsAAAAQJ2lMl5KfBk6jvyl8zmK9BZo7S8u2OI+rWryfd2auNWeEsPahrFIDbz1vaSVGzUdFKsUkI9BQModwzVxmgzNPg4=",
   "resultXdr": "AAAAAQ==",

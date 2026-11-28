@@ -1,7 +1,7 @@
 {
   "schema": "streampay-vector/v1",
   "name": "top-up",
-  "specFingerprint": "1f8420327b4bef8b80c437b29fee4d4bf325cecd55589f4daae39915c019851f",
+  "specFingerprint": "b8b7fdaf2d0a39fe92616adad14725ed1943591a64fd561e98cff9b79ad5868f",
   "provenance": "StreamToppedUp payload from contracts/streaming-payments/test_snapshots/test/top_up_event_emitted.1.json.",
   "transactionEnvelopeXdr": "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAABhqAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAGdG9wX3VwAAAAAAACAAAABQAAAAAAAAABAAAACgAAAAAAAAAAAAAAAAAABNIAAAAAAAAAAAAAAAEURtIsAAAAQLjPoYDMHmKve+1sOxa79RWSLexw66VDzwnDea9ZCSs91chwpXi8IxFCKTTPblg5GnJh2ATknPal04Z/xdUrYwk=",
   "resultXdr": "AAAAAQ==",

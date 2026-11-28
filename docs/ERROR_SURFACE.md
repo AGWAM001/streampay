@@ -146,6 +146,9 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | 136 | `LineageWindowElapsed` | reachable (1 branch(es)) | `merge_streams`, `split_stream` | the (earlier) stream window has elapsed; nothing is left to re-allocate |
 | 137 | `MergeSameStream` | reachable (1 branch(es)) | `merge_streams` | both ids name the same stream |
 | 138 | `MergeIncompatibleStreams` | reachable (1 branch(es)) | `merge_streams` | the streams differ in sender, recipient, token, status, cancelability, clock or refund target |
+| 139 | `NftMintFailed` | reachable (1 branch(es)) | `create_stream_with_nft` | the linked stream-NFT mint invocation failed; the atomic transaction rolls back |
+| 140 | `NftLinkMismatch` | reachable (1 branch(es)) | `create_stream_with_nft` | the NFT contract is bound to a different stream id than the one just created |
+| 141 | `AtomicMintReentrancyBlocked` | reachable (1 branch(es)) | `create_stream_with_nft` | atomic create+mint re-entered while a mint linkage was in flight |
 
 ## Branch matrix (entrypoint × condition → error)
 
@@ -325,6 +328,9 @@ Every expected failure is a `StreamError` with a stable numeric code. This docum
 | `MergeSameStream` | `merge_streams` | `MergeSameStream` | 137 | both ids name the same stream | reachable |
 | `MergeIncompatible` | `merge_streams` | `MergeIncompatibleStreams` | 138 | the streams differ in sender, recipient, token, status, cancelability, clock or refund target | reachable |
 | `LineageConservationViolated` | `split_stream`, `merge_streams` | `MathOverflow` | 11 | split/merge outputs do not carry exactly the inputs' withdrawn, claimable and refundable value | defensive (unreachable) |
+| `CreateWithNftMintFailed` | `create_stream_with_nft` | `NftMintFailed` | 139 | the linked stream-NFT mint invocation failed; the atomic transaction rolls back | reachable |
+| `CreateWithNftLinkMismatch` | `create_stream_with_nft` | `NftLinkMismatch` | 140 | the NFT contract is bound to a different stream id than the one just created | reachable |
+| `CreateWithNftReentrancyBlocked` | `create_stream_with_nft` | `AtomicMintReentrancyBlocked` | 141 | atomic create+mint re-entered while a mint linkage was in flight | reachable |
 
 ## Retired codes
 

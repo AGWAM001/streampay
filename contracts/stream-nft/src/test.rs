@@ -4,13 +4,14 @@ use soroban_sdk::{
     contractclient,
     testutils::{Address as _, Events as _, Ledger as _},
     token::StellarAssetClient,
-    Address, Env, IntoVal, String as SdkString,
+    Address, Env, Event as _, IntoVal, String as SdkString,
 };
 use streampay_contract::{
-    test_client::StreamingPaymentsClient as CoreClient, StreamError, StreamStatus, StreamingPayments,
+    test_client::StreamingPaymentsClient as CoreClient, StreamError, StreamStatus,
+    StreamingPayments,
 };
 
-use crate::{Allowance, NftError, NftMinted, NftTransferred, NftBurned, StreamNft};
+use crate::{Allowance, NftBurned, NftError, NftMinted, NftTransferred, StreamNft};
 
 const DAY: u64 = 24 * 60 * 60;
 const DEPOSIT: i128 = 10_000_000_000;
@@ -24,6 +25,8 @@ pub trait StreamNftApi {
         stream_id: u64,
     ) -> Result<(), NftError>;
     fn mint(env: Env, recipient: Address) -> Result<(), NftError>;
+    fn mint_linked(env: Env, recipient: Address, stream_id: u64) -> Result<(), NftError>;
+    fn linked_core(env: Env, stream_id: u64) -> Option<Address>;
     fn stream_id(env: Env) -> Result<u64, NftError>;
     fn core_contract(env: Env) -> Result<Address, NftError>;
     fn owner(env: Env) -> Result<Address, NftError>;
@@ -45,12 +48,7 @@ pub trait StreamNftApi {
         amount: i128,
     ) -> Result<(), NftError>;
     fn burn(env: Env, from: Address, amount: i128) -> Result<(), NftError>;
-    fn burn_from(
-        env: Env,
-        spender: Address,
-        from: Address,
-        amount: i128,
-    ) -> Result<(), NftError>;
+    fn burn_from(env: Env, spender: Address, from: Address, amount: i128) -> Result<(), NftError>;
     fn finalize_and_burn(env: Env) -> Result<(), NftError>;
     fn withdraw(env: Env, caller: Address, amount: i128) -> Result<(), NftError>;
     fn withdraw_max(env: Env, caller: Address) -> Result<i128, NftError>;
@@ -72,7 +70,9 @@ struct TestFixture {
 impl TestFixture {
     fn setup() -> Self {
         let env = Env::default();
-        env.mock_all_auths();
+        // Delegated withdrawals cross into the core contract, whose
+        // `require_auth` calls sit below the root invocation.
+        env.mock_all_auths_allowing_non_root_auth();
 
         let sac = env.register_stellar_asset_contract_v2(Address::generate(&env));
         let token = sac.address();
@@ -137,7 +137,9 @@ impl TestFixture {
     }
 
     fn advance_ledger(&self, ledgers: u32) {
-        self.env.ledger().with_mut(|li| li.sequence += ledgers);
+        self.env
+            .ledger()
+            .with_mut(|li| li.sequence_number += ledgers);
     }
 }
 
@@ -154,11 +156,17 @@ fn test_initialization_and_metadata() {
     assert_eq!(nft.stream_id(), stream_id);
     assert_eq!(nft.core_contract(), f.core_address);
     assert_eq!(nft.decimals(), 0);
-    assert_eq!(nft.name(), SdkString::from_str(&f.env, "StreamPay Stream NFT"));
+    assert_eq!(
+        nft.name(),
+        SdkString::from_str(&f.env, "StreamPay Stream NFT")
+    );
     assert_eq!(nft.symbol(), SdkString::from_str(&f.env, "STRMNFT"));
 
     // Double initialization rejected
-    let err = nft.try_initialize(&f.core_address, &f.governor, &stream_id).unwrap_err().unwrap();
+    let err = nft
+        .try_initialize(&f.core_address, &f.governor, &stream_id)
+        .unwrap_err()
+        .unwrap();
     assert_eq!(err, NftError::AlreadyInitialized);
 }
 
@@ -182,12 +190,8 @@ fn test_mint_lifecycle_and_events() {
     // Mint to recipient
     nft.mint(&f.recipient);
 
-    // Now recipient is owner and has balance 1
-    assert_eq!(nft.owner(), f.recipient);
-    assert_eq!(nft.balance(&f.recipient), 1);
-    assert_eq!(nft.balance(&f.sender), 0);
-
-    // Mint event emitted
+    // Mint event emitted (read before any further client call: each
+    // top-level invocation replaces the test event log)
     let minted_event = NftMinted {
         stream_id,
         recipient: f.recipient.clone(),
@@ -197,6 +201,11 @@ fn test_mint_lifecycle_and_events() {
         f.env.events().all().filter_by_contract(&nft.address),
         [minted_event.to_xdr(&f.env, &nft.address)],
     );
+
+    // Now recipient is owner and has balance 1
+    assert_eq!(nft.owner(), f.recipient);
+    assert_eq!(nft.balance(&f.recipient), 1);
+    assert_eq!(nft.balance(&f.sender), 0);
 
     // Double mint reverts AlreadyMinted
     let err = nft.try_mint(&f.recipient).unwrap_err().unwrap();
@@ -233,11 +242,7 @@ fn test_transfer_then_withdraw() {
     // Recipient transfers NFT to new_recipient
     nft.transfer(&f.recipient, &new_recipient, &1);
 
-    assert_eq!(nft.owner(), new_recipient);
-    assert_eq!(nft.balance(&f.recipient), 0);
-    assert_eq!(nft.balance(&new_recipient), 1);
-
-    // Check NftTransferred event
+    // Check NftTransferred event (read before any further client call)
     let transfer_event = NftTransferred {
         stream_id,
         from: f.recipient.clone(),
@@ -248,11 +253,18 @@ fn test_transfer_then_withdraw() {
         [transfer_event.to_xdr(&f.env, &nft.address)],
     );
 
+    assert_eq!(nft.owner(), new_recipient);
+    assert_eq!(nft.balance(&f.recipient), 0);
+    assert_eq!(nft.balance(&new_recipient), 1);
+
     // Advance time by 2 days (2/10 of deposit accrued = 2_000_000_000)
     f.advance_time(2 * DAY);
 
     // Previous recipient cannot withdraw anymore via NFT
-    let err = nft.try_withdraw(&f.recipient, &1_000_000).unwrap_err().unwrap();
+    let err = nft
+        .try_withdraw(&f.recipient, &1_000_000)
+        .unwrap_err()
+        .unwrap();
     assert_eq!(err, NftError::NotAuthorized);
 
     // New holder can withdraw
@@ -271,11 +283,15 @@ fn test_transfer_invalid_amount() {
     let new_recipient = Address::generate(&f.env);
     // Amount != 1 rejected
     assert_eq!(
-        nft.try_transfer(&f.recipient, &new_recipient, &0).unwrap_err().unwrap(),
+        nft.try_transfer(&f.recipient, &new_recipient, &0)
+            .unwrap_err()
+            .unwrap(),
         NftError::InvalidAmount
     );
     assert_eq!(
-        nft.try_transfer(&f.recipient, &new_recipient, &2).unwrap_err().unwrap(),
+        nft.try_transfer(&f.recipient, &new_recipient, &2)
+            .unwrap_err()
+            .unwrap(),
         NftError::InvalidAmount
     );
 }
@@ -382,12 +398,18 @@ fn test_authorized_operator_can_withdraw() {
 
     // Operator withdraws on behalf of stream recipient
     nft.withdraw(&operator, &1_000_000_000);
-    assert_eq!(f.core_client.get_stream(&stream_id).withdrawn, 1_000_000_000);
+    assert_eq!(
+        f.core_client.get_stream(&stream_id).withdrawn,
+        1_000_000_000
+    );
 
     // Operator calls withdraw_max
     let rest = nft.withdraw_max(&operator);
     assert_eq!(rest, 2_000_000_000);
-    assert_eq!(f.core_client.get_stream(&stream_id).withdrawn, 3_000_000_000);
+    assert_eq!(
+        f.core_client.get_stream(&stream_id).withdrawn,
+        3_000_000_000
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -408,13 +430,18 @@ fn test_burn_on_finalize_depleted() {
     assert_eq!(withdrawn, DEPOSIT);
 
     // Stream is now depleted: NFT should auto-burn
-    assert_eq!(f.core_client.get_stream(&stream_id).status, StreamStatus::Depleted);
+    assert_eq!(
+        f.core_client.get_stream(&stream_id).status,
+        StreamStatus::Depleted
+    );
     assert_eq!(nft.balance(&f.recipient), 0);
     assert_eq!(nft.try_owner().unwrap_err().unwrap(), NftError::TokenBurned);
 
     // Mutations on burned token revert
     assert_eq!(
-        nft.try_transfer(&f.recipient, &Address::generate(&f.env), &1).unwrap_err().unwrap(),
+        nft.try_transfer(&f.recipient, &Address::generate(&f.env), &1)
+            .unwrap_err()
+            .unwrap(),
         NftError::TokenBurned
     );
     assert_eq!(
@@ -433,7 +460,10 @@ fn test_burn_on_finalize_cancelled() {
     f.advance_time(2 * DAY);
     // Sender cancels stream directly on core
     f.core_client.cancel_stream(&f.sender, &stream_id);
-    assert_eq!(f.core_client.get_stream(&stream_id).status, StreamStatus::Cancelled);
+    assert_eq!(
+        f.core_client.get_stream(&stream_id).status,
+        StreamStatus::Cancelled
+    );
 
     // Any party can call finalize_and_burn
     nft.finalize_and_burn();
@@ -856,4 +886,75 @@ mod proptest_invariants {
             prop_assert_eq!(f.core_client.get_stream(&stream_id).recipient, owner.clone());
         }
     }
+}
+
+// -----------------------------------------------------------------------------
+// Atomic create+mint linkage Tests (issue #575)
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_mint_linked_records_bidirectional_link() {
+    let f = TestFixture::setup();
+    let stream_id = f.create_stream(10 * DAY, true);
+    let (_nft_addr, nft) = f.deploy_nft(stream_id);
+
+    // No link before the atomic mint.
+    assert_eq!(nft.linked_core(&stream_id), None);
+
+    nft.mint_linked(&f.recipient, &stream_id);
+
+    // NFT side of the link: owner set, and stream_id -> core recorded.
+    assert_eq!(nft.owner(), f.recipient);
+    assert_eq!(nft.balance(&f.recipient), 1);
+    assert_eq!(nft.linked_core(&stream_id), Some(f.core_address.clone()));
+    // A different stream id has no link record.
+    assert_eq!(nft.linked_core(&(stream_id + 1)), None);
+}
+
+#[test]
+fn test_mint_linked_stream_id_mismatch_mints_nothing() {
+    let f = TestFixture::setup();
+    let stream_id = f.create_stream(10 * DAY, true);
+    let (_nft_addr, nft) = f.deploy_nft(stream_id);
+
+    // The companion is bound to `stream_id`; naming any other id is refused
+    // before any mint effect, so the pair cannot be half-linked.
+    let err = nft
+        .try_mint_linked(&f.recipient, &(stream_id + 7))
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NftError::StreamIdMismatch);
+    assert_eq!(nft.balance(&f.recipient), 0);
+    assert_eq!(nft.try_owner().unwrap_err().unwrap(), NftError::NotMinted);
+    assert_eq!(nft.linked_core(&stream_id), None);
+}
+
+#[test]
+fn test_mint_linked_twice_is_already_minted() {
+    let f = TestFixture::setup();
+    let stream_id = f.create_stream(10 * DAY, true);
+    let (_nft_addr, nft) = f.deploy_nft(stream_id);
+
+    nft.mint_linked(&f.recipient, &stream_id);
+    let err = nft
+        .try_mint_linked(&f.recipient, &stream_id)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, NftError::AlreadyMinted);
+    // Exactly one unit exists and the link record is unchanged.
+    assert_eq!(nft.balance(&f.recipient), 1);
+    assert_eq!(nft.linked_core(&stream_id), Some(f.core_address.clone()));
+}
+
+#[test]
+fn test_standalone_mint_writes_no_link_record() {
+    let f = TestFixture::setup();
+    let stream_id = f.create_stream(10 * DAY, true);
+    let (_nft_addr, nft) = f.deploy_nft(stream_id);
+
+    // The legacy path still works, but only the atomic path records the
+    // bidirectional link, so indexers can tell the two apart.
+    nft.mint(&f.recipient);
+    assert_eq!(nft.owner(), f.recipient);
+    assert_eq!(nft.linked_core(&stream_id), None);
 }

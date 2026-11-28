@@ -308,6 +308,18 @@
       "struct": "StreamCreated"
     },
     {
+      "event_key": "stream_nft_link_failed",
+      "fingerprint": "sha256:dbb893a694fa54f3dadae0830e0f48a75efc9a2f8f565bf4523de059f960cb4b",
+      "schema": "events/stream_nft_link_failed.json",
+      "struct": "StreamNftLinkFailed"
+    },
+    {
+      "event_key": "stream_nft_minted",
+      "fingerprint": "sha256:cf23b906912d12a5f81a2fac0fb51f247cce566a4e972b06e3344af38d4c6a7f",
+      "schema": "events/stream_nft_minted.json",
+      "struct": "StreamNftMinted"
+    },
+    {
       "event_key": "stream_paused",
       "fingerprint": "sha256:0d457030c164b4e062b06573927350f9782f0cb22409977ae4d6f01e17fb557e",
       "schema": "events/stream_paused.json",

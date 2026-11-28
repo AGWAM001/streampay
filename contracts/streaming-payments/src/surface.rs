@@ -405,13 +405,23 @@ pub enum Branch {
     /// `lineage::check_conservation`: the outputs do not carry exactly the
     /// inputs' withdrawn, claimable and refundable value.
     LineageConservationViolated,
+    // ------------------------------------------------- atomic stream + NFT
+    /// `create_stream_with_nft`: the linked NFT mint invocation failed
+    /// (callee error, panic or trap); the transaction rolls back in full.
+    CreateWithNftMintFailed,
+    /// `create_stream_with_nft`: the NFT contract is bound to a stream id
+    /// other than the one just created.
+    CreateWithNftLinkMismatch,
+    /// `create_stream_with_nft`: re-entered while an atomic mint linkage
+    /// was already in flight.
+    CreateWithNftReentrancyBlocked,
 }
 
 impl Branch {
     /// Every branch, in declaration order. The matrix test walks this list and
     /// the coverage test requires each [`StreamError`] variant to be produced by
     /// one of these (or retired).
-    pub const ALL: [Branch; 174] = [
+    pub const ALL: [Branch; 177] = [
         Branch::CreateDepositNonPositive,
         Branch::CreateStartTimeInPast,
         Branch::CreateInvalidTimeRange,
@@ -586,6 +596,9 @@ impl Branch {
         Branch::MergeSameStream,
         Branch::MergeIncompatible,
         Branch::LineageConservationViolated,
+        Branch::CreateWithNftMintFailed,
+        Branch::CreateWithNftLinkMismatch,
+        Branch::CreateWithNftReentrancyBlocked,
     ];
 
     /// The entrypoint(s) through which this branch can fire. Shared helpers
@@ -966,6 +979,9 @@ impl Branch {
             | Branch::SplitEndBeforeParent
             | Branch::SplitDurationTooLong => &["split_stream"],
             Branch::MergeSameStream | Branch::MergeIncompatible => &["merge_streams"],
+            Branch::CreateWithNftMintFailed
+            | Branch::CreateWithNftLinkMismatch
+            | Branch::CreateWithNftReentrancyBlocked => &["create_stream_with_nft"],
         }
     }
 
@@ -1163,6 +1179,9 @@ impl Branch {
             Branch::MergeSameStream => StreamError::MergeSameStream,
             Branch::MergeIncompatible => StreamError::MergeIncompatibleStreams,
             Branch::LineageConservationViolated => StreamError::MathOverflow,
+            Branch::CreateWithNftMintFailed => StreamError::NftMintFailed,
+            Branch::CreateWithNftLinkMismatch => StreamError::NftLinkMismatch,
+            Branch::CreateWithNftReentrancyBlocked => StreamError::AtomicMintReentrancyBlocked,
         }
     }
 
@@ -1541,6 +1560,16 @@ impl Branch {
             }
             Branch::LineageConservationViolated => {
                 "split/merge outputs do not carry exactly the inputs' withdrawn, claimable and refundable value"
+            }
+            Branch::CreateWithNftMintFailed => {
+                "the linked stream-NFT mint invocation failed; the atomic transaction rolls back"
+            }
+            Branch::CreateWithNftLinkMismatch => {
+                "the NFT contract is bound to a different stream id than the one just created"
+            }
+            Branch::CreateWithNftReentrancyBlocked => {
+                "atomic create+mint re-entered while a mint linkage was in flight"
+
             }
         }
     }
