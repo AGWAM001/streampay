@@ -1,7 +1,7 @@
 {
   "schema": "streampay-vector/v1",
   "name": "execute-scheduled",
-  "specFingerprint": "7f685ad8a48e46e0dd37e520f203ad0344a326fddf2f1aad8028ebc0cc895345",
+  "specFingerprint": "eb02ca36b622115b243ec7da48485e0415f6069bba7f934842af4ffde95e6f69",
   "provenance": "Happy path of schedule_test::execute_creates_stream_and_pays_keeper: the stored Intent/Stream entries of its snapshot supply the values; events are the [StreamCreated, ScheduledStreamExecuted] pair that test asserts; returns the new stream id.",
   "transactionEnvelopeXdr": "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAABhqAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAAARZXhlY3V0ZV9zY2hlZHVsZWQAAAAAAAACAAAABQAAAAAAAAABAAAAEgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAARRG0iwAAABAfogESKeobAMobAfNKbovMZFO5RmkK1g2PD19zPeRG3hc/o9HM7wEUyrmnGqcXGvFQRyIKnlmt/QGzbwdl2+dDA==",
   "resultXdr": "AAAABQAAAAAAAAAB",
