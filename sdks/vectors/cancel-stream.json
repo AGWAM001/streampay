@@ -1,7 +1,7 @@
 {
   "schema": "streampay-vector/v1",
   "name": "cancel-stream",
-  "specFingerprint": "1f8420327b4bef8b80c437b29fee4d4bf325cecd55589f4daae39915c019851f",
+  "specFingerprint": "c7b639fa13d955ad1bf19843ccb2a32dab1b2f8ccff40347f8560f0470530467",
   "provenance": "StreamCancelled payload from contracts/streaming-payments/test_snapshots/test/events_are_emitted_with_expected_payloads.1.json.",
   "transactionEnvelopeXdr": "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAABhqAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAANY2FuY2VsX3N0cmVhbQAAAAAAAAIAAAASAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAABQAAAAAAAAABAAAAAAAAAAAAAAABFEbSLAAAAEBSibuLbPpHKWd/WVFPPXkJjbi1PzgyhL8RGlR/EpfzWnzs4P8TjSPzX/mhKtg0YQawkFNTaSlRhk+sXcNttZsH",
   "resultXdr": "AAAAAQ==",

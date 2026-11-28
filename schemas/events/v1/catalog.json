@@ -230,6 +230,12 @@
       "struct": "RateChangeProposed"
     },
     {
+      "event_key": "reputation_updated",
+      "fingerprint": "sha256:e55d499b26e37e7b62ea675a51df0106b6d74b5b5d2232943c41cda5f6707a33",
+      "schema": "events/reputation_updated.json",
+      "struct": "ReputationUpdated"
+    },
+    {
       "event_key": "scheduled_intent_cancelled",
       "fingerprint": "sha256:fe727619a69c546daa9f512a6cbe4162453a8404bd8dba614384557f162e5f0e",
       "schema": "events/scheduled_intent_cancelled.json",
