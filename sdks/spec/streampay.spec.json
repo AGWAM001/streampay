@@ -12,6 +12,14 @@
       "value": 10000,
       "type": "u32"
     },
+    "COMPLETION_POINTS_CAP": {
+      "value": 700,
+      "type": "u32"
+    },
+    "DECAY_WINDOW_SECONDS": {
+      "value": 15552000,
+      "type": "u64"
+    },
     "DEFAULT_MAX_LTV_BPS": {
       "value": 7500,
       "type": "u32"
@@ -32,12 +40,20 @@
       "value": 604800,
       "type": "u64"
     },
+    "DISPUTE_WON_POINTS_CAP": {
+      "value": 200,
+      "type": "u32"
+    },
     "INITIAL_SCHEMA_VERSION": {
       "value": 1,
       "type": "u32"
     },
     "MAX_BATCH": {
       "value": 25,
+      "type": "u32"
+    },
+    "MAX_DERIVATION_SCAN": {
+      "value": 256,
       "type": "u32"
     },
     "MAX_DURATION_SECONDS": {
@@ -62,6 +78,10 @@
     },
     "MAX_RATE_SEGMENTS": {
       "value": 32,
+      "type": "u32"
+    },
+    "MAX_SCORE": {
+      "value": 1000,
       "type": "u32"
     },
     "MAX_SIGNERS": {
@@ -100,9 +120,29 @@
       "value": 604800,
       "type": "u64"
     },
+    "POINTS_PER_COMPLETION": {
+      "value": 40,
+      "type": "u32"
+    },
+    "POINTS_PER_DISPUTE_LOST": {
+      "value": 30,
+      "type": "u32"
+    },
+    "POINTS_PER_DISPUTE_WON": {
+      "value": 20,
+      "type": "u32"
+    },
+    "POINTS_PER_REFILLED_COMPLETION": {
+      "value": 10,
+      "type": "u32"
+    },
     "RATE_PROPOSAL_TTL_SECONDS": {
       "value": 604800,
       "type": "u64"
+    },
+    "REFILL_POINTS_CAP": {
+      "value": 100,
+      "type": "u32"
     },
     "REQUIRED_SIGNATURES": {
       "value": 2,
@@ -828,6 +868,32 @@
       ],
       "returns": "Stream",
       "error": "StreamError",
+      "mutating": false
+    },
+    {
+      "name": "get_reputation",
+      "doc": "Read-only view of an address's non-transferable reputation\nrecord plus its raw and inactivity-decayed scores (issue #574).\n\nNever reverts: an address with no settled history reads as a\nzero record with score 0. The completion half of the record is\nderived from the address's stream history (a bounded scan; see\nreputation.rs for the cost model). There is\ndeliberately no transfer/approval entrypoint — the score is\nbound to the address that earned it.",
+      "args": [
+        {
+          "name": "subject",
+          "type": "address"
+        }
+      ],
+      "returns": "ReputationView",
+      "error": null,
+      "mutating": false
+    },
+    {
+      "name": "reputation_score",
+      "doc": "The address's current (inactivity-decayed) reputation score in\n`0..=1000` — the cheap scalar read integrators gate access on.",
+      "args": [
+        {
+          "name": "subject",
+          "type": "address"
+        }
+      ],
+      "returns": "u32",
+      "error": null,
       "mutating": false
     },
     {
@@ -2715,6 +2781,63 @@
           "name": "repayment_bps",
           "type": "u32",
           "doc": ""
+        }
+      ]
+    },
+    {
+      "name": "ReputationRecord",
+      "doc": "Accumulated reputation counters for one address.\n\nField order and names are the storage wire format for the *stored*\nrecord; only append fields. What [`get_record`] returns is a merge: the\nstored record carries the dispute counters plus the completion\ncontributions archived by `sweep_stream`, and the completion counters\nof streams that still exist are derived live and added in (see the\nmodule's Cost section). Counters are aggregates, never a history list.",
+      "fields": [
+        {
+          "name": "completed_streams",
+          "type": "u32",
+          "doc": "Streams that ran to full settlement with this address as a party."
+        },
+        {
+          "name": "refilled_completions",
+          "type": "u32",
+          "doc": "Completed streams this address funded that had been topped up at\nleast once before settling (sender-side refill reliability)."
+        },
+        {
+          "name": "disputes_won",
+          "type": "u32",
+          "doc": "Disputes resolved in this address's favour."
+        },
+        {
+          "name": "disputes_lost",
+          "type": "u32",
+          "doc": "Disputes resolved against this address."
+        },
+        {
+          "name": "settled_total",
+          "type": "i128",
+          "doc": "Total value settled across this address's completed streams.\nInformational (auditing/integrator display); never scored directly,\nso inflating stream sizes cannot inflate the score."
+        },
+        {
+          "name": "last_activity",
+          "type": "u64",
+          "doc": "Ledger timestamp of the last scored outcome. Drives decay."
+        }
+      ]
+    },
+    {
+      "name": "ReputationView",
+      "doc": "What the integrator-facing read returns: the merged counters plus the\nscore as of the current ledger time (raw and decayed).",
+      "fields": [
+        {
+          "name": "record",
+          "type": "ReputationRecord",
+          "doc": ""
+        },
+        {
+          "name": "raw_score",
+          "type": "u32",
+          "doc": "Score before inactivity decay."
+        },
+        {
+          "name": "score",
+          "type": "u32",
+          "doc": "Score after inactivity decay at the current ledger timestamp. This\nis the value access gates should use."
         }
       ]
     },
@@ -5499,6 +5622,35 @@
           "name": "entries_removed",
           "type": "u32",
           "doc": "Number of per-stream persistent entries deleted."
+        }
+      ]
+    },
+    {
+      "name": "ReputationUpdated",
+      "topic": "reputation_updated",
+      "doc": "Emitted when an address's reputation record changes after a resolved\ndispute (issue #574). Completions emit no event: they are derived at\nread time from the settlement state itself (see reputation.rs). Carries\nthe subject's new\nraw (pre-decay) score and completion count so indexers can track the\nscore without re-reading storage.",
+      "topicFields": [
+        {
+          "name": "subject",
+          "type": "address",
+          "doc": ""
+        }
+      ],
+      "dataFields": [
+        {
+          "name": "stream_id",
+          "type": "u64",
+          "doc": ""
+        },
+        {
+          "name": "score",
+          "type": "u32",
+          "doc": ""
+        },
+        {
+          "name": "completed_streams",
+          "type": "u32",
+          "doc": ""
         }
       ]
     },

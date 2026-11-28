@@ -363,6 +363,15 @@ export interface RateChangeProposedEvent {
   expires_at: bigint;
 }
 
+/** Emitted when an address's reputation record changes after a resolved dispute (issue #574). Completions emit no event: they are derived at read time from the settlement state itself (see reputation.rs). Carries the subject's new raw (pre-decay) score and completion count so indexers can track the score without re-reading storage. */
+/** Event key `reputation_updated` — fingerprint `sha256:e55d499b26e37e7b62ea675a51df0106b6d74b5b5d2232943c41cda5f6707a33`. */
+export interface ReputationUpdatedEvent {
+  subject: string;
+  stream_id: bigint;
+  score: number;
+  completed_streams: number;
+}
+
 /** Emitted when a sender cancels a not-yet-executable intent and is refunded the escrow for all outstanding occurrences. */
 /** Event key `scheduled_intent_cancelled` — fingerprint `sha256:fe727619a69c546daa9f512a6cbe4162453a8404bd8dba614384557f162e5f0e`. */
 export interface ScheduledIntentCancelledEvent {
@@ -680,6 +689,7 @@ export const EVENT_KEYS = {
   PolicyInitialized: "policy_initialized",
   RateChangeAccepted: "rate_change_accepted",
   RateChangeProposed: "rate_change_proposed",
+  ReputationUpdated: "reputation_updated",
   ScheduledIntentCancelled: "scheduled_intent_cancelled",
   ScheduledIntentExpired: "scheduled_intent_expired",
   ScheduledStreamExecuted: "scheduled_stream_executed",
@@ -715,7 +725,7 @@ export const EVENT_KEYS = {
 export type ContractEventName = (typeof EVENT_KEYS)[keyof typeof EVENT_KEYS];
 
 /** Every event this registry knows about, even if a consumer ignores it. */
-export const ALL_CONTRACT_EVENT_NAMES: readonly ContractEventName[] = ["advance_drawn", "advance_liquidated", "advance_repaid", "batch_withdraw_summary", "beneficiary_enrolled", "condition_expired", "condition_met", "condition_registered", "contract_frozen_state_changed", "contract_upgraded", "dispute_expired", "dispute_raised", "dispute_resolved", "fee_charged", "fee_withdrawn", "governance_action_executed", "governance_action_proposed", "governance_action_signed", "governance_action_vetoed", "governance_signers_set", "hook_failed", "hook_invoked", "hook_registered", "merge_stream", "operator_key_rotated", "oracle_config_updated", "oracle_stale_fallback", "oracle_time_reported", "ownership_accepted", "ownership_proposed", "policy_asset_executed", "policy_asset_queued", "policy_handoff_accepted", "policy_handoff_cancelled", "policy_handoff_proposed", "policy_initialized", "rate_change_accepted", "rate_change_proposed", "scheduled_intent_cancelled", "scheduled_intent_expired", "scheduled_stream_executed", "sender_transfer_expired", "sender_transfer_proposed", "sender_transferred", "split_stream", "sponsor_active_set", "sponsor_claim", "sponsor_registered", "storage_migrated", "stream_cancelled", "stream_created", "stream_nft_link_failed", "stream_nft_minted", "stream_paused", "stream_policy_set", "stream_record_migrated", "stream_refund_target_changed", "stream_resumed", "stream_scheduled", "stream_swept", "stream_topped_up", "streams_created", "template_approved", "template_instantiated", "upgrade_cancelled", "upgrade_proposed", "withdrawn"] as const;
+export const ALL_CONTRACT_EVENT_NAMES: readonly ContractEventName[] = ["advance_drawn", "advance_liquidated", "advance_repaid", "batch_withdraw_summary", "beneficiary_enrolled", "condition_expired", "condition_met", "condition_registered", "contract_frozen_state_changed", "contract_upgraded", "dispute_expired", "dispute_raised", "dispute_resolved", "fee_charged", "fee_withdrawn", "governance_action_executed", "governance_action_proposed", "governance_action_signed", "governance_action_vetoed", "governance_signers_set", "hook_failed", "hook_invoked", "hook_registered", "merge_stream", "operator_key_rotated", "oracle_config_updated", "oracle_stale_fallback", "oracle_time_reported", "ownership_accepted", "ownership_proposed", "policy_asset_executed", "policy_asset_queued", "policy_handoff_accepted", "policy_handoff_cancelled", "policy_handoff_proposed", "policy_initialized", "rate_change_accepted", "rate_change_proposed", "reputation_updated", "scheduled_intent_cancelled", "scheduled_intent_expired", "scheduled_stream_executed", "sender_transfer_expired", "sender_transfer_proposed", "sender_transferred", "split_stream", "sponsor_active_set", "sponsor_claim", "sponsor_registered", "storage_migrated", "stream_cancelled", "stream_created", "stream_nft_link_failed", "stream_nft_minted", "stream_paused", "stream_policy_set", "stream_record_migrated", "stream_refund_target_changed", "stream_resumed", "stream_scheduled", "stream_swept", "stream_topped_up", "streams_created", "template_approved", "template_instantiated", "upgrade_cancelled", "upgrade_proposed", "withdrawn"] as const;
 
 /** Narrow an arbitrary RPC event name to a registered contract event. */
 export function isContractEventName(name: string): name is ContractEventName {
@@ -762,6 +772,7 @@ export const EVENT_STRUCT_BY_KEY: Record<ContractEventName, string> = {
   "policy_initialized": "PolicyInitialized",
   "rate_change_accepted": "RateChangeAccepted",
   "rate_change_proposed": "RateChangeProposed",
+  "reputation_updated": "ReputationUpdated",
   "scheduled_intent_cancelled": "ScheduledIntentCancelled",
   "scheduled_intent_expired": "ScheduledIntentExpired",
   "scheduled_stream_executed": "ScheduledStreamExecuted",
@@ -850,6 +861,7 @@ export const EVENT_SHAPES: Record<ContractEventName, EventShape> = {
   "policy_initialized": { struct: "PolicyInitialized", eventKey: "policy_initialized", fingerprint: "sha256:332dec01d9e44b08a077228239c6b3fdcc435b4c59862a9efd6d4001a7cbd44b", topics: [], data: [{"name":"admin","type":"Address"}] },
   "rate_change_accepted": { struct: "RateChangeAccepted", eventKey: "rate_change_accepted", fingerprint: "sha256:66b7fcbf7e912df0adfb728f6dd025e43a3678b76885950fb68c9e7b1ea41da3", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"accepted_by","type":"Address"},{"name":"new_amount_per_second","type":"i128"},{"name":"effective_from","type":"u64"},{"name":"owed_at_change","type":"i128"},{"name":"reserved_at_new_rate","type":"i128"},{"name":"adjustment","type":"i128"},{"name":"deposit","type":"i128"}] },
   "rate_change_proposed": { struct: "RateChangeProposed", eventKey: "rate_change_proposed", fingerprint: "sha256:9e2dec2cd991106085acabb92aaec4edf32ca518a688d2090ded15d91c7f70c0", topics: [{"name":"stream_id","type":"u64"}], data: [{"name":"proposed_by","type":"Address"},{"name":"counterparty","type":"Address"},{"name":"amount_per_second","type":"i128"},{"name":"expires_at","type":"u64"}] },
+  "reputation_updated": { struct: "ReputationUpdated", eventKey: "reputation_updated", fingerprint: "sha256:e55d499b26e37e7b62ea675a51df0106b6d74b5b5d2232943c41cda5f6707a33", topics: [{"name":"subject","type":"Address"}], data: [{"name":"stream_id","type":"u64"},{"name":"score","type":"u32"},{"name":"completed_streams","type":"u32"}] },
   "scheduled_intent_cancelled": { struct: "ScheduledIntentCancelled", eventKey: "scheduled_intent_cancelled", fingerprint: "sha256:fe727619a69c546daa9f512a6cbe4162453a8404bd8dba614384557f162e5f0e", topics: [{"name":"intent_id","type":"u64"}], data: [{"name":"sender","type":"Address"},{"name":"refund","type":"i128"}] },
   "scheduled_intent_expired": { struct: "ScheduledIntentExpired", eventKey: "scheduled_intent_expired", fingerprint: "sha256:708a995061ac8713d9a6fc7ea04f7c39eee313276cc42fb0cd9268f3210500ee", topics: [{"name":"intent_id","type":"u64"}], data: [{"name":"sender","type":"Address"},{"name":"refund","type":"i128"}] },
   "scheduled_stream_executed": { struct: "ScheduledStreamExecuted", eventKey: "scheduled_stream_executed", fingerprint: "sha256:318937479fdb35060d6640657c70d51fcda211fc4408f5902b7eac1224f89f06", topics: [{"name":"intent_id","type":"u64"}], data: [{"name":"keeper","type":"Address"},{"name":"stream_id","type":"u64"},{"name":"occurrence_index","type":"u32"},{"name":"occurrences_remaining","type":"u32"},{"name":"fee_paid","type":"i128"}] },
@@ -921,6 +933,7 @@ export const EVENT_FINGERPRINTS: Record<string, string> = {
   "PolicyInitialized": "sha256:332dec01d9e44b08a077228239c6b3fdcc435b4c59862a9efd6d4001a7cbd44b",
   "RateChangeAccepted": "sha256:66b7fcbf7e912df0adfb728f6dd025e43a3678b76885950fb68c9e7b1ea41da3",
   "RateChangeProposed": "sha256:9e2dec2cd991106085acabb92aaec4edf32ca518a688d2090ded15d91c7f70c0",
+  "ReputationUpdated": "sha256:e55d499b26e37e7b62ea675a51df0106b6d74b5b5d2232943c41cda5f6707a33",
   "ScheduledIntentCancelled": "sha256:fe727619a69c546daa9f512a6cbe4162453a8404bd8dba614384557f162e5f0e",
   "ScheduledIntentExpired": "sha256:708a995061ac8713d9a6fc7ea04f7c39eee313276cc42fb0cd9268f3210500ee",
   "ScheduledStreamExecuted": "sha256:318937479fdb35060d6640657c70d51fcda211fc4408f5902b7eac1224f89f06",
