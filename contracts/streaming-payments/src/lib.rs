@@ -54,6 +54,10 @@
 //! - [`StreamingPayments::treasury_status`] /
 //!   [`StreamingPayments::stream_fee`] / [`StreamingPayments::verify_treasury`] —
 //!   open verification reads for the protocol-fee ledger (see `treasury.rs`)
+//! - [`StreamingPayments::get_reputation`] /
+//!   [`StreamingPayments::reputation_score`] — read-only views of the
+//!   non-transferable, wash-resistant stream credit reputation score
+//!   (see `reputation.rs`)
 //!
 //! # Invariants
 //!
@@ -120,6 +124,9 @@ mod policy;
 pub mod receivables;
 #[cfg(test)]
 mod receivables_conditions_templates_hooks_test;
+pub mod reputation;
+#[cfg(test)]
+mod reputation_test;
 mod schedule;
 #[cfg(test)]
 mod schedule_test;
@@ -170,13 +177,13 @@ pub use events::{
     MergeStream, OperatorKeyRotated, OracleConfigUpdated, OracleStaleFallback, OracleTimeReported,
     OwnershipAccepted, OwnershipProposed, PolicyAssetExecuted, PolicyAssetQueued,
     PolicyHandoffAccepted, PolicyHandoffCancelled, PolicyHandoffProposed, PolicyInitialized,
-    RateChangeAccepted, RateChangeProposed, ScheduledIntentCancelled, ScheduledIntentExpired,
-    ScheduledStreamExecuted, SenderTransferExpired, SenderTransferProposed, SenderTransferred,
-    SplitStream, SponsorActiveSet, SponsorClaim, SponsorRegistered, StorageMigrated,
-    StreamCancelled, StreamCreated, StreamPaused, StreamPolicySet, StreamRecordMigrated,
-    StreamRefundTargetChanged, StreamResumed, StreamScheduled, StreamSwept, StreamToppedUp,
-    StreamsCreated, TemplateApproved, TemplateInstantiated, UpgradeCancelled, UpgradeProposed,
-    Withdrawn,
+    RateChangeAccepted, RateChangeProposed, ReputationUpdated, ScheduledIntentCancelled,
+    ScheduledIntentExpired, ScheduledStreamExecuted, SenderTransferExpired, SenderTransferProposed,
+    SenderTransferred, SplitStream, SponsorActiveSet, SponsorClaim, SponsorRegistered,
+    StorageMigrated, StreamCancelled, StreamCreated, StreamPaused, StreamPolicySet,
+    StreamRecordMigrated, StreamRefundTargetChanged, StreamResumed, StreamScheduled, StreamSwept,
+    StreamToppedUp, StreamsCreated, TemplateApproved, TemplateInstantiated, UpgradeCancelled,
+    UpgradeProposed, Withdrawn,
 };
 pub use governance::{
     GovernanceAction, Proposal, DEFAULT_VETO_WINDOW_SECONDS, MAX_SIGNERS, MIN_VETO_WINDOW_SECONDS,
@@ -186,6 +193,7 @@ pub use oracle::{OracleConfig, OracleReport, ResolvedTime, DEFAULT_MAX_STALE_SEC
 pub use policy::{
     validate_rate_args, validate_stream_args, validate_top_up_args, QueuedAssetChange, StreamPolicy,
 };
+pub use reputation::{ReputationRecord, ReputationView};
 pub use schedule::{IntentStatus, ScheduledIntent, MAX_OCCURRENCES};
 pub use sponsor::{PeriodSpend, SponsorConfig};
 // `streamed_at` is re-exported for the fuzz target and downstream rate
@@ -1841,7 +1849,8 @@ impl StreamingPayments {
             .withdrawn
             .checked_add(amount)
             .ok_or_else(|| surface::reject(Branch::PayoutOverflow))?;
-        if s.withdrawn == s.deposit {
+        let newly_depleted = s.status != StreamStatus::Depleted && s.withdrawn == s.deposit;
+        if newly_depleted {
             s.status = StreamStatus::Depleted;
         }
         stream::put_stream(env, s);
@@ -1855,6 +1864,12 @@ impl StreamingPayments {
             withdrawn_total: s.withdrawn,
         }
         .publish(env);
+        // Reputation (#574): nothing is recorded here. A stream that has
+        // just run to depletion has *settled*, and both parties' completion
+        // credit is derived from this very state at read time (see
+        // reputation.rs, "Cost") — writing records on this hot path is
+        // what the performance budget forbids. Cancellations never reach
+        // this site as a depletion, so churn earns nothing.
         Ok(())
     }
 
@@ -2210,6 +2225,10 @@ impl StreamingPayments {
         if !new_segments.is_empty() {
             stream::put_rate_segments(&env, stream_id, &new_segments);
         }
+        // Reputation (#574): note the refill for the sender's refill-
+        // reliability credit. Unscored on its own — it only counts if the
+        // stream later completes (see reputation.rs).
+        reputation::note_top_up(&env, stream_id);
 
         #[cfg(test)]
         cei_trace::record("event StreamToppedUp");
@@ -2400,6 +2419,11 @@ impl StreamingPayments {
             bond: d.bond,
         }
         .publish(&env);
+
+        // Reputation (#574): a resolved dispute is a scored outcome — the
+        // favoured party gains, the other loses. Still effects-only: no
+        // tokens move here (the bond/settlement transfers follow below).
+        reputation::record_dispute_resolution(&env, &s, accept, env.ledger().timestamp());
 
         // Interactions last (CEI): bond refund/slash plus settlement.
         let token = TokenClient::new(&env, &s.token);
@@ -3562,6 +3586,58 @@ impl StreamingPayments {
     )]
     pub fn get_stream(env: Env, stream_id: u64) -> Result<Stream, StreamError> {
         stream::get_stream(&env, stream_id)
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Read-only view of an address's non-transferable reputation"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " record plus its raw and inactivity-decayed scores (issue #574)."
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = "")]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Never reverts: an address with no settled history reads as a"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " zero record with score 0. The completion half of the record is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " derived from the address's stream history (a bounded scan; see"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " reputation.rs for the cost model). There is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " deliberately no transfer/approval entrypoint — the score is"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " bound to the address that earned it."
+    )]
+    pub fn get_reputation(env: Env, subject: Address) -> ReputationView {
+        reputation::view(&env, &subject, env.ledger().timestamp())
+    }
+
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " The address's current (inactivity-decayed) reputation score in"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " `0..=1000` — the cheap scalar read integrators gate access on."
+    )]
+    pub fn reputation_score(env: Env, subject: Address) -> u32 {
+        reputation::decayed_score(
+            &reputation::get_record(&env, &subject),
+            env.ledger().timestamp(),
+        )
     }
 
     #[cfg_attr(
@@ -5724,6 +5800,10 @@ impl StreamingPayments {
             return Err(surface::reject(branch));
         }
         let refund_target = stream::refund_target(&env, &s);
+        // Reputation (#574): before the stream's record and index entries
+        // disappear, fold its completion contribution (if any) into the
+        // parties' stored records so the score survives reclamation.
+        reputation::archive_completion(&env, &s);
         let entries_removed = dust::remove_footprint(&env, &s);
 
         #[cfg(test)]
