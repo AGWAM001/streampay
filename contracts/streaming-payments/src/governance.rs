@@ -200,6 +200,29 @@ pub enum GovernanceAction {
     SetSigners(Vec<Address>),
     #[cfg_attr(not(target_family = "wasm"), doc = " Replace the veto window.")]
     SetVetoWindow(u64),
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Begin an emergency state-migration export (issue #569): freezes"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " the instance and opens the export session. The break-glass move"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " itself is exactly the kind of authority-expanding act the"
+    )]
+    #[cfg_attr(not(target_family = "wasm"), doc = " timelock exists to govern.")]
+    BeginMigrationExport,
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " Begin an emergency state-migration import (issue #569) from the"
+    )]
+    #[cfg_attr(
+        not(target_family = "wasm"),
+        doc = " given source instance into this (fresh) one."
+    )]
+    BeginMigrationImport(Address),
 }
 
 impl GovernanceAction {

@@ -6,6 +6,16 @@ be mentioned here — by event struct name and field name — before the PR can
 merge. Breaking changes are rejected outright; they need a governed
 v1 → v2 migration (see [README.md](README.md#versioning-v1--v2-coexistence)).
 
+## v1.0.9 — 2026-11-27 (governed emergency state migration, #569)
+
+Three additive events; no existing event changed shape (entry count 65 → 68).
+All three carry the positional topic `source:Address` — the source instance
+whose export they describe.
+
+- `MigrationExported`: added event (data `nonce`, `root`, `records`, `total_value`, `pages`) — emitted by `migration_finalize_export` when an emergency state-migration export is finalized on the source instance, publishing the Merkle `root` over every exported record on-chain. The source is frozen from the moment the export began.
+- `MigrationImported`: added event (data `nonce`, `root`, `records`, `total_value`, `pages`) — emitted by `migration_finalize_import` when a migration import completes on the target instance: every page verified against the source's published `root`, with the imported totals matching the exported totals (conservation).
+- `MigrationFinalized`: added event (data `nonce`, `root`) — emitted by `migration_finalize_import` immediately after `MigrationImported`, as the closing marker that the migration into this instance is complete and irreversible against the source's `root`. See [docs/emergency-migration.md](../../docs/emergency-migration.md).
+
 ## v1.0.8 — 2026-11-26 (stream split/merge lineage, #197)
 
 Two additive events; no existing event changed shape (entry count 63 → 65).

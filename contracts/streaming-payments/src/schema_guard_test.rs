@@ -30,6 +30,7 @@ use crate::{
     errors::StreamError,
     events::*,
     governance::{GovernanceAction, GovernanceDataKey},
+    migration::MigrationDataKey,
     policy::{PolicyDataKey, StreamPolicy},
     sponsor::SponsorKey,
     stream::{DataKey, OwnershipRole, WithdrawOutcome},
@@ -56,7 +57,7 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
     let bytes32 = BytesN::from_array(env, &[1u8; 32]);
     let signers = Vec::from_array(env, [sender.clone(), recipient.clone()]);
 
-    // ── 1. Storage keys probe (covers all 4 key enums in the contract) ──────
+    // ── 1. Storage keys probe (covers all 5 key enums in the contract) ──────
     let mut storage_keys_json = std::vec![];
 
     // DataKey probe (25 variants)
@@ -300,6 +301,39 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
         ),
     ];
 
+    let migration_key_cases: StdVec<(&str, &str, &str, MigrationDataKey)> = std::vec![
+        (
+            "ExportSession",
+            "ExportSession",
+            "instance",
+            MigrationDataKey::ExportSession
+        ),
+        (
+            "ExportPageRoot",
+            "ExportPageRoot(u32)",
+            "persistent",
+            MigrationDataKey::ExportPageRoot(1)
+        ),
+        (
+            "ImportSession",
+            "ImportSession",
+            "instance",
+            MigrationDataKey::ImportSession
+        ),
+        (
+            "ImportPageDone",
+            "ImportPageDone(u32)",
+            "persistent",
+            MigrationDataKey::ImportPageDone(1)
+        ),
+        (
+            "ConsumedRoot",
+            "ConsumedRoot(BytesN<32>)",
+            "persistent",
+            MigrationDataKey::ConsumedRoot(bytes32.clone())
+        ),
+    ];
+
     env.as_contract(&contract_id, || {
         for (name, shape, storage_type, key) in &datakey_cases {
             if *storage_type == "instance" {
@@ -398,9 +432,35 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
                 "xdr_sample_hex": hex_str(&raw_bytes)
             }));
         }
+
+        for (name, shape, storage_type, key) in &migration_key_cases {
+            if *storage_type == "instance" {
+                env.storage().instance().set(key, &42u32);
+                let read_back: u32 = env.storage().instance().get(key).unwrap();
+                assert_eq!(read_back, 42u32);
+            } else {
+                env.storage().persistent().set(key, &42u32);
+                let read_back: u32 = env.storage().persistent().get(key).unwrap();
+                assert_eq!(read_back, 42u32);
+            }
+
+            let xdr_bytes = key.to_xdr(env);
+            let mut raw_bytes = StdVec::with_capacity(xdr_bytes.len() as usize);
+            for i in 0..xdr_bytes.len() {
+                raw_bytes.push(xdr_bytes.get(i).unwrap());
+            }
+
+            storage_keys_json.push(serde_json::json!({
+                "enum": "MigrationDataKey",
+                "name": name,
+                "shape": shape,
+                "storage_type": storage_type,
+                "xdr_sample_hex": hex_str(&raw_bytes)
+            }));
+        }
     });
 
-    // ── 2. Events probe (all 51 contract events) ────────────────────────────
+    // ── 2. Events probe (all 54 contract events) ────────────────────────────
     struct EventCase {
         name: &'static str,
         topics: StdVec<(&'static str, &'static str)>,
@@ -1132,6 +1192,54 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
             }
         ),
         event_case!(
+            MigrationExported,
+            topics: [("source", "Address")],
+            data: [
+                ("nonce", "u64"),
+                ("root", "BytesN<32>"),
+                ("records", "u64"),
+                ("total_value", "i128"),
+                ("pages", "u32")
+            ],
+            MigrationExported {
+                source: sender.clone(),
+                nonce: 1,
+                root: bytes32.clone(),
+                records: 9,
+                total_value: 1000,
+                pages: 3,
+            }
+        ),
+        event_case!(
+            MigrationImported,
+            topics: [("source", "Address")],
+            data: [
+                ("nonce", "u64"),
+                ("root", "BytesN<32>"),
+                ("records", "u64"),
+                ("total_value", "i128"),
+                ("pages", "u32")
+            ],
+            MigrationImported {
+                source: sender.clone(),
+                nonce: 1,
+                root: bytes32.clone(),
+                records: 9,
+                total_value: 1000,
+                pages: 3,
+            }
+        ),
+        event_case!(
+            MigrationFinalized,
+            topics: [("source", "Address")],
+            data: [("nonce", "u64"), ("root", "BytesN<32>")],
+            MigrationFinalized {
+                source: sender.clone(),
+                nonce: 1,
+                root: bytes32.clone(),
+            }
+        ),
+        event_case!(
             SplitStream,
             topics: [("parent_id", "u64")],
             data: [
@@ -1179,6 +1287,7 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
                 end_time: 300,
                 claimable: 50,
                 withdrawn: 450,
+
             }
         ),
     ];
@@ -1203,7 +1312,7 @@ pub fn generate_schema_representation(env: &Env) -> serde_json::Value {
         }));
     }
 
-    // ── 3. Error codes probe (all 99 codes) ─────────────────────────────────
+    // ── 3. Error codes probe (every code in StreamError::ALL) ───────────────
     let mut error_codes_json = std::vec![];
     for err in StreamError::ALL {
         let code = err.code();
