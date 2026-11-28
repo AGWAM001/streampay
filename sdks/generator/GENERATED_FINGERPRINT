@@ -1,23 +1,23 @@
 {
   "schema": "streampay-generation/v1",
-  "specFingerprint": "b8b7fdaf2d0a39fe92616adad14725ed1943591a64fd561e98cff9b79ad5868f",
+  "specFingerprint": "7edcad0dace890cedba9f18ef823175b45d41916060d79239c0aed2bb585d2b5",
   "artifacts": [
     {
       "path": "sdks/python/streampay/_generated.py",
-      "sha256": "0ed4a7525651effcd1a03868a1c7a94f3d1f2e6ce208a8224e3a658e7cdbf0a7"
+      "sha256": "61d5acd6a16a03e5af4fac58ee779018d23023a751cbb4e6fdad394b8e1e629b"
     },
     {
       "path": "sdks/rust/src/generated.rs",
-      "sha256": "ff307dafeda84e8af464c46ca98adb802b4e31a6bcac5b84ca5627ad7b985b3b"
+      "sha256": "2c8219cc601f0ae53bc03d45b68453f755f8cb994b89d075ae770354e4cae0ab"
     },
     {
       "path": "sdks/typescript/src/generated.ts",
-      "sha256": "00da701e46a40d7c9897078d771ced592cc9074c1fab3c2b16eec175779fe5f2"
+      "sha256": "c048cfd15ba7ee5327111830ed9289046529ee5e1ef14f19318357ab78d573a2"
     },
     {
       "path": "sdks/typescript/src/methods.ts",
-      "sha256": "4c13918184120c116f774246281e781bbde1070a3a97bbf1359f65a9305b3487"
+      "sha256": "41bba38ee09866e45e675ab39ca17cfbab524c0543bd08fe9195bef2266f3b24"
     }
   ],
-  "sha256": "73886f8cd3b697c930139d60b1598e6141b58f382bad6d6df26082cd9f793bb4"
+  "sha256": "64a8ea67ea36c45bf2fc7d0746ccf04eabe91391333a108ec851f3bb6c4efd2e"
 }
