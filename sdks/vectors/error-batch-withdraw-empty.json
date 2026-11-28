@@ -1,7 +1,7 @@
 {
   "schema": "streampay-vector/v1",
   "name": "error-batch-withdraw-empty",
-  "specFingerprint": "1f8420327b4bef8b80c437b29fee4d4bf325cecd55589f4daae39915c019851f",
+  "specFingerprint": "b8b7fdaf2d0a39fe92616adad14725ed1943591a64fd561e98cff9b79ad5868f",
   "provenance": "withdraw_many_bounds_the_batch_and_rejects_duplicates_upfront.1.json/test assertion: an empty stream_ids vector reverts with WithdrawBatchEmpty before any stream is read.",
   "transactionEnvelopeXdr": "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAABhqAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAANd2l0aGRyYXdfbWFueQAAAAAAAAMAAAASAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAEAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEURtIsAAAAQN8ekoroC3QqR0QdaJJV8p0FxsD/2Me5SihGVomTya0F1dFHea3PGaxxh2CsT8T6mhR85GYhUFN1xivliOlQUw8=",
   "resultXdr": "AAAAAgAAAAAAAABg",
