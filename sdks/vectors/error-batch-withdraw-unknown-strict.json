@@ -1,7 +1,7 @@
 {
   "schema": "streampay-vector/v1",
   "name": "error-batch-withdraw-unknown-strict",
-  "specFingerprint": "b8b7fdaf2d0a39fe92616adad14725ed1943591a64fd561e98cff9b79ad5868f",
+  "specFingerprint": "7f685ad8a48e46e0dd37e520f203ad0344a326fddf2f1aad8028ebc0cc895345",
   "provenance": "withdraw_many strict/unknown-stream semantics from withdraw_many_settles_eligible_streams_and_reports_the_rest.1.json: strict=true turns StreamNotFound into a top-level revert, while non-strict mode returns it as a WithdrawEntry code.",
   "transactionEnvelopeXdr": "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAABhqAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAANd2l0aGRyYXdfbWFueQAAAAAAAAMAAAASAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAEAAAAAEAAAABAAAABQAAAAAAAABjAAAAAAAAAAEAAAAAAAAAAAAAAAEURtIsAAAAQASSmlDE4hIw4lAVshbgr5zuZfMGfwZWXdA3wX+dVE/CEpPzLcOA1HohYZmWFQr1wFqiVAukB8+9X3v6CGbj3wQ=",
   "resultXdr": "AAAAAgAAAAAAAAAB",
