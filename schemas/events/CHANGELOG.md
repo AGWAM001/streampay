@@ -6,6 +6,13 @@ be mentioned here — by event struct name and field name — before the PR can
 merge. Breaking changes are rejected outright; they need a governed
 v1 → v2 migration (see [README.md](README.md#versioning-v1--v2-coexistence)).
 
+## v1.0.9 — 2026-11-27 (atomic stream creation with NFT mint, #575)
+
+Two additive events; no existing event changed shape (entry count 65 → 67).
+
+- `StreamNftMinted`: added event (topic `stream_id:u64`, `nft_contract:Address`, data `recipient`) — emitted by `create_stream_with_nft` once the companion stream-NFT has been minted to the recipient and the bidirectional stream ↔ NFT link recorded. The mint and the stream creation commit or abort together, so this event only ever accompanies a live linked pair.
+- `StreamNftLinkFailed`: added event (topic `stream_id:u64`, `nft_contract:Address`, data `recipient`, `error_code`) — emitted by `create_stream_with_nft` for trace diagnostics when the companion's binding does not match the allocated stream id (`error_code` = `NftLinkMismatch`) or the mint call fails (`error_code` = `NftMintFailed`), immediately before the call aborts with the mapped `StreamError` and the whole creation rolls back.
+
 ## v1.0.8 — 2026-11-26 (stream split/merge lineage, #197)
 
 Two additive events; no existing event changed shape (entry count 63 → 65).
